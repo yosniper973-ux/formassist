@@ -1,0 +1,36 @@
+[package]
+name = "formassist"
+version = "0.1.0"
+description = "FormAssist — Assistant pédagogique pour formatrice indépendante"
+authors = ["FormAssist"]
+edition = "2021"
+
+[lib]
+name = "formassist_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+argon2 = "0.5"
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+lettre = { version = "0.11", features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

@@ -1,0 +1,40 @@
+export interface Centre {
+  id: string;
+  name: string;
+  address: string | null;
+  logo_path: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  color: string;
+  referent_name: string | null;
+  referent_email: string | null;
+  referent_phone: string | null;
+  legal_mentions: string | null;
+  pdf_header: string | null;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_user: string | null;
+  smtp_password: string | null;
+  smtp_from_email: string | null;
+  smtp_from_name: string | null;
+  imap_host: string | null;
+  imap_port: number | null;
+  imap_user: string | null;
+  imap_password: string | null;
+  invoice_template_path: string | null;
+  fiche_template_path: string | null;
+  hourly_rate: number | null;
+  billing_unit: "hour" | "half_day" | "day" | "flat";
+  payment_delay_days: number;
+  invoice_numbering: string | null;
+  bank_details: string | null;
+  purchase_order: string | null;
+  pinned: boolean;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CentreCreate = Omit<Centre, "id" | "created_at" | "updated_at" | "archived_at">;
+export type CentreUpdate = Partial<CentreCreate> & { id: string };

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nickkuk/nickkuk.github.io/main/capabilities.schema.json",
+  "identifier": "default",
+  "description": "Default permissions for FormAssist",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "sql:default",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "shell:default",
+    "shell:allow-open",
+    "fs:default",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "process:default"
+  ]
+}
