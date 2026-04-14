@@ -101,7 +101,7 @@ export async function estimateCost(
 }
 
 /** Vérifie le budget mensuel avant un appel */
-async function checkBudget(estimatedCost: number): Promise<{
+export async function checkBudget(estimatedCost: number): Promise<{
   allowed: boolean;
   currentSpent: number;
   budget: number;
