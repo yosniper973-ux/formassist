@@ -9,6 +9,7 @@ import type {
 } from "@/types/api";
 import { getPromptForTask } from "@/prompts";
 import { db } from "@/lib/db";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const API_VERSION = "2023-06-01";
@@ -164,13 +165,12 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(API_URL, {
+      const response = await tauriFetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
           "anthropic-version": API_VERSION,
-          "anthropic-dangerous-direct-browser-access": "true",
         },
         body: JSON.stringify(body),
       });
@@ -249,13 +249,12 @@ export async function testConnection(apiKey: string): Promise<{
   error?: string;
 }> {
   try {
-    const response = await fetch(API_URL, {
+    const response = await tauriFetch(API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
         "anthropic-version": API_VERSION,
-        "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
         model: MODELS.haiku.id,
