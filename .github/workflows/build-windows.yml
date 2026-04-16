@@ -30,10 +30,19 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Download WebView2 Bootstrapper
+      - name: Download WebView2 Standalone Installer (offline, ~160 Mo)
+        shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "WebView2Bootstrapper.exe"
-          Write-Host "WebView2Bootstrapper.exe téléchargé : $(Get-Item WebView2Bootstrapper.exe | Select-Object -ExpandProperty Length) octets"
+          # Récupère l'URL du dernier installateur standalone WebView2 x64 via l'API Microsoft
+          $response = Invoke-WebRequest -Uri "https://edgeupdates.microsoft.com/api/products?view=enterprise" -UseBasicParsing
+          $products = $response.Content | ConvertFrom-Json
+          $stable   = $products | Where-Object { $_.Product -eq "Stable" } | Select-Object -First 1
+          $release  = $stable.Releases | Where-Object { $_.Platform -eq "Windows" -and $_.Architecture -eq "x64" } | Select-Object -First 1
+          $artifact = $release.Artifacts | Where-Object { $_.ArtifactName -like "*WebView2*" } | Select-Object -First 1
+          Write-Host "URL : $($artifact.Location)"
+          Invoke-WebRequest -Uri $artifact.Location -OutFile "WebView2Installer.exe"
+          $mb = [math]::Round((Get-Item "WebView2Installer.exe").Length / 1MB, 1)
+          Write-Host "Téléchargé : $mb Mo"
 
       - name: Install frontend dependencies
         run: npm ci

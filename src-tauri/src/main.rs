@@ -37,9 +37,9 @@ fn ensure_webview2() {
     if let Some(dir) = exe_dir {
         // Chercher dans le dossier de l'exe et dans un sous-dossier "resources"
         let candidates = [
-            dir.join("WebView2Bootstrapper.exe"),
-            dir.join("resources").join("WebView2Bootstrapper.exe"),
-            dir.join("_up_").join("WebView2Bootstrapper.exe"),
+            dir.join("WebView2Installer.exe"),
+            dir.join("resources").join("WebView2Installer.exe"),
+            dir.join("_up_").join("WebView2Installer.exe"),
         ];
 
         for bootstrapper in &candidates {

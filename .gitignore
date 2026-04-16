@@ -27,7 +27,7 @@ src-tauri/WixTools/
 src-tauri/gen/
 
 # WebView2 bootstrapper (téléchargé automatiquement par GitHub Actions)
-WebView2Bootstrapper.exe
+WebView2Installer.exe
 
 # Logs
 *.log
