@@ -33,25 +33,70 @@ jobs:
       - name: Download WebView2 Standalone Installer (offline, ~160 Mo)
         shell: pwsh
         run: |
-          # Récupère l'URL du dernier installateur standalone WebView2 x64 via l'API Microsoft
-          $response = Invoke-WebRequest -Uri "https://edgeupdates.microsoft.com/api/products?view=enterprise" -UseBasicParsing
-          $products = $response.Content | ConvertFrom-Json
-          Write-Host "Produits disponibles : $($products.Product -join ', ')"
+          # Stratégie : essayer plusieurs sources pour récupérer le standalone installer.
+          # 1. winget download (runner windows-latest)
+          # 2. Fallback : choco install qui télécharge l'installateur dans son cache
+          # 3. Fallback : URL directe connue
 
-          # Le produit WebView2 Runtime est appelé "Edge WebView2" dans l'API
-          $webview2 = $products | Where-Object { $_.Product -eq "Edge WebView2" } | Select-Object -First 1
-          if (-not $webview2) { throw "Produit 'Edge WebView2' non trouvé dans l'API" }
+          $ok = $false
 
-          $release  = $webview2.Releases | Where-Object { $_.Platform -eq "Windows" -and $_.Architecture -eq "x64" } | Select-Object -First 1
-          if (-not $release) { throw "Aucune release Windows x64 trouvée" }
+          # --- Tentative 1 : winget ---
+          try {
+            Write-Host "Tentative 1 : winget download"
+            winget download --id Microsoft.EdgeWebView2Runtime `
+              --accept-source-agreements --accept-package-agreements `
+              --disable-interactivity -d "." 2>&1 | Out-Host
 
-          $artifact = $release.Artifacts | Select-Object -First 1
-          if (-not $artifact -or -not $artifact.Location) { throw "Aucun artifact téléchargeable" }
+            $found = Get-ChildItem -Filter "*WebView2*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              Move-Item $found.FullName "WebView2Installer.exe" -Force
+              $ok = $true
+              Write-Host "✅ winget a réussi"
+            }
+          } catch {
+            Write-Host "⚠️ winget échec : $_"
+          }
 
-          Write-Host "URL : $($artifact.Location)"
-          Invoke-WebRequest -Uri $artifact.Location -OutFile "WebView2Installer.exe"
+          # --- Tentative 2 : chocolatey ---
+          if (-not $ok) {
+            try {
+              Write-Host "Tentative 2 : chocolatey install (télécharge dans cache)"
+              choco install microsoft-edge-webview2-runtime -y --no-progress --ignore-checksums 2>&1 | Out-Host
+              # Chocolatey télécharge l'installateur dans son cache avant de l'exécuter
+              $cached = Get-ChildItem -Path "$env:TEMP" -Recurse -Filter "*WebView2*Installer*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if (-not $cached) {
+                $cached = Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\microsoft-edge-webview2-runtime" -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              }
+              if ($cached) {
+                Copy-Item $cached.FullName "WebView2Installer.exe" -Force
+                $ok = $true
+                Write-Host "✅ chocolatey a réussi"
+              }
+            } catch {
+              Write-Host "⚠️ chocolatey échec : $_"
+            }
+          }
+
+          # --- Tentative 3 : scraping page Microsoft ---
+          if (-not $ok) {
+            try {
+              Write-Host "Tentative 3 : scraping page Microsoft"
+              $page = Invoke-WebRequest -Uri "https://developer.microsoft.com/en-us/microsoft-edge/webview2/" -UseBasicParsing
+              $match = [regex]::Match($page.Content, 'https://[^"'']*MicrosoftEdgeWebView2RuntimeInstallerX64\.exe')
+              if ($match.Success) {
+                Write-Host "URL trouvée : $($match.Value)"
+                Invoke-WebRequest -Uri $match.Value -OutFile "WebView2Installer.exe"
+                $ok = $true
+              }
+            } catch {
+              Write-Host "⚠️ scraping échec : $_"
+            }
+          }
+
+          if (-not $ok) { throw "Impossible de télécharger WebView2 Standalone Installer" }
+
           $mb = [math]::Round((Get-Item "WebView2Installer.exe").Length / 1MB, 1)
-          Write-Host "Téléchargé : $mb Mo"
+          Write-Host "✅ Téléchargé : $mb Mo"
 
       - name: Install frontend dependencies
         run: npm ci
