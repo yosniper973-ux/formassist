@@ -45,6 +45,11 @@ pub fn run() {
             commands::read_file_text,
             // System
             commands::open_external_url,
+            // Backup
+            commands::create_backup,
+            commands::restore_backup,
+            commands::list_backups,
+            commands::export_database,
         ])
         .run(tauri::generate_context!())
         .expect("Erreur lors du lancement de FormAssist");
