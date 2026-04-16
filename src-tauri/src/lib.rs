@@ -45,6 +45,8 @@ pub fn run() {
             commands::read_file_text,
             // System
             commands::open_external_url,
+            // Email
+            commands::send_email,
             // Backup
             commands::create_backup,
             commands::restore_backup,
