@@ -39,10 +39,7 @@
       "nsis": {
         "languages": ["French"],
         "displayLanguageSelector": false,
-        "installMode": "currentUser",
-        "webviewInstallMode": {
-          "type": "downloadBootstrapper"
-        }
+        "installMode": "currentUser"
       },
       "wix": {
         "language": "fr-FR"
