@@ -12,6 +12,7 @@ import {
   BarChart3,
   Settings,
   PiggyBank,
+  Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { to: "/formations", icon: GraduationCap, label: "Formations" },
   { to: "/apprenants", icon: Users, label: "Apprenants" },
   { to: "/planning", icon: Calendar, label: "Planning" },
+  { to: "/style", icon: Palette, label: "Profil de style" },
   { to: "/generation", icon: Sparkles, label: "Génération" },
   { to: "/fiches", icon: FileText, label: "Fiches pédago" },
   { to: "/corrections", icon: CheckCircle, label: "Corrections" },

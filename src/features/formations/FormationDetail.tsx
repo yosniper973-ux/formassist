@@ -1,0 +1,578 @@
+import { useState, useEffect } from "react";
+import {
+  ArrowLeft,
+  Upload,
+  BookOpen,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Trash2,
+  ClipboardList,
+  AlertTriangle,
+} from "lucide-react";
+import { db } from "@/lib/db";
+import { request as claudeRequest } from "@/lib/claude";
+import type { Formation, CCP, Competence, EvaluationCriterion, ExtraActivity } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
+type Tab = "reac" | "perimetre" | "activites";
+
+interface ReacTreeCCP extends CCP {
+  competences: (Competence & { criteria: EvaluationCriterion[] })[];
+}
+
+interface Props {
+  formation: Formation;
+  onBack: () => void;
+}
+
+export function FormationDetail({ formation, onBack }: Props) {
+  const [activeTab, setActiveTab] = useState<Tab>("reac");
+  const [ccps, setCcps] = useState<ReacTreeCCP[]>([]);
+  const [extraActivities, setExtraActivities] = useState<ExtraActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedCcps, setExpandedCcps] = useState<Set<string>>(new Set());
+
+  // Parsing
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState("");
+
+  // Nouvelle activité hors-REAC
+  const [newActivityName, setNewActivityName] = useState("");
+
+  useEffect(() => {
+    loadReac();
+  }, [formation.id]);
+
+  async function loadReac() {
+    setLoading(true);
+    try {
+      // Charger les CCP
+      const ccpRows = await db.query<CCP>(
+        "SELECT * FROM ccps WHERE formation_id = ? ORDER BY sort_order",
+        [formation.id],
+      );
+
+      const tree: ReacTreeCCP[] = [];
+      const expanded = new Set<string>();
+
+      for (const ccp of ccpRows) {
+        const compRows = await db.query<Competence>(
+          "SELECT * FROM competences WHERE ccp_id = ? ORDER BY sort_order",
+          [ccp.id],
+        );
+
+        const compsWithCriteria = [];
+        for (const comp of compRows) {
+          const criteria = await db.query<EvaluationCriterion>(
+            "SELECT * FROM evaluation_criteria WHERE competence_id = ? ORDER BY sort_order",
+            [comp.id],
+          );
+          compsWithCriteria.push({ ...comp, criteria });
+        }
+
+        tree.push({ ...ccp, competences: compsWithCriteria });
+        expanded.add(ccp.id);
+      }
+
+      setCcps(tree);
+      setExpandedCcps(expanded);
+
+      // Charger les activités hors-REAC
+      const activities = await db.query<ExtraActivity>(
+        "SELECT * FROM extra_activities WHERE formation_id = ? ORDER BY sort_order",
+        [formation.id],
+      );
+      setExtraActivities(activities);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggleCcp(id: string) {
+    setExpandedCcps((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // ─── Import et parsing du REAC ───
+
+  async function handleReacFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setParsing(true);
+    setParseError("");
+
+    try {
+      const text = await file.text();
+
+      const result = await claudeRequest({
+        task: "parsing_reac",
+        messages: [
+          {
+            role: "user",
+            content: `Voici le contenu d'un document REAC pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète (CCP, compétences, critères d'évaluation, activités-types).\n\n---\n\n${text}`,
+          },
+        ],
+      });
+
+      // Extraire le JSON de la réponse
+      const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        setParseError("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
+        return;
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        ccps: Array<{
+          code: string;
+          title: string;
+          competences: Array<{
+            code: string;
+            title: string;
+            description?: string;
+            criteria: string[];
+          }>;
+        }>;
+        activity_types?: Array<{ title: string; description?: string }>;
+        warnings?: string[];
+      };
+
+      // Sauvegarder en base
+      await db.saveParsedReac(formation.id, parsed.ccps);
+
+      // Sauvegarder les activités-types
+      if (parsed.activity_types) {
+        for (let i = 0; i < parsed.activity_types.length; i++) {
+          const at = parsed.activity_types[i]!;
+          await db.execute(
+            "INSERT INTO activities_types (id, formation_id, title, description, sort_order) VALUES (?, ?, ?, ?, ?)",
+            [db.generateId(), formation.id, at.title, at.description ?? null, i],
+          );
+        }
+      }
+
+      // Recharger l'arbre
+      await loadReac();
+
+      if (parsed.warnings && parsed.warnings.length > 0) {
+        setParseError(`Analyse terminée avec ${parsed.warnings.length} avertissement(s) : ${parsed.warnings.join(". ")}`);
+      }
+    } catch (err) {
+      setParseError(
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de l'analyse du REAC.",
+      );
+      console.error(err);
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  // ─── Périmètre d'intervention ───
+
+  async function toggleScope(compId: string, currentScope: boolean) {
+    const newScope = currentScope ? 0 : 1;
+    await db.execute(
+      "UPDATE competences SET in_scope = ? WHERE id = ?",
+      [newScope, compId],
+    );
+    // Mettre à jour localement
+    setCcps((prev) =>
+      prev.map((ccp) => ({
+        ...ccp,
+        competences: ccp.competences.map((c) =>
+          c.id === compId ? { ...c, in_scope: !!newScope } : c,
+        ),
+      })),
+    );
+  }
+
+  async function setScopeAll(inScope: boolean) {
+    const val = inScope ? 1 : 0;
+    for (const ccp of ccps) {
+      for (const comp of ccp.competences) {
+        await db.execute("UPDATE competences SET in_scope = ? WHERE id = ?", [val, comp.id]);
+      }
+    }
+    await loadReac();
+  }
+
+  // ─── Activités hors-REAC ───
+
+  async function addExtraActivity() {
+    if (!newActivityName.trim()) return;
+    await db.execute(
+      "INSERT INTO extra_activities (id, formation_id, name, billable, sort_order, created_at) VALUES (?, ?, ?, 1, ?, datetime('now'))",
+      [db.generateId(), formation.id, newActivityName.trim(), extraActivities.length],
+    );
+    setNewActivityName("");
+    await loadReac();
+  }
+
+  async function deleteExtraActivity(id: string) {
+    await db.execute("DELETE FROM extra_activities WHERE id = ?", [id]);
+    await loadReac();
+  }
+
+  const totalCompetences = ccps.reduce((acc, ccp) => acc + ccp.competences.length, 0);
+  const inScopeCount = ccps.reduce(
+    (acc, ccp) => acc + ccp.competences.filter((c) => c.in_scope).length,
+    0,
+  );
+
+  const tabs = [
+    { id: "reac" as const, label: "REAC", icon: <BookOpen className="h-4 w-4" /> },
+    { id: "perimetre" as const, label: `Périmètre (${inScopeCount}/${totalCompetences})`, icon: <CheckCircle2 className="h-4 w-4" /> },
+    { id: "activites" as const, label: `Hors-REAC (${extraActivities.length})`, icon: <ClipboardList className="h-4 w-4" /> },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* En-tête */}
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={onBack}>
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{formation.title}</h1>
+          {formation.rncp_code && (
+            <p className="text-sm text-muted-foreground">RNCP {formation.rncp_code}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Onglets */}
+      <div className="flex border-b">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition-colors -mb-px ${
+              activeTab === t.id
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      ) : (
+        <>
+          {/* ═══ Onglet REAC ═══ */}
+          {activeTab === "reac" && (
+            <div className="space-y-6">
+              {ccps.length === 0 ? (
+                <ReacImportPanel
+                  parsing={parsing}
+                  parseError={parseError}
+                  onFileChange={handleReacFile}
+                />
+              ) : (
+                <>
+                  {/* Bouton réimporter */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      {ccps.length} CCP — {totalCompetences} compétences
+                    </p>
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.docx,.xlsx,.csv,.txt"
+                        onChange={handleReacFile}
+                      />
+                      <span className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
+                        <Upload className="h-3.5 w-3.5" />
+                        Réimporter
+                      </span>
+                    </label>
+                  </div>
+
+                  {parseError && (
+                    <Alert variant="warning">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>{parseError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  {/* Arbre REAC */}
+                  <div className="space-y-3">
+                    {ccps.map((ccp) => (
+                      <div key={ccp.id} className="rounded-xl border bg-card">
+                        <button
+                          onClick={() => toggleCcp(ccp.id)}
+                          className="flex w-full items-center gap-3 p-4 text-left"
+                        >
+                          {expandedCcps.has(ccp.id) ? (
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <Badge variant="default" className="shrink-0">{ccp.code}</Badge>
+                          <span className="font-medium">{ccp.title}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {ccp.competences.length} CP
+                          </span>
+                        </button>
+
+                        {expandedCcps.has(ccp.id) && (
+                          <div className="border-t px-4 pb-4">
+                            {ccp.competences.map((comp) => (
+                              <div key={comp.id} className="mt-3 ml-7">
+                                <div className="flex items-start gap-2">
+                                  <Badge variant="outline" className="mt-0.5 shrink-0 text-xs">
+                                    {comp.code}
+                                  </Badge>
+                                  <div>
+                                    <p className="text-sm font-medium">{comp.title}</p>
+                                    {comp.description && (
+                                      <p className="mt-0.5 text-xs text-muted-foreground">
+                                        {comp.description}
+                                      </p>
+                                    )}
+                                    {comp.criteria.length > 0 && (
+                                      <ul className="mt-1.5 space-y-0.5">
+                                        {comp.criteria.map((cr) => (
+                                          <li
+                                            key={cr.id}
+                                            className="flex items-start gap-1.5 text-xs text-muted-foreground"
+                                          >
+                                            <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                                            {cr.description}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ═══ Onglet Périmètre ═══ */}
+          {activeTab === "perimetre" && (
+            <div className="space-y-6">
+              {ccps.length === 0 ? (
+                <Alert>
+                  <AlertDescription>
+                    Importe d'abord un REAC dans l'onglet précédent pour définir ton périmètre.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <>
+                  {/* Raccourcis */}
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setScopeAll(true)}
+                    >
+                      Tout cocher
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setScopeAll(false)}
+                    >
+                      Tout décocher
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {inScopeCount} compétence(s) à ta charge
+                    </span>
+                  </div>
+
+                  {/* Liste avec cases à cocher */}
+                  {ccps.map((ccp) => (
+                    <div key={ccp.id} className="space-y-2">
+                      <p className="text-sm font-semibold text-foreground">
+                        {ccp.code} — {ccp.title}
+                      </p>
+                      {ccp.competences.map((comp) => (
+                        <label
+                          key={comp.id}
+                          className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                            comp.in_scope
+                              ? "border-primary/30 bg-primary/5"
+                              : "border-border bg-card opacity-60"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={comp.in_scope}
+                            onChange={() => toggleScope(comp.id, comp.in_scope)}
+                            className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
+                          />
+                          <div>
+                            <span className="text-sm font-medium">
+                              {comp.code} — {comp.title}
+                            </span>
+                            {comp.assigned_to && (
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                Attribué à : {comp.assigned_to}
+                              </p>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ═══ Onglet Activités hors-REAC ═══ */}
+          {activeTab === "activites" && (
+            <div className="space-y-6">
+              <p className="text-sm text-muted-foreground">
+                Activités non-pédagogiques qui font partie du temps de travail facturable
+                (accueil, sorties, oral, bilan…).
+              </p>
+
+              {/* Formulaire d'ajout */}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Nom de l'activité (ex : Journée d'accueil)"
+                  value={newActivityName}
+                  onChange={(e) => setNewActivityName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExtraActivity(); } }}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={addExtraActivity}
+                  disabled={!newActivityName.trim()}
+                  size="sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  Ajouter
+                </Button>
+              </div>
+
+              {/* Liste */}
+              {extraActivities.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  Aucune activité hors-REAC pour l'instant.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {extraActivities.map((a) => (
+                    <div
+                      key={a.id}
+                      className="flex items-center justify-between rounded-lg border bg-card p-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium">{a.name}</span>
+                        {a.billable && (
+                          <Badge variant="outline" className="text-xs">Facturable</Badge>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => deleteExtraActivity(a.id)}
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-destructive"
+                        aria-label="Supprimer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Panneau d'import REAC ──────────────────────────────────────────────────
+
+function ReacImportPanel({
+  parsing,
+  parseError,
+  onFileChange,
+}: {
+  parsing: boolean;
+  parseError: string;
+  onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-6 py-8">
+      {parsing ? (
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="font-medium">Analyse du REAC en cours…</p>
+          <p className="text-sm text-muted-foreground">
+            Claude extrait les CCP, compétences et critères d'évaluation.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-muted">
+            <BookOpen className="h-10 w-10 text-muted-foreground" />
+          </div>
+          <div className="text-center">
+            <h3 className="font-semibold text-foreground">Importer le REAC</h3>
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              Dépose le PDF du Référentiel Emploi Activités Compétences.
+              Claude analysera automatiquement le document pour en extraire les CCP,
+              compétences et critères d'évaluation.
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.docx,.xlsx,.csv,.txt"
+                onChange={onFileChange}
+              />
+              <span className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                <Upload className="h-4 w-4" />
+                J'ai déjà le PDF
+              </span>
+            </label>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Formats acceptés : PDF, Word, Excel, CSV, texte
+          </p>
+
+          {parseError && (
+            <Alert variant="destructive" className="max-w-md">
+              <AlertDescription>{parseError}</AlertDescription>
+            </Alert>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

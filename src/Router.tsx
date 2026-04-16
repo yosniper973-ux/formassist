@@ -9,15 +9,36 @@ const CentresPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
-
-function Placeholder({ name }: { name: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-4 py-20">
-      <h1 className="text-2xl font-semibold text-foreground">{name}</h1>
-      <p className="text-muted-foreground">Cette section sera disponible prochainement.</p>
-    </div>
-  );
-}
+const FormationsPage = lazy(() =>
+  import("@/features/formations/FormationsPage").then((m) => ({ default: m.FormationsPage })),
+);
+const ApprenantsPage = lazy(() =>
+  import("@/features/apprenants/ApprenantsPage").then((m) => ({ default: m.ApprenantsPage })),
+);
+const PlanningPage = lazy(() =>
+  import("@/features/planning/PlanningPage").then((m) => ({ default: m.PlanningPage })),
+);
+const StylePage = lazy(() =>
+  import("@/features/style/StylePage").then((m) => ({ default: m.StylePage })),
+);
+const GenerationPage = lazy(() =>
+  import("@/features/generation/GenerationPage").then((m) => ({ default: m.GenerationPage })),
+);
+const FichesPedagoPage = lazy(() =>
+  import("@/features/fiches-pedago/FichesPedagoPage").then((m) => ({ default: m.FichesPedagoPage })),
+);
+const CorrectionsPage = lazy(() =>
+  import("@/features/correction/CorrectionsPage").then((m) => ({ default: m.CorrectionsPage })),
+);
+const FacturationPage = lazy(() =>
+  import("@/features/facturation/FacturationPage").then((m) => ({ default: m.FacturationPage })),
+);
+const DashboardPedagoPage = lazy(() =>
+  import("@/features/dashboard/DashboardPedagoPage").then((m) => ({ default: m.DashboardPedagoPage })),
+);
+const DashboardFinancePage = lazy(() =>
+  import("@/features/dashboard/DashboardFinancePage").then((m) => ({ default: m.DashboardFinancePage })),
+);
 
 function PageLoader() {
   return (
@@ -27,35 +48,69 @@ function PageLoader() {
   );
 }
 
+function LazyRoute({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+}
+
 export function Router() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/" element={<Placeholder name="Tableau de bord" />} />
         <Route
-          path="/centres"
+          path="/"
           element={
-            <Suspense fallback={<PageLoader />}>
-              <CentresPage />
-            </Suspense>
+            <LazyRoute>
+              <DashboardPedagoPage />
+            </LazyRoute>
           }
         />
-        <Route path="/formations" element={<Placeholder name="Formations" />} />
-        <Route path="/apprenants" element={<Placeholder name="Apprenants" />} />
-        <Route path="/planning" element={<Placeholder name="Planning" />} />
-        <Route path="/generation" element={<Placeholder name="Génération de contenus" />} />
-        <Route path="/fiches" element={<Placeholder name="Fiches pédagogiques" />} />
-        <Route path="/corrections" element={<Placeholder name="Corrections" />} />
-        <Route path="/facturation" element={<Placeholder name="Facturation" />} />
-        <Route path="/finances" element={<Placeholder name="Tableau financier" />} />
-        <Route path="/statistiques" element={<Placeholder name="Statistiques pédagogiques" />} />
+        <Route
+          path="/centres"
+          element={<LazyRoute><CentresPage /></LazyRoute>}
+        />
+        <Route
+          path="/formations"
+          element={<LazyRoute><FormationsPage /></LazyRoute>}
+        />
+        <Route
+          path="/apprenants"
+          element={<LazyRoute><ApprenantsPage /></LazyRoute>}
+        />
+        <Route
+          path="/planning"
+          element={<LazyRoute><PlanningPage /></LazyRoute>}
+        />
+        <Route
+          path="/style"
+          element={<LazyRoute><StylePage /></LazyRoute>}
+        />
+        <Route
+          path="/generation"
+          element={<LazyRoute><GenerationPage /></LazyRoute>}
+        />
+        <Route
+          path="/fiches"
+          element={<LazyRoute><FichesPedagoPage /></LazyRoute>}
+        />
+        <Route
+          path="/corrections"
+          element={<LazyRoute><CorrectionsPage /></LazyRoute>}
+        />
+        <Route
+          path="/facturation"
+          element={<LazyRoute><FacturationPage /></LazyRoute>}
+        />
+        <Route
+          path="/finances"
+          element={<LazyRoute><DashboardFinancePage /></LazyRoute>}
+        />
+        <Route
+          path="/statistiques"
+          element={<LazyRoute><DashboardPedagoPage /></LazyRoute>}
+        />
         <Route
           path="/parametres"
-          element={
-            <Suspense fallback={<PageLoader />}>
-              <SettingsPage />
-            </Suspense>
-          }
+          element={<LazyRoute><SettingsPage /></LazyRoute>}
         />
       </Route>
     </Routes>
