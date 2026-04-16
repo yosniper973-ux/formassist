@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Eye, EyeOff, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info } from "lucide-react";
+import { Eye, EyeOff, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { encryptValue, decryptValue } from "@/lib/crypto";
 import { testConnection } from "@/lib/claude";
@@ -164,6 +164,7 @@ export function SettingsPage() {
     { id: "modeles", label: "Modèles IA", icon: <Sliders className="h-4 w-4" /> },
     { id: "budget", label: "Budget", icon: <DollarSign className="h-4 w-4" /> },
     { id: "securite", label: "Sécurité", icon: <Lock className="h-4 w-4" /> },
+    { id: "sauvegardes", label: "Sauvegardes", icon: <HardDrive className="h-4 w-4" /> },
     { id: "apropos", label: "À propos", icon: <Info className="h-4 w-4" /> },
   ];
 
@@ -440,6 +441,9 @@ export function SettingsPage() {
           </Card>
         )}
 
+        {/* ─── Sauvegardes ─── */}
+        {activeSection === "sauvegardes" && <BackupSection />}
+
         {/* ─── À propos ─── */}
         {activeSection === "apropos" && (
           <Card>
@@ -480,5 +484,185 @@ export function SettingsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Section Sauvegardes
+// ============================================================
+
+interface BackupEntry {
+  path: string;
+  name: string;
+  size: number;
+}
+
+function BackupSection() {
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    loadBackups();
+  }, []);
+
+  async function loadBackups() {
+    setLoading(true);
+    try {
+      const result = await invoke<string>("list_backups");
+      const parsed = JSON.parse(result) as BackupEntry[];
+      // Trier par nom décroissant (plus récent en premier)
+      parsed.sort((a, b) => b.name.localeCompare(a.name));
+      setBackups(parsed);
+    } catch (err) {
+      console.error("Erreur chargement sauvegardes:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCreate() {
+    setCreating(true);
+    setMessage(null);
+    try {
+      await invoke("create_backup", { reason: "Manuel depuis les paramètres" });
+      setMessage({ type: "success", text: "Sauvegarde créée avec succès !" });
+      await loadBackups();
+    } catch (err) {
+      setMessage({ type: "error", text: `Erreur : ${err}` });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRestore(backup: BackupEntry) {
+    if (!confirm(`Restaurer la sauvegarde "${backup.name}" ?\n\nUne sauvegarde de sécurité sera créée automatiquement avant la restauration.\n\nL'application devra être redémarrée après la restauration.`)) {
+      return;
+    }
+    setRestoring(true);
+    setMessage(null);
+    try {
+      await invoke("restore_backup", { backupPath: backup.path });
+      setMessage({
+        type: "success",
+        text: "Restauration réussie ! Redémarre l'application pour appliquer les changements.",
+      });
+    } catch (err) {
+      setMessage({ type: "error", text: `Erreur : ${err}` });
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  async function handleExport() {
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const filePath = await save({
+        defaultPath: `formassist_export_${new Date().toISOString().slice(0, 10)}.db`,
+        filters: [{ name: "SQLite Database", extensions: ["db"] }],
+      });
+      if (!filePath) return;
+      await invoke("export_database", { destPath: filePath });
+      setMessage({ type: "success", text: `Base exportée vers ${filePath}` });
+    } catch (err) {
+      setMessage({ type: "error", text: `Erreur export : ${err}` });
+    }
+  }
+
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} o`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sauvegardes</CardTitle>
+        <CardDescription>
+          Crée et restaure des sauvegardes de ta base de données. Toutes tes données
+          (centres, formations, apprenants, contenus, factures) sont incluses.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* Actions */}
+        <div className="flex gap-2">
+          <Button onClick={handleCreate} disabled={creating}>
+            {creating ? (
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            {creating ? "Création..." : "Nouvelle sauvegarde"}
+          </Button>
+          <Button variant="outline" onClick={handleExport}>
+            <Upload className="mr-2 h-4 w-4" />
+            Exporter la BDD
+          </Button>
+        </div>
+
+        {/* Message */}
+        {message && (
+          <div
+            className={`rounded-lg p-3 text-sm ${
+              message.type === "success"
+                ? "bg-green-50 text-green-700 border border-green-200"
+                : "bg-red-50 text-red-700 border border-red-200"
+            }`}
+          >
+            {message.text}
+          </div>
+        )}
+
+        <Separator />
+
+        {/* Liste des sauvegardes */}
+        <div>
+          <Label className="mb-3 block">Sauvegardes disponibles</Label>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : backups.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+              Aucune sauvegarde. Clique sur « Nouvelle sauvegarde » pour en créer une.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {backups.map((b) => (
+                <div
+                  key={b.path}
+                  className="flex items-center justify-between rounded-lg border border-border p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{b.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatSize(b.size)}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRestore(b)}
+                    disabled={restoring}
+                  >
+                    {restoring ? "Restauration..." : "Restaurer"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Avertissement */}
+        <div className="rounded-lg bg-muted p-4 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">💡 Conseil</p>
+          <p className="mt-1">
+            Crée une sauvegarde régulièrement, surtout avant de mettre à jour l'application.
+            Les sauvegardes sont stockées localement dans le dossier de données de l'app.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
