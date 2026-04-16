@@ -36,9 +36,18 @@ jobs:
           # Récupère l'URL du dernier installateur standalone WebView2 x64 via l'API Microsoft
           $response = Invoke-WebRequest -Uri "https://edgeupdates.microsoft.com/api/products?view=enterprise" -UseBasicParsing
           $products = $response.Content | ConvertFrom-Json
-          $stable   = $products | Where-Object { $_.Product -eq "Stable" } | Select-Object -First 1
-          $release  = $stable.Releases | Where-Object { $_.Platform -eq "Windows" -and $_.Architecture -eq "x64" } | Select-Object -First 1
-          $artifact = $release.Artifacts | Where-Object { $_.ArtifactName -like "*WebView2*" } | Select-Object -First 1
+          Write-Host "Produits disponibles : $($products.Product -join ', ')"
+
+          # Le produit WebView2 Runtime est appelé "Edge WebView2" dans l'API
+          $webview2 = $products | Where-Object { $_.Product -eq "Edge WebView2" } | Select-Object -First 1
+          if (-not $webview2) { throw "Produit 'Edge WebView2' non trouvé dans l'API" }
+
+          $release  = $webview2.Releases | Where-Object { $_.Platform -eq "Windows" -and $_.Architecture -eq "x64" } | Select-Object -First 1
+          if (-not $release) { throw "Aucune release Windows x64 trouvée" }
+
+          $artifact = $release.Artifacts | Select-Object -First 1
+          if (-not $artifact -or -not $artifact.Location) { throw "Aucun artifact téléchargeable" }
+
           Write-Host "URL : $($artifact.Location)"
           Invoke-WebRequest -Uri $artifact.Location -OutFile "WebView2Installer.exe"
           $mb = [math]::Round((Get-Item "WebView2Installer.exe").Length / 1MB, 1)
