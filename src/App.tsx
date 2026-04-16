@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { LockScreen } from "@/features/auth/LockScreen";
 import { SetupPassword } from "@/features/auth/SetupPassword";
 import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
+import { ErrorToast } from "@/components/ErrorToast";
+import { logError, classifyError } from "@/lib/errorHandler";
 
 type AppPhase =
   | "loading"
@@ -43,7 +45,7 @@ export function App() {
         setPasswordConfigured(true);
         setPhase("locked");
       } catch (err) {
-        console.error("Erreur initialisation :", err);
+        logError(classifyError(err, "init"), "App.init", err);
         // En cas d'erreur BDD (ex: dev sans Tauri), passer directement à l'app
         setPhase("ready");
         setUnlocked(true);
@@ -76,9 +78,10 @@ export function App() {
 
   if (phase === "onboarding") {
     return (
-      <OnboardingWizard
-        onComplete={() => setPhase("setup_pwd")}
-      />
+      <>
+        <OnboardingWizard onComplete={() => setPhase("setup_pwd")} />
+        <ErrorToast />
+      </>
     );
   }
 
@@ -108,6 +111,7 @@ export function App() {
   return (
     <BrowserRouter>
       <Router />
+      <ErrorToast />
     </BrowserRouter>
   );
 }
