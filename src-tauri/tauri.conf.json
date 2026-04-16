@@ -38,7 +38,12 @@
     "windows": {
       "nsis": {
         "languages": ["French"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installMode": "perMachine",
+        "webviewInstallMode": {
+          "type": "downloadBootstrapper",
+          "silent": false
+        }
       },
       "wix": {
         "language": "fr-FR"
