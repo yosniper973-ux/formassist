@@ -413,32 +413,17 @@ async function updateStyleProfile(data: Record<string, unknown>): Promise<void> 
 // Migrations
 // ============================================================
 
+/**
+ * Les migrations sont appliquées automatiquement par tauri-plugin-sql au chargement.
+ * Cette fonction force simplement l'initialisation de la connexion BDD.
+ */
 async function runMigrations(): Promise<void> {
-  const d = await getDb();
+  // Déclenche le chargement de la BDD (et donc l'application automatique des migrations)
+  await getDb();
+}
 
-  // Check if schema_version table exists
-  const tables = await d.select<Array<{ name: string }>>(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'",
-  );
-
-  let currentVersion = 0;
-  if (tables.length > 0) {
-    const versions = await d.select<Array<{ version: number }>>(
-      "SELECT MAX(version) as version FROM schema_version",
-    );
-    currentVersion = versions[0]?.version ?? 0;
-  }
-
-  if (currentVersion < 1) {
-    // Fetch and execute the initial migration
-    const response = await fetch("/migrations/001_initial.sql");
-    if (!response.ok) {
-      // Migrations are compiled into the Rust binary,
-      // so we run them via a Tauri command or inline
-      // For now, execute them directly
-      console.log("Migration v1 will be applied by the Rust backend");
-    }
-  }
+async function deleteConfig(key: string): Promise<void> {
+  await execute("DELETE FROM app_config WHERE key = ?", [key]);
 }
 
 // ============================================================
@@ -451,6 +436,7 @@ export const db = {
   execute,
   generateId,
   runMigrations,
+  deleteConfig,
   // Config
   getConfig,
   setConfig,

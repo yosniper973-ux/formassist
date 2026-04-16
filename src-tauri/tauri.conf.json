@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "title": "FormAssist",
     "windows": [
       {
         "title": "FormAssist",

@@ -1,5 +1,14 @@
 import { Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/layout/AppShell";
+
+// Chargement paresseux des pages pour réduire le bundle initial
+const CentresPage = lazy(() =>
+  import("@/features/centres/CentresPage").then((m) => ({ default: m.CentresPage })),
+);
+const SettingsPage = lazy(() =>
+  import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 
 function Placeholder({ name }: { name: string }) {
   return (
@@ -10,12 +19,27 @@ function Placeholder({ name }: { name: string }) {
   );
 }
 
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
 export function Router() {
   return (
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<Placeholder name="Tableau de bord" />} />
-        <Route path="/centres" element={<Placeholder name="Centres de formation" />} />
+        <Route
+          path="/centres"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <CentresPage />
+            </Suspense>
+          }
+        />
         <Route path="/formations" element={<Placeholder name="Formations" />} />
         <Route path="/apprenants" element={<Placeholder name="Apprenants" />} />
         <Route path="/planning" element={<Placeholder name="Planning" />} />
@@ -25,7 +49,14 @@ export function Router() {
         <Route path="/facturation" element={<Placeholder name="Facturation" />} />
         <Route path="/finances" element={<Placeholder name="Tableau financier" />} />
         <Route path="/statistiques" element={<Placeholder name="Statistiques pédagogiques" />} />
-        <Route path="/parametres" element={<Placeholder name="Paramètres" />} />
+        <Route
+          path="/parametres"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <SettingsPage />
+            </Suspense>
+          }
+        />
       </Route>
     </Routes>
   );
