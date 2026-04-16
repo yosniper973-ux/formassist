@@ -30,6 +30,11 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Download WebView2 Bootstrapper
+        run: |
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "WebView2Bootstrapper.exe"
+          Write-Host "WebView2Bootstrapper.exe téléchargé : $(Get-Item WebView2Bootstrapper.exe | Select-Object -ExpandProperty Length) octets"
+
       - name: Install frontend dependencies
         run: npm ci
 
