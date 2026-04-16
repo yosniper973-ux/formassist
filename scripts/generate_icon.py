@@ -83,7 +83,7 @@ def main() -> None:
     for size, filename in sizes:
         img = create_icon(size)
         img.save(os.path.join(OUT_DIR, filename))
-        print(f"  ✅ {filename} ({size}x{size})")
+        print(f"  [OK] {filename} ({size}x{size})")
 
     # ICO multi-résolution (Windows)
     master = create_icon(256)
@@ -92,14 +92,14 @@ def main() -> None:
         format="ICO",
         sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
     )
-    print("  ✅ icon.ico (multi-résolution)")
+    print("  [OK] icon.ico (multi-resolution)")
 
     # Image source haute définition (pour usages ultérieurs)
     hd = create_icon(512)
     hd.save(os.path.join(OUT_DIR, "icon.png"))
-    print("  ✅ icon.png (512x512)")
+    print("  [OK] icon.png (512x512)")
 
-    print("✅ Icônes FormAssist générées")
+    print("[OK] Icones FormAssist generees")
 
 
 if __name__ == "__main__":
