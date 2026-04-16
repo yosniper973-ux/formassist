@@ -51,9 +51,7 @@
   },
   "plugins": {
     "sql": {
-      "preload": {
-        "db": "sqlite:formassist.db"
-      }
+      "preload": ["sqlite:formassist.db"]
     }
   }
 }
