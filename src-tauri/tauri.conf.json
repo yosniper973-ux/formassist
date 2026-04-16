@@ -49,7 +49,7 @@
     },
     "updater": {
       "endpoints": [
-        "https://github.com/OWNER/formassist/releases/latest/download/latest.json"
+        "https://github.com/yosniper973-ux/formassist/releases/latest/download/latest.json"
       ],
       "dialog": false,
       "pubkey": ""
