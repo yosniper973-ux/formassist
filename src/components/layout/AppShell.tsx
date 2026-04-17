@@ -7,6 +7,8 @@ import { Header } from "./Header";
 import { HelpBanner } from "@/components/help/HelpBanner";
 import { useAutoLock } from "@/hooks/useAutoLock";
 import { useOnline } from "@/hooks/useOnline";
+import { useAppStore } from "@/stores/appStore";
+import { db } from "@/lib/db";
 import { Download, X, Loader2 } from "lucide-react";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,6 +100,7 @@ export function AppShell() {
   useOnline();
 
   const location = useLocation();
+  const setMonthlyApiCost = useAppStore((s) => s.setMonthlyApiCost);
   const [pending, setPending] = useState<PendingUpdate | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -113,6 +116,20 @@ export function AppShell() {
     }, 3000);
     return () => clearTimeout(timer);
   }, []);
+
+  // Synchronise le coût API mensuel (header) depuis la DB à chaque navigation
+  useEffect(() => {
+    (async () => {
+      try {
+        const now = new Date();
+        const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+        const cost = await db.getMonthlyApiCost(monthStart);
+        setMonthlyApiCost(cost);
+      } catch {
+        // Silencieux si DB pas prête
+      }
+    })();
+  }, [location.pathname, setMonthlyApiCost]);
 
   async function handleInstall() {
     if (!pending) return;
