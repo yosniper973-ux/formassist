@@ -16,6 +16,8 @@ pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 pub fn get_app_version() -> String {
+    // Version lue depuis Cargo.toml (CARGO_PKG_VERSION) au moment de la
+    // compilation. Cargo.toml et tauri.conf.json doivent être bumpés ensemble.
     env!("CARGO_PKG_VERSION").to_string()
 }
 
