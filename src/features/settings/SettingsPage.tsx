@@ -112,7 +112,10 @@ export function SettingsPage() {
   }
 
   async function saveApiKey() {
-    const cleaned = apiKey.trim();
+    // Nettoyage agressif : enlève espaces/newlines même au milieu (les clés
+    // Anthropic ne contiennent jamais de whitespace, mais le copier-coller
+    // peut en introduire depuis des emails ou des terminaux).
+    const cleaned = apiKey.replace(/\s+/g, "");
     if (!cleaned || cleaned.startsWith("(")) return;
     setSaveStatus("saving");
     try {

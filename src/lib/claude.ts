@@ -122,6 +122,12 @@ export async function checkBudget(estimatedCost: number): Promise<{
   };
 }
 
+/** Nettoie une clé API : enlève TOUS les whitespace (début, fin, et au milieu).
+ *  Les vraies clés Anthropic ne contiennent jamais d'espaces ni de newlines. */
+function sanitizeKey(raw: string): string {
+  return raw.replace(/\s+/g, "");
+}
+
 /** Récupère et déchiffre la clé API stockée en base */
 async function loadApiKey(): Promise<string> {
   const stored = await db.getConfig("api_key");
@@ -130,21 +136,32 @@ async function loadApiKey(): Promise<string> {
   }
 
   // La clé est chiffrée AES-256-GCM au moment du save (Settings + SetupPassword).
-  // Fallback : si le déchiffrement échoue (ex. ancienne installation qui aurait
-  // stocké en clair), on retombe sur la valeur brute.
+  // Fallback : si le déchiffrement échoue, on ne tombe sur la valeur brute QUE
+  // si elle ressemble à une vraie clé Anthropic (évite d'envoyer le ciphertext
+  // base64 à Anthropic, ce qui produit un 401 mystérieux).
   let apiKey: string;
   try {
     apiKey = await decryptValue(stored);
   } catch {
-    apiKey = stored;
+    const looksLikeAnthropicKey = stored.trim().startsWith("sk-ant-");
+    if (looksLikeAnthropicKey) {
+      apiKey = stored;
+    } else {
+      throw new Error(
+        "Impossible de déchiffrer la clé API (ciphertext en base). Ouvre Paramètres → Clé API, recolle ta clé et clique « Enregistrer la clé ».",
+      );
+    }
   }
 
-  // Nettoyage défensif : un copier-coller peut introduire espaces ou retour-ligne
-  // que l'API Anthropic rejette avec un 401.
-  apiKey = apiKey.trim();
+  apiKey = sanitizeKey(apiKey);
 
   if (!apiKey) {
     throw new Error("Clé API vide. Reconfigure-la dans les paramètres.");
+  }
+  if (!apiKey.startsWith("sk-ant-")) {
+    throw new Error(
+      `Format de clé invalide : commence par « ${apiKey.slice(0, 8)}… » au lieu de « sk-ant- ». Reconfigure la clé dans Paramètres.`,
+    );
   }
   return apiKey;
 }
@@ -288,8 +305,21 @@ function parseApiError(status: number, body: string): string {
 export async function testConnection(apiKey: string): Promise<{
   success: boolean;
   error?: string;
+  debug?: { length: number; prefix: string; suffix: string };
 }> {
-  const cleanedKey = apiKey.trim();
+  const cleanedKey = sanitizeKey(apiKey);
+  const debug = {
+    length: cleanedKey.length,
+    prefix: cleanedKey.slice(0, 14),
+    suffix: cleanedKey.slice(-4),
+  };
+  if (!cleanedKey.startsWith("sk-ant-")) {
+    return {
+      success: false,
+      error: `La clé ne commence pas par « sk-ant- » (commence par « ${cleanedKey.slice(0, 8)} », longueur ${cleanedKey.length}). Copie-la à nouveau depuis console.anthropic.com.`,
+      debug,
+    };
+  }
   try {
     const response = await tauriFetch(API_URL, {
       method: "POST",
@@ -306,15 +336,22 @@ export async function testConnection(apiKey: string): Promise<{
     });
 
     if (response.ok) {
-      return { success: true };
+      return { success: true, debug };
     }
 
     const body = await response.text();
-    return { success: false, error: parseApiError(response.status, body) };
+    const baseError = parseApiError(response.status, body);
+    // Sur 401, on ajoute le diagnostic de longueur pour détecter caractères parasites
+    const errorWithDebug =
+      response.status === 401
+        ? `${baseError} [Debug clé envoyée : longueur=${debug.length}, début=« ${debug.prefix} », fin=« …${debug.suffix} »]`
+        : baseError;
+    return { success: false, error: errorWithDebug, debug };
   } catch (err) {
     return {
       success: false,
       error: "Impossible de se connecter à internet. Vérifie ta connexion.",
+      debug,
     };
   }
 }
