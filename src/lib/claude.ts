@@ -213,6 +213,9 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
           "anthropic-version": API_VERSION,
+          // Tauri-plugin-http route la requête via la webview : Anthropic la
+          // détecte comme "CORS request" et exige cet header pour l'autoriser.
+          "anthropic-dangerous-direct-browser-access": "true",
         },
         body: JSON.stringify(body),
       });
@@ -327,6 +330,7 @@ export async function testConnection(apiKey: string): Promise<{
         "Content-Type": "application/json",
         "x-api-key": cleanedKey,
         "anthropic-version": API_VERSION,
+        "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
         model: MODELS.haiku.id,
