@@ -14,6 +14,7 @@ import {
   Settings,
   PiggyBank,
   Palette,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,7 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   return (
-    <aside className="flex h-full w-60 flex-col border-r bg-card">
+    <aside className="flex h-full w-60 flex-col border-r" style={{ background: "hsl(var(--sidebar))" }}>
       {/* Logo */}
       <div className="flex h-14 items-center gap-2 border-b px-4">
         <Sparkles className="h-6 w-6 text-primary" />
@@ -63,8 +64,22 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Paramètres en bas */}
-      <div className="border-t p-3">
+      {/* Aide + Paramètres en bas */}
+      <div className="border-t p-3 space-y-1">
+        <NavLink
+          to="/aide"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              isActive
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )
+          }
+        >
+          <HelpCircle className="h-4 w-4" />
+          <span>Aide</span>
+        </NavLink>
         <NavLink
           to="/parametres"
           className={({ isActive }) =>

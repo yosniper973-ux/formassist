@@ -42,6 +42,9 @@ const DashboardPedagoPage = lazy(() =>
 const DashboardFinancePage = lazy(() =>
   import("@/features/dashboard/DashboardFinancePage").then((m) => ({ default: m.DashboardFinancePage })),
 );
+const HelpPage = lazy(() =>
+  import("@/features/help/HelpPage").then((m) => ({ default: m.HelpPage })),
+);
 
 function PageLoader() {
   return (
@@ -118,6 +121,10 @@ export function Router() {
         <Route
           path="/parametres"
           element={<LazyRoute><SettingsPage /></LazyRoute>}
+        />
+        <Route
+          path="/aide"
+          element={<LazyRoute><HelpPage /></LazyRoute>}
         />
       </Route>
     </Routes>
