@@ -13,22 +13,22 @@ export interface ModelConfig {
  */
 export const MODELS: Record<ModelTier, ModelConfig> = {
   opus: {
-    id: "claude-opus-4-20250514",
-    displayName: "Claude Opus 4",
-    inputCostPer1M: 15.0,
-    outputCostPer1M: 75.0,
+    id: "claude-opus-4-7",
+    displayName: "Claude Opus 4.7",
+    inputCostPer1M: 5.0,
+    outputCostPer1M: 25.0,
   },
   sonnet: {
-    id: "claude-sonnet-4-20250514",
-    displayName: "Claude Sonnet 4",
+    id: "claude-sonnet-4-6",
+    displayName: "Claude Sonnet 4.6",
     inputCostPer1M: 3.0,
     outputCostPer1M: 15.0,
   },
   haiku: {
     id: "claude-haiku-4-5-20251001",
     displayName: "Claude Haiku 4.5",
-    inputCostPer1M: 0.80,
-    outputCostPer1M: 4.0,
+    inputCostPer1M: 1.0,
+    outputCostPer1M: 5.0,
   },
 };
 
