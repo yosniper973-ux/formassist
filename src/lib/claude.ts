@@ -9,6 +9,7 @@ import type {
 } from "@/types/api";
 import { getPromptForTask } from "@/prompts";
 import { db } from "@/lib/db";
+import { decryptValue } from "@/lib/crypto";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
@@ -121,12 +122,36 @@ export async function checkBudget(estimatedCost: number): Promise<{
   };
 }
 
-/** Appel principal à l'API Claude */
-export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
-  const apiKey = await db.getConfig("api_key");
-  if (!apiKey) {
+/** Récupère et déchiffre la clé API stockée en base */
+async function loadApiKey(): Promise<string> {
+  const stored = await db.getConfig("api_key");
+  if (!stored) {
     throw new Error("Clé API non configurée. Ouvre les paramètres pour la configurer.");
   }
+
+  // La clé est chiffrée AES-256-GCM au moment du save (Settings + SetupPassword).
+  // Fallback : si le déchiffrement échoue (ex. ancienne installation qui aurait
+  // stocké en clair), on retombe sur la valeur brute.
+  let apiKey: string;
+  try {
+    apiKey = await decryptValue(stored);
+  } catch {
+    apiKey = stored;
+  }
+
+  // Nettoyage défensif : un copier-coller peut introduire espaces ou retour-ligne
+  // que l'API Anthropic rejette avec un 401.
+  apiKey = apiKey.trim();
+
+  if (!apiKey) {
+    throw new Error("Clé API vide. Reconfigure-la dans les paramètres.");
+  }
+  return apiKey;
+}
+
+/** Appel principal à l'API Claude */
+export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
+  const apiKey = await loadApiKey();
 
   const model = await resolveModel(req.task, req.modelOverride);
   const modelId = MODELS[model].id;
@@ -248,12 +273,13 @@ export async function testConnection(apiKey: string): Promise<{
   success: boolean;
   error?: string;
 }> {
+  const cleanedKey = apiKey.trim();
   try {
     const response = await tauriFetch(API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
+        "x-api-key": cleanedKey,
         "anthropic-version": API_VERSION,
       },
       body: JSON.stringify({

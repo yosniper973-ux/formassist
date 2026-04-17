@@ -110,11 +110,14 @@ export function SettingsPage() {
   }
 
   async function saveApiKey() {
-    if (!apiKey || apiKey.startsWith("(")) return;
+    const cleaned = apiKey.trim();
+    if (!cleaned || cleaned.startsWith("(")) return;
     setSaveStatus("saving");
     try {
-      const encrypted = await encryptValue(apiKey);
+      const encrypted = await encryptValue(cleaned);
       await db.setConfig("api_key", encrypted, true);
+      // Reflète la version nettoyée dans le champ (sans espaces parasites)
+      setApiKey(cleaned);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {

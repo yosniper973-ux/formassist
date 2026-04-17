@@ -46,7 +46,8 @@ export function OnboardingWizard({ onComplete }: Props) {
     try {
       // La clé API est stockée temporairement en clair (pas de clé de chiffrement
       // disponible avant la création du mot de passe). SetupPassword la rechiffre.
-      await db.setConfig("api_key_pending", apiKey, false);
+      // trim() supprime espaces et retours-lignes éventuels du copier-coller.
+      await db.setConfig("api_key_pending", apiKey.trim(), false);
 
       // Paramètres généraux
       await db.setConfig("model_preset", preset);
