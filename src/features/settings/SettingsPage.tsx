@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { Eye, EyeOff, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { encryptValue, decryptValue } from "@/lib/crypto";
@@ -475,6 +477,10 @@ export function SettingsPage() {
 
               <Separator />
 
+              <UpdateChecker currentVersion={appVersion || "0.1.0"} />
+
+              <Separator />
+
               <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground">
                 <p>
                   FormAssist est un assistant pédagogique conçu pour les formatrices
@@ -667,5 +673,176 @@ function BackupSection() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ============================================================
+// Section Mise à jour de l'application
+// ============================================================
+
+type UpdateStatus =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "available"; version: string; notes?: string }
+  | { kind: "up_to_date" }
+  | { kind: "downloading"; downloaded: number; total: number | null }
+  | { kind: "installed" }
+  | { kind: "error"; message: string };
+
+function UpdateChecker({ currentVersion }: { currentVersion: string }) {
+  const [status, setStatus] = useState<UpdateStatus>({ kind: "idle" });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pendingUpdate, setPendingUpdate] = useState<any | null>(null);
+
+  async function handleCheck() {
+    setStatus({ kind: "checking" });
+    try {
+      const update = await checkUpdate();
+      if (update) {
+        setPendingUpdate(update);
+        setStatus({
+          kind: "available",
+          version: update.version,
+          notes: update.body ?? undefined,
+        });
+      } else {
+        setStatus({ kind: "up_to_date" });
+      }
+    } catch (err) {
+      setStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  async function handleInstall() {
+    if (!pendingUpdate) return;
+    setStatus({ kind: "downloading", downloaded: 0, total: null });
+    try {
+      let downloaded = 0;
+      let total: number | null = null;
+
+      await pendingUpdate.downloadAndInstall(
+        (event: {
+          event: "Started" | "Progress" | "Finished";
+          data?: { contentLength?: number; chunkLength?: number };
+        }) => {
+          if (event.event === "Started") {
+            total = event.data?.contentLength ?? null;
+            setStatus({ kind: "downloading", downloaded: 0, total });
+          } else if (event.event === "Progress") {
+            downloaded += event.data?.chunkLength ?? 0;
+            setStatus({ kind: "downloading", downloaded, total });
+          } else if (event.event === "Finished") {
+            setStatus({ kind: "installed" });
+          }
+        },
+      );
+
+      // Une fois l'installation terminée, on relance automatiquement
+      await relaunch();
+    } catch (err) {
+      setStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  function formatMB(bytes: number): string {
+    return (bytes / (1024 * 1024)).toFixed(1);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Mise à jour automatique</p>
+          <p className="text-xs text-muted-foreground">
+            Version installée : {currentVersion}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCheck}
+          disabled={
+            status.kind === "checking" || status.kind === "downloading"
+          }
+        >
+          {status.kind === "checking" ? (
+            <>
+              <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+              Vérification…
+            </>
+          ) : (
+            <>
+              <Download className="mr-2 h-3.5 w-3.5" />
+              Vérifier
+            </>
+          )}
+        </Button>
+      </div>
+
+      {status.kind === "up_to_date" && (
+        <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          <Check className="mr-1.5 inline h-3.5 w-3.5" />
+          Tu es à jour. Aucune nouvelle version disponible.
+        </div>
+      )}
+
+      {status.kind === "available" && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+          <p className="font-medium text-primary">
+            🎉 Nouvelle version disponible : v{status.version}
+          </p>
+          {status.notes && (
+            <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
+              {status.notes}
+            </p>
+          )}
+          <Button size="sm" className="mt-3" onClick={handleInstall}>
+            <Download className="mr-2 h-3.5 w-3.5" />
+            Télécharger et installer
+          </Button>
+        </div>
+      )}
+
+      {status.kind === "downloading" && (
+        <div className="rounded-md border bg-muted/40 p-3 text-sm">
+          <p className="font-medium">Téléchargement en cours…</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatMB(status.downloaded)} Mo
+            {status.total ? ` / ${formatMB(status.total)} Mo` : ""}
+          </p>
+          {status.total && (
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-primary transition-all"
+                style={{
+                  width: `${Math.min(100, (status.downloaded / status.total) * 100)}%`,
+                }}
+              />
+            </div>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            L'application redémarrera automatiquement à la fin.
+          </p>
+        </div>
+      )}
+
+      {status.kind === "installed" && (
+        <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          Installation terminée. Redémarrage…
+        </div>
+      )}
+
+      {status.kind === "error" && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          Erreur : {status.message}
+        </div>
+      )}
+    </div>
   );
 }

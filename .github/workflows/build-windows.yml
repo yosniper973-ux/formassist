@@ -113,6 +113,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signature Ed25519 des installateurs pour la mise à jour automatique
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: "FormAssist v__VERSION__"
@@ -120,8 +123,13 @@ jobs:
             Installation Windows de FormAssist.
 
             Télécharge le fichier `.msi` ou `.exe` ci-dessous et lance l'installation.
+
+            À partir de cette version, les mises à jour se font automatiquement via
+            le bouton "Vérifier les mises à jour" dans l'application (Paramètres → À propos).
           releaseDraft: false
           prerelease: false
+          # Génère aussi le latest.json + les fichiers de signature .sig pour l'updater
+          includeUpdaterJson: true
 
       # Aussi uploader en artifact (accessible sans Release)
       - name: Upload MSI artifact
