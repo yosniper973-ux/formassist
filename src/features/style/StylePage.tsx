@@ -75,7 +75,21 @@ export function StylePage() {
         const p = row as unknown as StyleProfile;
         setProfile(p);
         setSelfDescription(p.self_description ?? "");
-        setSampleFiles(p.sample_files ?? []);
+        // sample_files est stocké en JSON string par SQLite, il faut le parser en array.
+        // Sans ce parse, sampleFiles.map() plante (les strings n'ont pas .map) → page blanche.
+        const raw = p.sample_files as unknown;
+        let files: string[] = [];
+        if (Array.isArray(raw)) {
+          files = raw as string[];
+        } else if (typeof raw === "string" && raw.trim().length > 0) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) files = parsed;
+          } catch {
+            files = [];
+          }
+        }
+        setSampleFiles(files);
         setAnalyzedProfile(p.analyzed_profile ?? null);
         setConfirmed(p.confirmed ?? false);
 

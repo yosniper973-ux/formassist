@@ -245,26 +245,42 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
   throw lastError ?? new Error("Erreur inconnue lors de l'appel à Claude");
 }
 
-/** Parse les erreurs API en messages compréhensibles */
+/** Extrait le message d'erreur humain depuis le corps JSON renvoyé par Anthropic */
+function extractAnthropicMessage(body: string): string {
+  try {
+    const parsed = JSON.parse(body);
+    // Format Anthropic : { "type": "error", "error": { "type": "...", "message": "..." } }
+    const msg = parsed?.error?.message;
+    if (typeof msg === "string" && msg.length > 0) return msg;
+  } catch {
+    /* body pas JSON, on retourne la version brute tronquée */
+  }
+  return body.length > 300 ? body.slice(0, 300) + "…" : body;
+}
+
+/** Parse les erreurs API en messages compréhensibles, en incluant le détail d'Anthropic */
 function parseApiError(status: number, body: string): string {
+  const detail = extractAnthropicMessage(body);
   switch (status) {
     case 401:
-      return "Clé API invalide. Vérifie ta clé dans les paramètres.";
+      return `Clé API refusée par Anthropic (401). Message exact : « ${detail} »`;
     case 403:
-      return "Accès refusé. Ta clé API n'a peut-être pas les permissions nécessaires.";
+      return `Accès refusé (403). Message Anthropic : « ${detail} »`;
     case 400: {
-      if (body.includes("credit")) {
+      if (body.toLowerCase().includes("credit")) {
         return "Crédit insuffisant sur ton compte Anthropic. Ajoute du crédit sur console.anthropic.com.";
       }
-      return `Erreur dans la requête : ${body}`;
+      return `Erreur dans la requête (400) : « ${detail} »`;
     }
+    case 404:
+      return `Modèle introuvable (404) : « ${detail} »`;
     case 429:
       return "Trop de requêtes. Réessaie dans quelques secondes.";
     case 500:
     case 529:
       return "Les serveurs Claude sont temporairement surchargés. Réessaie dans un moment.";
     default:
-      return `Erreur inattendue (${status}) : ${body}`;
+      return `Erreur inattendue (${status}) : « ${detail} »`;
   }
 }
 
