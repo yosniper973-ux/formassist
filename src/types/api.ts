@@ -17,9 +17,25 @@ export type TaskType =
   | "qcm_simple"
   | "reformulation";
 
+export interface ClaudeTextBlock {
+  type: "text";
+  text: string;
+}
+
+export interface ClaudeDocumentBlock {
+  type: "document";
+  source: {
+    type: "base64";
+    media_type: "application/pdf";
+    data: string;
+  };
+}
+
+export type ClaudeContentBlock = ClaudeTextBlock | ClaudeDocumentBlock;
+
 export interface ClaudeMessage {
   role: "user" | "assistant";
-  content: string;
+  content: string | ClaudeContentBlock[];
 }
 
 export interface ClaudeRequest {

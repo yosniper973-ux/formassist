@@ -199,7 +199,8 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
     system: systemPrompt,
     messages: req.messages.map((m) => ({
       role: m.role,
-      content: m.content,
+      // content peut être un string ou un tableau de blocs (document PDF, texte…)
+      content: Array.isArray(m.content) ? m.content : m.content,
     })),
   };
 
@@ -231,10 +232,16 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
         throw new Error(parseApiError(response.status, errorBody));
       }
 
-      const data = await response.json();
+      // response.json() de tauri-plugin-http peut silencieusement échouer
+      // sur certaines versions → on parse manuellement via .text()
+      const responseText = await response.text();
+      const data = JSON.parse(responseText) as {
+        content?: Array<{ type: string; text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
       const content = data.content?.[0]?.text ?? "";
-      const inputTokens = data.usage?.input_tokens ?? 0;
-      const outputTokens = data.usage?.output_tokens ?? 0;
+      const inputTokens = Number(data.usage?.input_tokens ?? 0);
+      const outputTokens = Number(data.usage?.output_tokens ?? 0);
       const costEuros = computeCost(model, inputTokens, outputTokens);
 
       // Log usage

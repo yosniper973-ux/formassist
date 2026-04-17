@@ -11,10 +11,12 @@ import {
   Trash2,
   ClipboardList,
   AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { request as claudeRequest } from "@/lib/claude";
 import type { Formation, CCP, Competence, EvaluationCriterion, ExtraActivity } from "@/types";
+import type { ClaudeContentBlock } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -113,16 +115,37 @@ export function FormationDetail({ formation, onBack }: Props) {
     setParseError("");
 
     try {
-      const text = await file.text();
+      const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+
+      let messageContent: string | ClaudeContentBlock[];
+
+      if (isPdf) {
+        // Anthropic lit les PDFs nativement via base64 — bien meilleur que file.text()
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        const chunks: string[] = [];
+        for (let i = 0; i < bytes.byteLength; i += 65536) {
+          chunks.push(String.fromCharCode(...bytes.subarray(i, i + 65536)));
+        }
+        const base64 = btoa(chunks.join(""));
+        messageContent = [
+          {
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: base64 },
+          },
+          {
+            type: "text",
+            text: `Voici le REAC (Référentiel Emploi Activités Compétences) pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète : tous les CCP, toutes les compétences (CP) de chaque CCP, tous les critères d'évaluation, et les activités-types. Ne saute aucune compétence, même si le document est dense.`,
+          },
+        ];
+      } else {
+        const text = await file.text();
+        messageContent = `Voici le contenu d'un document REAC pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète (CCP, compétences, critères d'évaluation, activités-types).\n\n---\n\n${text}`;
+      }
 
       const result = await claudeRequest({
         task: "parsing_reac",
-        messages: [
-          {
-            role: "user",
-            content: `Voici le contenu d'un document REAC pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète (CCP, compétences, critères d'évaluation, activités-types).\n\n---\n\n${text}`,
-          },
-        ],
+        messages: [{ role: "user", content: messageContent }],
       });
 
       // Extraire le JSON de la réponse
@@ -176,6 +199,41 @@ export function FormationDetail({ formation, onBack }: Props) {
       console.error(err);
     } finally {
       setParsing(false);
+    }
+  }
+
+  // ─── Suppression du REAC ───
+
+  async function handleDeleteReac() {
+    const confirmed = window.confirm(
+      `Supprimer le REAC de cette formation ?\n\nTous les CCP, compétences et critères d'évaluation seront définitivement supprimés.\nTu pourras réimporter un nouveau REAC corrigé.`,
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const existingCcps = await db.query<{ id: string }>(
+        "SELECT id FROM ccps WHERE formation_id = ?",
+        [formation.id],
+      );
+      for (const ccp of existingCcps) {
+        const comps = await db.query<{ id: string }>(
+          "SELECT id FROM competences WHERE ccp_id = ?",
+          [ccp.id],
+        );
+        for (const comp of comps) {
+          await db.execute("DELETE FROM evaluation_criteria WHERE competence_id = ?", [comp.id]);
+        }
+        await db.execute("DELETE FROM competences WHERE ccp_id = ?", [ccp.id]);
+      }
+      await db.execute("DELETE FROM ccps WHERE formation_id = ?", [formation.id]);
+      await db.execute(
+        "UPDATE formations SET reac_parsed = 0, updated_at = datetime('now') WHERE id = ?",
+        [formation.id],
+      );
+      await loadReac();
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -287,23 +345,33 @@ export function FormationDetail({ formation, onBack }: Props) {
                 />
               ) : (
                 <>
-                  {/* Bouton réimporter */}
+                  {/* Bouton réimporter + supprimer */}
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
                       {ccps.length} CCP — {totalCompetences} compétences
                     </p>
-                    <label className="cursor-pointer">
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept=".pdf,.docx,.xlsx,.csv,.txt"
-                        onChange={handleReacFile}
-                      />
-                      <span className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
-                        <Upload className="h-3.5 w-3.5" />
-                        Réimporter
-                      </span>
-                    </label>
+                    <div className="flex items-center gap-2">
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.docx,.xlsx,.csv,.txt"
+                          onChange={handleReacFile}
+                        />
+                        <span className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Réimporter
+                        </span>
+                      </label>
+                      <button
+                        onClick={handleDeleteReac}
+                        className="flex items-center gap-1.5 rounded-md border border-destructive/30 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                        title="Supprimer le REAC"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Supprimer
+                      </button>
+                    </div>
                   </div>
 
                   {parseError && (
