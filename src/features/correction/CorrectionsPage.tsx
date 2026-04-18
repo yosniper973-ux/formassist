@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { CorrectionDetailDialog } from "./CorrectionDetailDialog";
 
 // ─── Types locaux ───────────────────────────────────────────────────────────
 
@@ -943,6 +944,7 @@ function HistoryTab({
   onDeleted: () => void;
 }) {
   const [toDelete, setToDelete] = useState<CorrectionWithDetails | null>(null);
+  const [openDetailId, setOpenDetailId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -964,7 +966,12 @@ function HistoryTab({
   return (
     <div className="space-y-3">
       {history.map((c) => (
-        <div key={c.id} className="flex items-center gap-4 rounded-xl border bg-card p-4">
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => setOpenDetailId(c.id)}
+          className="flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+        >
           {/* Initiales */}
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
             {(c.learner_first_name?.[0] ?? "?")}{(c.learner_last_name?.[0] ?? "?")}
@@ -1007,17 +1014,27 @@ function HistoryTab({
             </Badge>
           )}
 
-          <button
-            onClick={() => setToDelete(c)}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); setToDelete(c); }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setToDelete(c); } }}
             className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
             aria-label="Supprimer la correction"
           >
             <Trash2 className="h-4 w-4" />
-          </button>
+          </span>
 
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        </div>
+        </button>
       ))}
+
+      {openDetailId && (
+        <CorrectionDetailDialog
+          correctionId={openDetailId}
+          onClose={() => setOpenDetailId(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={toDelete !== null}

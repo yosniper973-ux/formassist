@@ -8,6 +8,7 @@ import {
   Pencil,
   Trash2,
   GraduationCap,
+  BarChart3,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
@@ -20,6 +21,7 @@ import { Select } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { LearnerDetailDialog } from "./LearnerDetailDialog";
 
 export function ApprenantsPage() {
   const { activeCentreId } = useAppStore();
@@ -38,6 +40,7 @@ export function ApprenantsPage() {
   const [showImport, setShowImport] = useState(false);
   const [toDeleteGroup, setToDeleteGroup] = useState<Group | null>(null);
   const [toDeleteLearner, setToDeleteLearner] = useState<Learner | null>(null);
+  const [detailLearner, setDetailLearner] = useState<Learner | null>(null);
 
   interface GroupWithLearners extends Group {
     learners: Learner[];
@@ -201,7 +204,8 @@ export function ApprenantsPage() {
                   {group.learners.map((learner, i) => (
                     <div
                       key={learner.id}
-                      className={`flex items-center gap-3 px-4 py-3 ${
+                      onClick={() => setDetailLearner(learner)}
+                      className={`group/learner flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 ${
                         i < group.learners.length - 1 ? "border-b" : ""
                       }`}
                     >
@@ -221,8 +225,12 @@ export function ApprenantsPage() {
                           Besoins spécifiques
                         </Badge>
                       )}
+                      <span className="hidden items-center gap-1 text-xs text-primary group-hover/learner:flex">
+                        <BarChart3 className="h-3.5 w-3.5" /> Suivi
+                      </span>
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setTargetGroupId(group.id);
                           setEditLearner(learner);
                           setShowLearnerForm(true);
@@ -232,7 +240,7 @@ export function ApprenantsPage() {
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => setToDeleteLearner(learner)}
+                        onClick={(e) => { e.stopPropagation(); setToDeleteLearner(learner); }}
                         className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
                         aria-label="Supprimer l'apprenant"
                       >
@@ -306,6 +314,13 @@ export function ApprenantsPage() {
         }}
         onCancel={() => setToDeleteLearner(null)}
       />
+
+      {detailLearner && (
+        <LearnerDetailDialog
+          learner={detailLearner}
+          onClose={() => setDetailLearner(null)}
+        />
+      )}
     </div>
   );
 }
