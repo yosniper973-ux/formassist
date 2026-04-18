@@ -10,6 +10,7 @@ import {
   Trash2,
   Upload,
   X,
+  Mail,
   FileText as FileTextIcon,
   Image as ImageIcon,
 } from "lucide-react";
@@ -88,6 +89,7 @@ export function CorrectionsPage() {
   const [adjustedGrade, setAdjustedGrade] = useState("");
   const [validated, setValidated] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedCorrectionId, setSavedCorrectionId] = useState<string | null>(null);
 
   // History
   const [history, setHistory] = useState<CorrectionWithDetails[]>([]);
@@ -386,6 +388,7 @@ ${instructions}`;
       );
 
       setValidated(true);
+      setSavedCorrectionId(id);
     } catch {
       setError("Erreur lors de l'enregistrement.");
     } finally {
@@ -402,6 +405,7 @@ ${instructions}`;
     setValidated(false);
     setAdjustedGrade("");
     setError("");
+    setSavedCorrectionId(null);
   }
 
   // ─── Grade color helper ────────────────────────────────────────────────
@@ -547,6 +551,7 @@ ${instructions}`;
           onGradeChange={setAdjustedGrade}
           onValidate={handleValidate}
           onNewCorrection={handleNewCorrection}
+          savedCorrectionId={savedCorrectionId}
           gradeColor={gradeColor}
           gradeBg={gradeBg}
         />
@@ -591,6 +596,7 @@ function NewCorrectionTab({
   onGradeChange,
   onValidate,
   onNewCorrection,
+  savedCorrectionId,
   gradeColor,
   gradeBg,
 }: {
@@ -626,24 +632,43 @@ function NewCorrectionTab({
   onGradeChange: (grade: string) => void;
   onValidate: () => void;
   onNewCorrection: () => void;
+  savedCorrectionId: string | null;
   gradeColor: (grade: number, max: number) => string;
   gradeBg: (grade: number, max: number) => string;
 }) {
+  const [showEmailDialog, setShowEmailDialog] = useState(false);
+
   if (validated) {
     return (
-      <div className="flex flex-col items-center gap-4 py-16">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-          <Check className="h-8 w-8 text-green-600" />
+      <>
+        <div className="flex flex-col items-center gap-4 py-16">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+            <Check className="h-8 w-8 text-green-600" />
+          </div>
+          <h2 className="text-xl font-semibold">Correction enregistrée</h2>
+          <p className="text-muted-foreground">
+            La note de {adjustedGrade}/20 a été sauvegardée.
+          </p>
+          <div className="flex gap-3">
+            {savedCorrectionId && (
+              <Button variant="outline" onClick={() => setShowEmailDialog(true)}>
+                <Mail className="h-4 w-4" />
+                Envoyer par email
+              </Button>
+            )}
+            <Button onClick={onNewCorrection}>
+              <FileCheck className="h-4 w-4" />
+              Nouvelle correction
+            </Button>
+          </div>
         </div>
-        <h2 className="text-xl font-semibold">Correction enregistree</h2>
-        <p className="text-muted-foreground">
-          La note de {adjustedGrade}/20 a ete sauvegardee.
-        </p>
-        <Button onClick={onNewCorrection}>
-          <FileCheck className="h-4 w-4" />
-          Nouvelle correction
-        </Button>
-      </div>
+        {showEmailDialog && savedCorrectionId && (
+          <CorrectionDetailDialog
+            correctionId={savedCorrectionId}
+            onClose={() => setShowEmailDialog(false)}
+          />
+        )}
+      </>
     );
   }
 
