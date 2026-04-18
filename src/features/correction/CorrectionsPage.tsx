@@ -173,7 +173,8 @@ export function CorrectionsPage() {
     const exercises = rows.filter((c) =>
       c.content_type.startsWith("exercise") ||
       c.content_type === "role_play" ||
-      c.content_type === "pedagogical_game",
+      c.content_type === "pedagogical_game" ||
+      c.content_type === "trainer_sheet",
     );
     setContents(exercises);
     setSelectedContentId("");
@@ -442,6 +443,20 @@ ${instructions}`;
       setSubmissionFile(null);
       return;
     }
+    if (name.endsWith(".docx")) {
+      try {
+        const mammoth = await import("mammoth");
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        setSubmissionText(result.value);
+        setSubmissionFile(null);
+        return;
+      } catch (err) {
+        console.error("Lecture .docx:", err);
+        setError("Impossible de lire ce fichier .docx. Essaie de l'exporter en PDF.");
+        return;
+      }
+    }
     if (
       file.type === "application/pdf" ||
       file.type === "image/jpeg" ||
@@ -454,7 +469,7 @@ ${instructions}`;
       return;
     }
     setError(
-      "Format non supporté. Utilise .txt, .md, .pdf, .png, .jpg, .webp. Pour un .docx, exporte-le en PDF.",
+      "Format non supporté. Utilise .txt, .md, .docx, .pdf, .png, .jpg, .webp.",
     );
   }
 
@@ -728,7 +743,7 @@ function NewCorrectionTab({
               Importer un fichier
               <input
                 type="file"
-                accept=".txt,.md,.pdf,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/markdown"
+                accept=".txt,.md,.docx,.pdf,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif,text/plain,text/markdown"
                 className="hidden"
                 disabled={correcting || !!correctionResult}
                 onChange={(e) => {
@@ -769,7 +784,7 @@ function NewCorrectionTab({
                 id="submission"
                 value={submissionText}
                 onChange={(e) => onSubmissionChange(e.target.value)}
-                placeholder="Colle ici le texte de la copie de l'apprenant, ou importe un fichier (PDF, image, .txt/.md)..."
+                placeholder="Colle ici le texte de la copie de l'apprenant, ou importe un fichier (Word, PDF, image, .txt/.md)..."
                 rows={8}
                 disabled={correcting || !!correctionResult}
               />
