@@ -341,15 +341,43 @@ function alignmentOf(a: "left" | "center" | "right"): (typeof AlignmentType)[key
 }
 
 /**
- * Déclenche le téléchargement d'un .docx depuis un Blob.
+ * Sauvegarde un .docx directement dans le dossier Téléchargements de l'utilisateur
+ * (Tauri desktop). Ajoute un suffixe numérique si un fichier du même nom existe déjà.
+ * En environnement navigateur, déclenche un téléchargement classique.
+ *
+ * Retourne le chemin final du fichier sauvegardé (Tauri) ou null (navigateur).
  */
-export function downloadDocx(blob: Blob, filename: string) {
+export async function downloadDocx(blob: Blob, filename: string): Promise<string | null> {
+  const safe = filename.replace(/[\\/:*?"<>|]/g, "_");
+  const finalName = safe.endsWith(".docx") ? safe : `${safe}.docx`;
+
+  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  if (isTauri) {
+    const { downloadDir, join } = await import("@tauri-apps/api/path");
+    const { writeFile, exists } = await import("@tauri-apps/plugin-fs");
+
+    const dir = await downloadDir();
+    let target = await join(dir, finalName);
+    if (await exists(target)) {
+      const base = finalName.replace(/\.docx$/i, "");
+      for (let i = 2; i < 1000; i++) {
+        const candidate = await join(dir, `${base} (${i}).docx`);
+        if (!(await exists(candidate))) { target = candidate; break; }
+      }
+    }
+
+    const buffer = new Uint8Array(await blob.arrayBuffer());
+    await writeFile(target, buffer);
+    return target;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename.endsWith(".docx") ? filename : `${filename}.docx`;
+  a.download = finalName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  return null;
 }

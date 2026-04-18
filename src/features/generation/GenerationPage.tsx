@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   BookOpen,
   Users,
@@ -163,6 +163,7 @@ export function GenerationPage() {
   const [generationCost, setGenerationCost] = useState(0);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   // Editing
   const [editing, setEditing] = useState(false);
@@ -370,7 +371,22 @@ Taille du groupe : ${groupSize} apprenants`;
 
   async function handleCopy() {
     const content = editing ? editBuffer : generatedContent;
-    await navigator.clipboard.writeText(content);
+    const html = previewRef.current?.innerHTML;
+    try {
+      if (!editing && html && typeof ClipboardItem !== "undefined") {
+        const fullHtml = `<div style="font-family: Arial, sans-serif;">${html}</div>`;
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([fullHtml], { type: "text/html" }),
+            "text/plain": new Blob([content], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(content);
+      }
+    } catch {
+      await navigator.clipboard.writeText(content);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -828,8 +844,13 @@ Taille du groupe : ${groupSize} apprenants`;
                       variant="outline"
                       size="sm"
                       onClick={async () => {
-                        const blob = await markdownToDocx(generatedContent);
-                        downloadDocx(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                        try {
+                          const blob = await markdownToDocx(generatedContent);
+                          await downloadDocx(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                        } catch (err) {
+                          console.error("Export Word:", err);
+                          setError(err instanceof Error ? err.message : "Erreur export Word");
+                        }
                       }}
                     >
                       <Download className="h-3.5 w-3.5" />
@@ -886,7 +907,7 @@ Taille du groupe : ${groupSize} apprenants`;
                     className="min-h-[500px] font-mono text-sm"
                   />
                 ) : (
-                  <div className="max-h-[600px] overflow-y-auto rounded-lg border bg-card p-5">
+                  <div ref={previewRef} className="max-h-[600px] overflow-y-auto rounded-lg border bg-card p-5">
                     <RichMarkdown content={generatedContent} />
                   </div>
                 )}
@@ -1041,8 +1062,13 @@ function HistoryCard({ item, onDeleted }: { item: GeneratedContent; onDeleted: (
               variant="outline"
               size="sm"
               onClick={async () => {
-                const blob = await markdownToDocx(item.content_markdown);
-                downloadDocx(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                try {
+                  const blob = await markdownToDocx(item.content_markdown);
+                  await downloadDocx(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                } catch (err) {
+                  console.error("Export Word:", err);
+                  alert(err instanceof Error ? err.message : "Erreur export Word");
+                }
               }}
             >
               <Download className="h-3.5 w-3.5" />
