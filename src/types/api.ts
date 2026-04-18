@@ -31,7 +31,16 @@ export interface ClaudeDocumentBlock {
   };
 }
 
-export type ClaudeContentBlock = ClaudeTextBlock | ClaudeDocumentBlock;
+export interface ClaudeImageBlock {
+  type: "image";
+  source: {
+    type: "base64";
+    media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+    data: string;
+  };
+}
+
+export type ClaudeContentBlock = ClaudeTextBlock | ClaudeDocumentBlock | ClaudeImageBlock;
 
 export interface ClaudeMessage {
   role: "user" | "assistant";

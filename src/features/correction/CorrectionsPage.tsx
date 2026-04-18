@@ -8,12 +8,17 @@ import {
   ChevronRight,
   AlertCircle,
   Trash2,
+  Upload,
+  X,
+  FileText as FileTextIcon,
+  Image as ImageIcon,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
 import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Group, Learner, Correction, CriteriaGrid, GeneratedContent } from "@/types";
+import type { ClaudeContentBlock } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +35,21 @@ interface CorrectionWithDetails extends Correction {
   learner_first_name?: string;
   learner_last_name?: string;
   content_title?: string;
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Lecture du fichier impossible"));
+    reader.readAsDataURL(file);
+  });
 }
 
 // ─── Composant principal ────────────────────────────────────────────────────
@@ -51,6 +71,7 @@ export function CorrectionsPage() {
 
   // Submission
   const [submissionText, setSubmissionText] = useState("");
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null);
 
   // AI correction state
   const [correcting, setCorrecting] = useState(false);
@@ -181,7 +202,8 @@ export function CorrectionsPage() {
   // ─── AI Correction ─────────────────────────────────────────────────────
 
   async function handleCorrect() {
-    if (!selectedLearnerId || !submissionText.trim()) return;
+    if (!selectedLearnerId) return;
+    if (!submissionFile && !submissionText.trim()) return;
 
     setError("");
     setCorrecting(true);
@@ -202,15 +224,7 @@ export function CorrectionsPage() {
           }`
         : "";
 
-      const userMessage = `${learnerContext}
-
-${exerciseContext}
-
-## Copie de l'apprenant
-
-${submissionText.trim()}
-
----
+      const instructions = `---
 
 Corrige cette copie. Reponds en JSON avec cette structure exacte :
 {
@@ -227,9 +241,56 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
   "general_comment": "<commentaire general>"
 }`;
 
+      let messageContent: string | ClaudeContentBlock[];
+
+      if (submissionFile) {
+        const base64 = await fileToBase64(submissionFile);
+        const preamble = `${learnerContext}
+
+${exerciseContext}
+
+## Copie de l'apprenant
+
+La copie de l'apprenant est fournie en pièce jointe ci-dessous.`;
+
+        const blocks: ClaudeContentBlock[] = [{ type: "text", text: preamble }];
+
+        if (submissionFile.type === "application/pdf") {
+          blocks.push({
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: base64 },
+          });
+        } else if (
+          submissionFile.type === "image/jpeg" ||
+          submissionFile.type === "image/png" ||
+          submissionFile.type === "image/gif" ||
+          submissionFile.type === "image/webp"
+        ) {
+          blocks.push({
+            type: "image",
+            source: { type: "base64", media_type: submissionFile.type, data: base64 },
+          });
+        } else {
+          throw new Error("Format de fichier non supporté.");
+        }
+
+        blocks.push({ type: "text", text: instructions });
+        messageContent = blocks;
+      } else {
+        messageContent = `${learnerContext}
+
+${exerciseContext}
+
+## Copie de l'apprenant
+
+${submissionText.trim()}
+
+${instructions}`;
+      }
+
       const response = await claudeRequest({
         task: "correction",
-        messages: [{ role: "user", content: userMessage }],
+        messages: [{ role: "user", content: messageContent }],
       });
 
       addApiCost(response.costEuros);
@@ -300,6 +361,10 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
       const id = db.generateId();
       const now = new Date().toISOString().replace("T", " ").substring(0, 19);
 
+      const storedSubmission = submissionFile
+        ? `[Fichier importé : ${submissionFile.name}]`
+        : submissionText.trim();
+
       await db.execute(
         `INSERT INTO corrections (id, learner_id, content_id, submission_text, grade, max_grade, feedback_markdown, criteria_grid, model_used, validated, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
@@ -307,7 +372,7 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
           id,
           selectedLearnerId,
           selectedContentId || null,
-          submissionText.trim(),
+          storedSubmission,
           finalGrade,
           correctionResult.maxGrade,
           correctionResult.feedback,
@@ -330,6 +395,7 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
 
   function handleNewCorrection() {
     setSubmissionText("");
+    setSubmissionFile(null);
     setCorrectionResult(null);
     setValidated(false);
     setAdjustedGrade("");
@@ -357,8 +423,40 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
   // ─── Rendu ─────────────────────────────────────────────────────────────
 
   const canCorrect = Boolean(
-    selectedLearnerId && submissionText.trim().length > 0 && !correcting && !correctionResult
+    selectedLearnerId &&
+      (submissionText.trim().length > 0 || submissionFile) &&
+      !correcting &&
+      !correctionResult
   );
+
+  async function handleFileSelect(file: File | null) {
+    setError("");
+    if (!file) {
+      setSubmissionFile(null);
+      return;
+    }
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".txt") || name.endsWith(".md")) {
+      const text = await file.text();
+      setSubmissionText(text);
+      setSubmissionFile(null);
+      return;
+    }
+    if (
+      file.type === "application/pdf" ||
+      file.type === "image/jpeg" ||
+      file.type === "image/png" ||
+      file.type === "image/gif" ||
+      file.type === "image/webp"
+    ) {
+      setSubmissionFile(file);
+      setSubmissionText("");
+      return;
+    }
+    setError(
+      "Format non supporté. Utilise .txt, .md, .pdf, .png, .jpg, .webp. Pour un .docx, exporte-le en PDF.",
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -416,6 +514,7 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
           selectedLearnerId={selectedLearnerId}
           selectedContentId={selectedContentId}
           submissionText={submissionText}
+          submissionFile={submissionFile}
           correcting={correcting}
           correctionResult={correctionResult}
           adjustedGrade={adjustedGrade}
@@ -427,6 +526,7 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
           onLearnerChange={(id) => { setSelectedLearnerId(id); setError(""); }}
           onContentChange={(id) => { setSelectedContentId(id); setError(""); }}
           onSubmissionChange={setSubmissionText}
+          onFileSelect={handleFileSelect}
           onCorrect={handleCorrect}
           onGradeChange={setAdjustedGrade}
           onValidate={handleValidate}
@@ -458,6 +558,7 @@ function NewCorrectionTab({
   selectedLearnerId,
   selectedContentId,
   submissionText,
+  submissionFile,
   correcting,
   correctionResult,
   adjustedGrade,
@@ -469,6 +570,7 @@ function NewCorrectionTab({
   onLearnerChange,
   onContentChange,
   onSubmissionChange,
+  onFileSelect,
   onCorrect,
   onGradeChange,
   onValidate,
@@ -485,6 +587,7 @@ function NewCorrectionTab({
   selectedLearnerId: string;
   selectedContentId: string;
   submissionText: string;
+  submissionFile: File | null;
   correcting: boolean;
   correctionResult: {
     grade: number;
@@ -502,6 +605,7 @@ function NewCorrectionTab({
   onLearnerChange: (id: string) => void;
   onContentChange: (id: string) => void;
   onSubmissionChange: (text: string) => void;
+  onFileSelect: (file: File | null) => void;
   onCorrect: () => void;
   onGradeChange: (grade: string) => void;
   onValidate: () => void;
@@ -616,19 +720,64 @@ function NewCorrectionTab({
           Copie de l'apprenant
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="submission">Colle ou tape le texte de la copie</Label>
-          <Textarea
-            id="submission"
-            value={submissionText}
-            onChange={(e) => onSubmissionChange(e.target.value)}
-            placeholder="Colle ici le texte de la copie de l'apprenant..."
-            rows={8}
-            disabled={correcting || !!correctionResult}
-          />
-          <p className="text-xs text-muted-foreground">
-            {submissionText.length} caractere(s)
-          </p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Copie à corriger</Label>
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted">
+              <Upload className="h-3.5 w-3.5" />
+              Importer un fichier
+              <input
+                type="file"
+                accept=".txt,.md,.pdf,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/markdown"
+                className="hidden"
+                disabled={correcting || !!correctionResult}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  onFileSelect(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          {submissionFile ? (
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
+              {submissionFile.type.startsWith("image/") ? (
+                <ImageIcon className="h-5 w-5 shrink-0 text-primary" />
+              ) : (
+                <FileTextIcon className="h-5 w-5 shrink-0 text-primary" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{submissionFile.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(submissionFile.size / 1024).toFixed(1)} Ko — Claude lira directement ce fichier
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onFileSelect(null)}
+                disabled={correcting || !!correctionResult}
+                className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-50"
+                aria-label="Retirer le fichier"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <Textarea
+                id="submission"
+                value={submissionText}
+                onChange={(e) => onSubmissionChange(e.target.value)}
+                placeholder="Colle ici le texte de la copie de l'apprenant, ou importe un fichier (PDF, image, .txt/.md)..."
+                rows={8}
+                disabled={correcting || !!correctionResult}
+              />
+              <p className="text-xs text-muted-foreground">
+                {submissionText.length} caractère(s)
+              </p>
+            </>
+          )}
         </div>
 
         <Button

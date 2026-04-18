@@ -21,8 +21,11 @@ import {
   FileText,
   AlertTriangle,
   Trash2,
+  Download,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { RichMarkdown } from "@/components/ui/rich-markdown";
+import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
 import { db } from "@/lib/db";
 import { request as claudeRequest, estimateCost } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -824,6 +827,17 @@ Taille du groupe : ${groupSize} apprenants`;
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={async () => {
+                        const blob = await markdownToDocx(generatedContent);
+                        downloadDocx(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                      }}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Word
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         if (editing) {
                           setGeneratedContent(editBuffer);
@@ -873,7 +887,7 @@ Taille du groupe : ${groupSize} apprenants`;
                   />
                 ) : (
                   <div className="max-h-[600px] overflow-y-auto rounded-lg border bg-card p-5">
-                    <MarkdownRenderer content={generatedContent} />
+                    <RichMarkdown content={generatedContent} />
                   </div>
                 )}
               </div>
@@ -1026,6 +1040,17 @@ function HistoryCard({ item, onDeleted }: { item: GeneratedContent; onDeleted: (
             <Button
               variant="outline"
               size="sm"
+              onClick={async () => {
+                const blob = await markdownToDocx(item.content_markdown);
+                downloadDocx(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
+              }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Word
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setConfirmDelete(true)}
               className="text-red-600 hover:bg-red-50 hover:text-red-700"
             >
@@ -1034,7 +1059,7 @@ function HistoryCard({ item, onDeleted }: { item: GeneratedContent; onDeleted: (
             </Button>
           </div>
           <div className="max-h-96 overflow-y-auto rounded-lg border bg-muted/30 p-4">
-            <MarkdownRenderer content={item.content_markdown} />
+            <RichMarkdown content={item.content_markdown} />
           </div>
         </CardContent>
       )}
@@ -1054,162 +1079,3 @@ function HistoryCard({ item, onDeleted }: { item: GeneratedContent; onDeleted: (
   );
 }
 
-// ─── Simple Markdown Renderer ─────────────────────────────────
-
-function MarkdownRenderer({ content }: { content: string }) {
-  const lines = content.split("\n");
-  const elements: React.ReactNode[] = [];
-  let listItems: string[] = [];
-  let listType: "ul" | "ol" | null = null;
-
-  function flushList() {
-    if (listItems.length === 0) return;
-    if (listType === "ol") {
-      elements.push(
-        <ol key={`ol-${elements.length}`} className="my-2 ml-6 list-decimal space-y-1 text-sm">
-          {listItems.map((li, i) => (
-            <li key={i}>{renderInline(li)}</li>
-          ))}
-        </ol>,
-      );
-    } else {
-      elements.push(
-        <ul key={`ul-${elements.length}`} className="my-2 ml-6 list-disc space-y-1 text-sm">
-          {listItems.map((li, i) => (
-            <li key={i}>{renderInline(li)}</li>
-          ))}
-        </ul>,
-      );
-    }
-    listItems = [];
-    listType = null;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-
-    // Headings
-    const h1 = line.match(/^#\s+(.+)$/);
-    if (h1) {
-      flushList();
-      elements.push(
-        <h1 key={i} className="mb-3 mt-5 text-xl font-bold first:mt-0">
-          {renderInline(h1[1] ?? "")}
-        </h1>,
-      );
-      continue;
-    }
-    const h2 = line.match(/^##\s+(.+)$/);
-    if (h2) {
-      flushList();
-      elements.push(
-        <h2 key={i} className="mb-2 mt-4 text-lg font-semibold">
-          {renderInline(h2[1] ?? "")}
-        </h2>,
-      );
-      continue;
-    }
-    const h3 = line.match(/^###\s+(.+)$/);
-    if (h3) {
-      flushList();
-      elements.push(
-        <h3 key={i} className="mb-1.5 mt-3 text-base font-semibold">
-          {renderInline(h3[1] ?? "")}
-        </h3>,
-      );
-      continue;
-    }
-
-    // Horizontal rule
-    if (/^---+$/.test(line.trim())) {
-      flushList();
-      elements.push(<hr key={i} className="my-4 border-border" />);
-      continue;
-    }
-
-    // Unordered list
-    const ul = line.match(/^[\s]*[-*]\s+(.+)$/);
-    if (ul) {
-      if (listType !== "ul") flushList();
-      listType = "ul";
-      listItems.push(ul[1] ?? "");
-      continue;
-    }
-
-    // Ordered list
-    const ol = line.match(/^[\s]*\d+\.\s+(.+)$/);
-    if (ol) {
-      if (listType !== "ol") flushList();
-      listType = "ol";
-      listItems.push(ol[1] ?? "");
-      continue;
-    }
-
-    // Empty line
-    if (line.trim() === "") {
-      flushList();
-      continue;
-    }
-
-    // Paragraph
-    flushList();
-    elements.push(
-      <p key={i} className="my-1.5 text-sm leading-relaxed">
-        {renderInline(line)}
-      </p>,
-    );
-  }
-
-  flushList();
-
-  return <div className="prose-sm">{elements}</div>;
-}
-
-function renderInline(text: string): React.ReactNode {
-  // Bold + Italic
-  const parts: React.ReactNode[] = [];
-  const regex = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    if (match[2]) {
-      parts.push(
-        <strong key={match.index} className="font-bold italic">
-          {match[2]}
-        </strong>,
-      );
-    } else if (match[3]) {
-      parts.push(
-        <strong key={match.index} className="font-semibold">
-          {match[3]}
-        </strong>,
-      );
-    } else if (match[4]) {
-      parts.push(
-        <em key={match.index} className="italic">
-          {match[4]}
-        </em>,
-      );
-    } else if (match[5]) {
-      parts.push(
-        <code
-          key={match.index}
-          className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono"
-        >
-          {match[5]}
-        </code>,
-      );
-    }
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return parts.length === 0 ? text : parts;
-}

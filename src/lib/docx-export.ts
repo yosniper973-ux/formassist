@@ -1,0 +1,355 @@
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  AlignmentType,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
+  ShadingType,
+  LevelFormat,
+} from "docx";
+
+/**
+ * Exporte un document pédagogique Markdown en fichier .docx stylisé
+ * (Arial, bandeau bleu marine, sections colorées, tableaux, encadrés).
+ *
+ * Renvoie un Blob prêt à être téléchargé.
+ */
+export async function markdownToDocx(markdown: string): Promise<Blob> {
+  const children: (Paragraph | Table)[] = [];
+  const lines = markdown.split("\n");
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      children.push(hrParagraph());
+      i++;
+      continue;
+    }
+
+    // Headings
+    const h1 = line.match(/^#\s+(.+)$/);
+    if (h1) { children.push(h1Paragraph(h1[1]!)); i++; continue; }
+    const h2 = line.match(/^##\s+(.+)$/);
+    if (h2) { children.push(h2Paragraph(h2[1]!)); i++; continue; }
+    const h3 = line.match(/^###\s+(.+)$/);
+    if (h3) { children.push(h3Paragraph(h3[1]!)); i++; continue; }
+
+    // Table
+    if (line.trim().startsWith("|") && i + 1 < lines.length) {
+      const sep = (lines[i + 1] ?? "").trim();
+      if (/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(sep)) {
+        const headers = splitRow(line);
+        const aligns = splitRow(sep).map(toAlign);
+        const rows: string[][] = [];
+        i += 2;
+        while (i < lines.length && lines[i]!.trim().startsWith("|")) {
+          rows.push(splitRow(lines[i]!));
+          i++;
+        }
+        children.push(buildTable(headers, rows, aligns));
+        continue;
+      }
+    }
+
+    // Callout
+    const callout = line.match(/^>\s*\[!(\w+)\]\s*(.*)$/i);
+    if (callout) {
+      const kind = callout[1]!.toLowerCase();
+      const title = (callout[2] ?? "").trim();
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && lines[i]!.startsWith(">")) {
+        body.push(lines[i]!.replace(/^>\s?/, ""));
+        i++;
+      }
+      children.push(calloutTable(kind, title, body));
+      continue;
+    }
+
+    // Unordered list
+    if (/^\s*[-*]\s+/.test(line)) {
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i]!)) {
+        children.push(bulletParagraph(lines[i]!.replace(/^\s*[-*]\s+/, "")));
+        i++;
+      }
+      continue;
+    }
+
+    // Ordered list
+    if (/^\s*\d+\.\s+/.test(line)) {
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i]!)) {
+        children.push(numberedParagraph(lines[i]!.replace(/^\s*\d+\.\s+/, "")));
+        i++;
+      }
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === "") { i++; continue; }
+
+    // Paragraph (merge adjacent)
+    const para: string[] = [line];
+    i++;
+    while (
+      i < lines.length &&
+      lines[i]!.trim() !== "" &&
+      !lines[i]!.match(/^#{1,3}\s+/) &&
+      !lines[i]!.trim().startsWith("|") &&
+      !lines[i]!.trim().startsWith(">") &&
+      !/^\s*[-*]\s+/.test(lines[i]!) &&
+      !/^\s*\d+\.\s+/.test(lines[i]!) &&
+      !/^---+$/.test(lines[i]!.trim())
+    ) {
+      para.push(lines[i]!);
+      i++;
+    }
+    children.push(bodyParagraph(para.join(" ")));
+  }
+
+  const doc = new Document({
+    creator: "FormAssist",
+    title: "Document pédagogique",
+    styles: {
+      default: {
+        document: {
+          run: { font: "Arial", size: 22 },
+        },
+      },
+    },
+    numbering: {
+      config: [
+        {
+          reference: "bullets",
+          levels: [
+            { level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT },
+          ],
+        },
+        {
+          reference: "decimals",
+          levels: [
+            { level: 0, format: LevelFormat.DECIMAL, text: "%1.", alignment: AlignmentType.LEFT },
+          ],
+        },
+      ],
+    },
+    sections: [{ properties: {}, children }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  return blob;
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+
+const NAVY = "1A3C5E";
+const BLUE = "2471A3";
+
+function runs(text: string): TextRun[] {
+  const parts: TextRun[] = [];
+  const regex = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*([^*]+?)\*|`([^`]+?)`)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) parts.push(new TextRun({ text: text.slice(last, m.index), font: "Arial" }));
+    if (m[2]) parts.push(new TextRun({ text: m[2]!, bold: true, italics: true, font: "Arial" }));
+    else if (m[3]) parts.push(new TextRun({ text: m[3]!, bold: true, font: "Arial" }));
+    else if (m[4]) parts.push(new TextRun({ text: m[4]!, italics: true, font: "Arial" }));
+    else if (m[5]) parts.push(new TextRun({ text: m[5]!, font: "Consolas" }));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(new TextRun({ text: text.slice(last), font: "Arial" }));
+  return parts.length === 0 ? [new TextRun({ text, font: "Arial" })] : parts;
+}
+
+function h1Paragraph(text: string): Paragraph {
+  return new Paragraph({
+    heading: HeadingLevel.HEADING_1,
+    alignment: AlignmentType.LEFT,
+    shading: { type: ShadingType.CLEAR, color: "auto", fill: NAVY },
+    spacing: { before: 200, after: 240 },
+    children: [
+      new TextRun({ text, bold: true, size: 32, color: "FFFFFF", font: "Arial" }),
+    ],
+  });
+}
+
+function h2Paragraph(text: string): Paragraph {
+  return new Paragraph({
+    heading: HeadingLevel.HEADING_2,
+    spacing: { before: 280, after: 120 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: BLUE } },
+    children: [
+      new TextRun({ text: text.toUpperCase(), bold: true, size: 26, color: NAVY, font: "Arial" }),
+    ],
+  });
+}
+
+function h3Paragraph(text: string): Paragraph {
+  return new Paragraph({
+    heading: HeadingLevel.HEADING_3,
+    spacing: { before: 200, after: 80 },
+    children: [
+      new TextRun({ text, bold: true, size: 23, color: BLUE, font: "Arial" }),
+    ],
+  });
+}
+
+function bodyParagraph(text: string): Paragraph {
+  return new Paragraph({ spacing: { before: 80, after: 80, line: 300 }, children: runs(text) });
+}
+
+function bulletParagraph(text: string): Paragraph {
+  return new Paragraph({
+    numbering: { reference: "bullets", level: 0 },
+    spacing: { before: 40, after: 40, line: 280 },
+    children: runs(text),
+  });
+}
+
+function numberedParagraph(text: string): Paragraph {
+  return new Paragraph({
+    numbering: { reference: "decimals", level: 0 },
+    spacing: { before: 40, after: 40, line: 280 },
+    children: runs(text),
+  });
+}
+
+function hrParagraph(): Paragraph {
+  return new Paragraph({
+    spacing: { before: 120, after: 120 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "B0BEC5" } },
+    children: [new TextRun({ text: "" })],
+  });
+}
+
+function splitRow(line: string): string[] {
+  const t = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return t.split("|").map((c) => c.trim());
+}
+
+function toAlign(cell: string): "left" | "center" | "right" {
+  const c = cell.trim();
+  if (c.startsWith(":") && c.endsWith(":")) return "center";
+  if (c.endsWith(":")) return "right";
+  return "left";
+}
+
+function buildTable(headers: string[], rows: string[][], aligns: ("left" | "center" | "right")[]): Table {
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: headers.map((h, i) =>
+      new TableCell({
+        shading: { type: ShadingType.CLEAR, color: "auto", fill: NAVY },
+        margins: { top: 80, bottom: 80, left: 100, right: 100 },
+        children: [
+          new Paragraph({
+            alignment: alignmentOf(aligns[i] ?? "left"),
+            children: [new TextRun({ text: h, bold: true, color: "FFFFFF", font: "Arial", size: 22 })],
+          }),
+        ],
+      }),
+    ),
+  });
+
+  const bodyRows = rows.map((row, ri) =>
+    new TableRow({
+      children: row.map((cell, ci) =>
+        new TableCell({
+          shading: { type: ShadingType.CLEAR, color: "auto", fill: ri % 2 === 0 ? "FFFFFF" : "EAF2F8" },
+          margins: { top: 60, bottom: 60, left: 100, right: 100 },
+          children: [
+            new Paragraph({
+              alignment: alignmentOf(aligns[ci] ?? "left"),
+              children: runs(cell),
+            }),
+          ],
+        }),
+      ),
+    }),
+  );
+
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [headerRow, ...bodyRows],
+  });
+}
+
+const CALLOUT_COLORS: Record<string, { bg: string; border: string; fg: string; label: string }> = {
+  info:    { bg: "EAF2F8", border: "2471A3", fg: "1A3C5E", label: "Info" },
+  warning: { bg: "FEF5E7", border: "E67E22", fg: "7E4A12", label: "Attention" },
+  success: { bg: "E8F8F5", border: "1E8449", fg: "0B4F34", label: "À retenir" },
+  danger:  { bg: "FDEDEC", border: "C0392B", fg: "7B1A11", label: "Important" },
+  note:    { bg: "F2F3F4", border: "7F8C8D", fg: "2C3E50", label: "Note" },
+  tip:     { bg: "F4ECF7", border: "7D3C98", fg: "4A1F5E", label: "Astuce" },
+};
+
+function calloutTable(kind: string, title: string, lines: string[]): Table {
+  const s = CALLOUT_COLORS[kind] ?? CALLOUT_COLORS.info!;
+  const heading = title || s.label;
+
+  const titlePara = new Paragraph({
+    spacing: { before: 40, after: 40 },
+    children: [new TextRun({ text: heading, bold: true, color: s.fg, font: "Arial", size: 22 })],
+  });
+
+  const bodyParas = lines
+    .filter((l) => l.trim() !== "")
+    .map((ln) =>
+      new Paragraph({
+        spacing: { before: 30, after: 30, line: 280 },
+        children: [new TextRun({ text: ln, color: s.fg, font: "Arial", size: 22 })],
+      }),
+    );
+
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            shading: { type: ShadingType.CLEAR, color: "auto", fill: s.bg },
+            margins: { top: 120, bottom: 120, left: 160, right: 160 },
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: "auto" },
+              bottom: { style: BorderStyle.NONE, size: 0, color: "auto" },
+              right: { style: BorderStyle.NONE, size: 0, color: "auto" },
+              left: { style: BorderStyle.SINGLE, size: 32, color: s.border },
+            },
+            children: [titlePara, ...bodyParas],
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+function alignmentOf(a: "left" | "center" | "right"): (typeof AlignmentType)[keyof typeof AlignmentType] {
+  if (a === "center") return AlignmentType.CENTER;
+  if (a === "right") return AlignmentType.RIGHT;
+  return AlignmentType.LEFT;
+}
+
+/**
+ * Déclenche le téléchargement d'un .docx depuis un Blob.
+ */
+export function downloadDocx(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".docx") ? filename : `${filename}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

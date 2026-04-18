@@ -1,7 +1,7 @@
 {
   "name": "formassist",
   "private": true,
-  "version": "0.2.11",
+  "version": "0.2.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,6 +20,7 @@
     "@tauri-apps/plugin-updater": "^2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "docx": "^9.6.1",
     "lucide-react": "^0.500.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
