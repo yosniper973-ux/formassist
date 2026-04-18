@@ -52,6 +52,62 @@ function getMonday(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), diff);
 }
 
+/**
+ * Parser de secours : extrait chaque objet JSON bien formé d'une chaîne
+ * contenant un tableau potentiellement cassé (réponse Claude tronquée
+ * ou avec une virgule manquante). Scanne les accolades en respectant
+ * les chaînes entre guillemets et les échappements.
+ */
+function extractSlotsFromBrokenJson(text: string): Array<{
+  date: string;
+  start_time?: string;
+  end_time?: string;
+  title?: string;
+}> {
+  const slots: Array<{ date: string; start_time?: string; end_time?: string; title?: string }> = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c === "\\") {
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (c === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const block = text.slice(start, i + 1);
+        try {
+          const obj = JSON.parse(block);
+          if (obj && typeof obj === "object" && typeof obj.date === "string") {
+            slots.push(obj);
+          }
+        } catch {
+          /* ignore le bloc cassé */
+        }
+        start = -1;
+      }
+    }
+  }
+  return slots;
+}
+
 function formatDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -1054,7 +1110,7 @@ function ImportDialog({
       const resp = await claudeRequest({
         task: "parsing_planning",
         messages: [{ role: "user", content }],
-        maxTokens: 8000,
+        maxTokens: 16000,
       });
 
       setAnalysisCost(resp.costEuros);
@@ -1064,21 +1120,38 @@ function ImportDialog({
       const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (fenceMatch && fenceMatch[1]) jsonText = fenceMatch[1].trim();
 
-      const parsed = JSON.parse(jsonText) as {
-        slots?: Array<{
-          date: string;
-          start_time?: string;
-          end_time?: string;
-          title?: string;
-        }>;
+      type RawSlot = {
+        date: string;
+        start_time?: string;
+        end_time?: string;
+        title?: string;
       };
+      let rawSlots: RawSlot[] = [];
 
-      const slots = (parsed.slots ?? []).map((s) => ({
-        date: s.date,
-        start: s.start_time ?? "09:00",
-        end: s.end_time ?? "17:00",
-        title: s.title ?? "",
-      }));
+      // 1) Tentative parse normal
+      try {
+        const parsed = JSON.parse(jsonText) as { slots?: RawSlot[] };
+        rawSlots = parsed.slots ?? [];
+      } catch {
+        // 2) Parser tolérant : extrait chaque objet { ... } bien formé
+        // dans le tableau "slots", même si le JSON global est cassé
+        // (réponse tronquée, virgule manquante quelque part, etc.)
+        rawSlots = extractSlotsFromBrokenJson(jsonText);
+        if (rawSlots.length === 0) {
+          throw new Error(
+            "Impossible de lire la réponse de l'IA. Réessaie — si ça persiste, essaie avec un PDF plus court.",
+          );
+        }
+      }
+
+      const slots = rawSlots
+        .filter((s) => s && typeof s.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.date))
+        .map((s) => ({
+          date: s.date,
+          start: s.start_time ?? "09:00",
+          end: s.end_time ?? "17:00",
+          title: s.title ?? "",
+        }));
 
       if (slots.length === 0) {
         setError(

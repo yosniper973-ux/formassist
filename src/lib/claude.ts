@@ -192,17 +192,23 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
   const temperature = req.temperature ?? DEFAULT_TEMPERATURE[req.task];
   const maxTokens = req.maxTokens ?? ESTIMATED_OUTPUT_TOKENS[req.task] * 2;
 
-  const body = {
-    model: modelId,
-    max_tokens: maxTokens,
-    temperature,
-    system: systemPrompt,
-    messages: req.messages.map((m) => ({
-      role: m.role,
-      // content peut être un string ou un tableau de blocs (document PDF, texte…)
-      content: Array.isArray(m.content) ? m.content : m.content,
-    })),
-  };
+  // Certains nouveaux modèles (Opus 4.7+) rejettent `temperature` avec un 400.
+  // On retire le champ si on a déjà reçu cette erreur.
+  let omitTemperature = false;
+
+  function buildBody() {
+    const b: Record<string, unknown> = {
+      model: modelId,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: req.messages.map((m) => ({
+        role: m.role,
+        content: Array.isArray(m.content) ? m.content : m.content,
+      })),
+    };
+    if (!omitTemperature) b.temperature = temperature;
+    return b;
+  }
 
   let lastError: Error | null = null;
 
@@ -218,7 +224,7 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
           // détecte comme "CORS request" et exige cet header pour l'autoriser.
           "anthropic-dangerous-direct-browser-access": "true",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(buildBody()),
       });
 
       if (response.status === 429 || response.status === 529) {
@@ -229,6 +235,15 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
 
       if (!response.ok) {
         const errorBody = await response.text();
+        // Retry sans temperature si le modèle ne l'accepte plus
+        if (
+          response.status === 400 &&
+          !omitTemperature &&
+          /temperature.*deprecated|unsupported.*temperature/i.test(errorBody)
+        ) {
+          omitTemperature = true;
+          continue;
+        }
         throw new Error(parseApiError(response.status, errorBody));
       }
 
