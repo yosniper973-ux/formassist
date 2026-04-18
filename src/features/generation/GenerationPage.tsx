@@ -22,10 +22,12 @@ import {
   AlertTriangle,
   Trash2,
   Download,
+  X,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { db } from "@/lib/db";
 import { request as claudeRequest, estimateCost } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -164,6 +166,8 @@ export function GenerationPage() {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
+  const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   // Editing
   const [editing, setEditing] = useState(false);
@@ -846,7 +850,13 @@ Taille du groupe : ${groupSize} apprenants`;
                       onClick={async () => {
                         try {
                           const blob = await markdownToDocx(generatedContent);
-                          await downloadDocx(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                          const savedPath = await downloadDocx(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                          if (savedPath) {
+                            const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
+                            setDownloadToast({ path: savedPath, name });
+                            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+                            toastTimerRef.current = window.setTimeout(() => setDownloadToast(null), 8000);
+                          }
                         } catch (err) {
                           console.error("Export Word:", err);
                           setError(err instanceof Error ? err.message : "Erreur export Word");
@@ -983,12 +993,67 @@ Taille du groupe : ${groupSize} apprenants`;
                   {history
                     .filter((c) => !historyFilter || c.content_type === historyFilter)
                     .map((item) => (
-                      <HistoryCard key={item.id} item={item} onDeleted={loadHistory} />
+                      <HistoryCard
+                        key={item.id}
+                        item={item}
+                        onDeleted={loadHistory}
+                        onDownloaded={(path) => {
+                          const name = path.split(/[\\/]/).pop() ?? path;
+                          setDownloadToast({ path, name });
+                          if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+                          toastTimerRef.current = window.setTimeout(() => setDownloadToast(null), 8000);
+                        }}
+                      />
                     ))}
                 </div>
               )}
             </>
           )}
+        </div>
+      )}
+
+      {downloadToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 shadow-lg animate-in slide-in-from-bottom-4 max-w-md">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
+            <Check className="h-4 w-4 text-green-700" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-green-900">Document téléchargé</p>
+            <p className="truncate text-xs text-green-800/80" title={downloadToast.path}>
+              {downloadToast.name}
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={async () => {
+                  try { await shellOpen(downloadToast.path); } catch (e) { console.error(e); }
+                }}
+                className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700"
+              >
+                Ouvrir
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const dir = downloadToast.path.replace(/[\\/][^\\/]*$/, "");
+                    await shellOpen(dir);
+                  } catch (e) { console.error(e); }
+                }}
+                className="rounded-md border border-green-300 bg-white px-2.5 py-1 text-xs font-medium text-green-800 hover:bg-green-100"
+              >
+                Dossier
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+              setDownloadToast(null);
+            }}
+            className="shrink-0 rounded p-1 text-green-700 hover:bg-green-100"
+            aria-label="Fermer"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
     </div>
@@ -997,7 +1062,7 @@ Taille du groupe : ${groupSize} apprenants`;
 
 // ─── HistoryCard ──────────────────────────────────────────────
 
-function HistoryCard({ item, onDeleted }: { item: GeneratedContent; onDeleted: () => void }) {
+function HistoryCard({ item, onDeleted, onDownloaded }: { item: GeneratedContent; onDeleted: () => void; onDownloaded?: (path: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1064,7 +1129,8 @@ function HistoryCard({ item, onDeleted }: { item: GeneratedContent; onDeleted: (
               onClick={async () => {
                 try {
                   const blob = await markdownToDocx(item.content_markdown);
-                  await downloadDocx(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                  const savedPath = await downloadDocx(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                  if (savedPath) onDownloaded?.(savedPath);
                 } catch (err) {
                   console.error("Export Word:", err);
                   alert(err instanceof Error ? err.message : "Erreur export Word");
