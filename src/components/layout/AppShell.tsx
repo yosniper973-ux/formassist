@@ -106,15 +106,45 @@ export function AppShell() {
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(async () => {
+    let cancelled = false;
+
+    async function tryCheck(attempt = 0): Promise<boolean> {
+      if (cancelled) return false;
+      if (!navigator.onLine) return false;
       try {
         const update = await checkUpdate();
-        if (update) setPending({ version: update.version, update });
+        if (cancelled) return false;
+        if (update) {
+          setPending({ version: update.version, update });
+          return true;
+        }
+        return true;
       } catch {
-        // Silencieux si pas de réseau ou endpoint absent
+        // Backoff 5s, 15s, 30s
+        if (attempt < 3) {
+          const delay = [5000, 15000, 30000][attempt] ?? 30000;
+          await new Promise((r) => setTimeout(r, delay));
+          return tryCheck(attempt + 1);
+        }
+        return false;
       }
-    }, 3000);
-    return () => clearTimeout(timer);
+    }
+
+    // Première vérif quand la connexion est prête (sinon on attend l'event online)
+    const initialTimer = setTimeout(() => void tryCheck(), 2000);
+
+    const onOnline = () => void tryCheck();
+    window.addEventListener("online", onOnline);
+
+    // Re-vérif périodique (30 min) tant que l'app est ouverte
+    const interval = setInterval(() => void tryCheck(), 30 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+    };
   }, []);
 
   // Synchronise le coût API mensuel (header) depuis la DB à chaque navigation

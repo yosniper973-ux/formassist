@@ -15,6 +15,8 @@ import {
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Centre, Slot, Group } from "@/types";
+import type { ClaudeContentBlock } from "@/types/api";
+import { request as claudeRequest } from "@/lib/claude";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -948,10 +950,18 @@ function ImportDialog({
 }) {
   const [formationId, setFormationId] = useState(formations[0]?.id ?? "");
   const [csvText, setCsvText] = useState("");
-  const [format, setFormat] = useState<"csv" | "ics">("csv");
+  const [format, setFormat] = useState<"csv" | "pdf" | "ics">("pdf");
   const [preview, setPreview] = useState<Array<{ date: string; start: string; end: string; title: string }>>([]);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
+
+  // Import PDF via IA
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [trainerName, setTrainerName] = useState(() =>
+    localStorage.getItem("formassist_trainer_name") ?? "",
+  );
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisCost, setAnalysisCost] = useState<number | null>(null);
 
   function parseCSV() {
     setError("");
@@ -998,6 +1008,90 @@ function ImportDialog({
     }
 
     setPreview(rows);
+  }
+
+  async function analyzePdf() {
+    setError("");
+    setPreview([]);
+    setAnalysisCost(null);
+    if (!pdfFile) {
+      setError("Sélectionne d'abord un fichier PDF.");
+      return;
+    }
+    if (!trainerName.trim()) {
+      setError("Indique ton nom pour filtrer uniquement tes créneaux.");
+      return;
+    }
+
+    setAnalyzing(true);
+    try {
+      // PDF → base64 (chunks pour éviter le RangeError)
+      const buffer = await pdfFile.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const chunks: string[] = [];
+      for (let i = 0; i < bytes.byteLength; i += 65536) {
+        chunks.push(String.fromCharCode(...bytes.subarray(i, i + 65536)));
+      }
+      const base64 = btoa(chunks.join(""));
+
+      const name = trainerName.trim();
+      localStorage.setItem("formassist_trainer_name", name);
+
+      const content: ClaudeContentBlock[] = [
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+        {
+          type: "text",
+          text:
+            `Ce planning contient plusieurs formateurs. Tu dois EXTRAIRE UNIQUEMENT les créneaux attribués à « ${name} » ` +
+            `(colonne Intervenant ou équivalente). Ignore complètement les autres formateurs.\n\n` +
+            `Pour chaque créneau retenu, retourne : date (YYYY-MM-DD), start_time (HH:MM), end_time (HH:MM), ` +
+            `duration_hours (nombre), planning_type ("imposed"), title (= module), modality ("presential"), ` +
+            `assigned_trainer (= « ${name} »).\n\n` +
+            `Réponds STRICTEMENT avec le JSON défini dans le prompt système, sans texte autour, sans bloc markdown.`,
+        },
+      ];
+
+      const resp = await claudeRequest({
+        task: "parsing_planning",
+        messages: [{ role: "user", content }],
+        maxTokens: 8000,
+      });
+
+      setAnalysisCost(resp.costEuros);
+
+      // Extrait le JSON (tolère les fences ```json ... ``` au cas où)
+      let jsonText = resp.content.trim();
+      const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch && fenceMatch[1]) jsonText = fenceMatch[1].trim();
+
+      const parsed = JSON.parse(jsonText) as {
+        slots?: Array<{
+          date: string;
+          start_time?: string;
+          end_time?: string;
+          title?: string;
+        }>;
+      };
+
+      const slots = (parsed.slots ?? []).map((s) => ({
+        date: s.date,
+        start: s.start_time ?? "09:00",
+        end: s.end_time ?? "17:00",
+        title: s.title ?? "",
+      }));
+
+      if (slots.length === 0) {
+        setError(
+          `Aucun créneau trouvé pour « ${name} » dans ce PDF. Vérifie l'orthographe exacte du nom tel qu'il apparaît dans le document.`,
+        );
+      }
+
+      setPreview(slots);
+    } catch (err) {
+      setError(`Erreur analyse : ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAnalyzing(false);
+    }
   }
 
   async function handleImport() {
@@ -1056,12 +1150,28 @@ function ImportDialog({
           {/* Format */}
           <div>
             <Label>Format</Label>
-            <div className="flex gap-3 mt-1">
+            <div className="flex flex-wrap gap-3 mt-1">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  checked={format === "pdf"}
+                  onChange={() => {
+                    setFormat("pdf");
+                    setPreview([]);
+                    setError("");
+                  }}
+                />
+                PDF (via IA) — <span className="text-primary font-medium">recommandé</span>
+              </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="radio"
                   checked={format === "csv"}
-                  onChange={() => setFormat("csv")}
+                  onChange={() => {
+                    setFormat("csv");
+                    setPreview([]);
+                    setError("");
+                  }}
                 />
                 CSV (date;début;fin;titre)
               </label>
@@ -1072,20 +1182,76 @@ function ImportDialog({
             </div>
           </div>
 
-          {/* Zone texte */}
-          <div>
-            <Label>Colle les données CSV ici</Label>
-            <textarea
-              className="w-full mt-1 rounded-md border border-border px-3 py-2 text-sm bg-background text-foreground min-h-[120px] font-mono resize-y"
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              placeholder={`date;début;fin;titre\n10/03/2025;09:00;12:00;Module 1\n10/03/2025;14:00;17:00;Module 2`}
-            />
-          </div>
+          {format === "pdf" && (
+            <>
+              <div>
+                <Label>Ton nom (tel qu'il apparaît dans le PDF)</Label>
+                <Input
+                  className="mt-1"
+                  value={trainerName}
+                  onChange={(e) => setTrainerName(e.target.value)}
+                  placeholder="Ex : CASTRY JO-ANNE"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  L'IA ne gardera que les créneaux où tu es indiquée comme intervenante.
+                </p>
+              </div>
 
-          <Button variant="outline" size="sm" onClick={parseCSV} disabled={!csvText.trim()}>
-            Analyser
-          </Button>
+              <div>
+                <Label>Fichier PDF du planning</Label>
+                <Input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="mt-1"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    setPdfFile(f);
+                    setPreview([]);
+                    setError("");
+                    setAnalysisCost(null);
+                  }}
+                />
+                {pdfFile && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {pdfFile.name} — {(pdfFile.size / 1024).toFixed(0)} Ko
+                  </p>
+                )}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={analyzePdf}
+                disabled={!pdfFile || !trainerName.trim() || analyzing}
+              >
+                {analyzing ? "Analyse en cours…" : "Analyser avec l'IA"}
+              </Button>
+
+              {analysisCost !== null && (
+                <p className="text-xs text-muted-foreground">
+                  Coût de l'analyse : {analysisCost.toFixed(3)} €
+                </p>
+              )}
+            </>
+          )}
+
+          {format === "csv" && (
+            <>
+              <div>
+                <Label>Colle les données CSV ici</Label>
+                <textarea
+                  className="w-full mt-1 rounded-md border border-border px-3 py-2 text-sm bg-background text-foreground min-h-[120px] font-mono resize-y"
+                  value={csvText}
+                  onChange={(e) => setCsvText(e.target.value)}
+                  placeholder={`date;début;fin;titre\n10/03/2025;09:00;12:00;Module 1\n10/03/2025;14:00;17:00;Module 2`}
+                />
+              </div>
+
+              <Button variant="outline" size="sm" onClick={parseCSV} disabled={!csvText.trim()}>
+                Analyser
+              </Button>
+            </>
+          )}
 
           {error && (
             <Alert variant="destructive">
