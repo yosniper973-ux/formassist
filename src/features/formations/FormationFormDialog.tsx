@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, GraduationCap } from "lucide-react";
+import { X, GraduationCap, Copy } from "lucide-react";
 import { db } from "@/lib/db";
 import type { Formation, Centre } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,21 @@ interface Props {
   onSaved: () => void;
 }
 
+interface SourceOption {
+  id: string;
+  title: string;
+  rncp_code: string | null;
+  centre_name: string;
+}
+
 export function FormationFormDialog({ formation, centres, defaultCentreId, onClose, onSaved }: Props) {
   const [title, setTitle] = useState("");
   const [rncpCode, setRncpCode] = useState("");
   const [centreId, setCentreId] = useState(defaultCentreId ?? "");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [copyFromId, setCopyFromId] = useState("");
+  const [sources, setSources] = useState<SourceOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -36,6 +45,28 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
       setCentreId(defaultCentreId);
     }
   }, [formation, defaultCentreId]);
+
+  useEffect(() => {
+    if (formation) return;
+    (async () => {
+      const rows = await db.query<SourceOption>(
+        `SELECT f.id, f.title, f.rncp_code, c.name AS centre_name
+         FROM formations f
+         JOIN centres c ON c.id = f.centre_id
+         WHERE f.reac_parsed = 1 AND f.archived_at IS NULL
+         ORDER BY f.start_date DESC`,
+      );
+      setSources(rows);
+    })();
+  }, [formation]);
+
+  const sortedSources = (() => {
+    if (!rncpCode.trim()) return sources;
+    const match = rncpCode.trim();
+    const head = sources.filter((s) => s.rncp_code === match);
+    const tail = sources.filter((s) => s.rncp_code !== match);
+    return [...head, ...tail];
+  })();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,7 +88,6 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
       };
 
       if (formation) {
-        // Mise à jour — construire les SET manuellement
         const keys = Object.keys(data);
         const sets = keys.map((k) => `${k} = ?`).join(", ");
         const values = keys.map((k) => data[k]);
@@ -66,7 +96,10 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
           [...values, formation.id],
         );
       } else {
-        await db.createFormation(data);
+        const newId = await db.createFormation(data);
+        if (copyFromId) {
+          await db.copyReacToFormation(copyFromId, newId);
+        }
       }
 
       onSaved();
@@ -158,6 +191,35 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
               />
             </div>
           </div>
+
+          {/* Copier REAC depuis une formation existante (création uniquement) */}
+          {!formation && sources.length > 0 && (
+            <div className="space-y-1.5 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+              <Label htmlFor="copyFrom" className="flex items-center gap-1.5">
+                <Copy className="h-3.5 w-3.5 text-primary" />
+                Copier le REAC depuis une formation existante (optionnel)
+              </Label>
+              <Select
+                id="copyFrom"
+                value={copyFromId}
+                onChange={(e) => setCopyFromId(e.target.value)}
+              >
+                <option value="">— Aucune copie (parser le REAC manuellement) —</option>
+                {sortedSources.map((s) => {
+                  const rncp = s.rncp_code ? ` · RNCP ${s.rncp_code}` : "";
+                  const match = rncpCode.trim() && s.rncp_code === rncpCode.trim() ? " ✓ même RNCP" : "";
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.title} — {s.centre_name}{rncp}{match}
+                    </option>
+                  );
+                })}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Les CCP, compétences et critères d'évaluation seront recopiés — pas d'appel à Claude.
+              </p>
+            </div>
+          )}
 
           {error && (
             <Alert variant="destructive">

@@ -11,6 +11,9 @@ import {
   Pencil,
   Trash2,
   Copy,
+  X,
+  Target,
+  CheckCircle2,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
@@ -22,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ============================================================
 // Types locaux
@@ -38,6 +42,42 @@ interface SlotRow extends Slot {
 interface Conflict {
   slotA: SlotRow;
   slotB: SlotRow;
+}
+
+interface CompetenceRow {
+  id: string;
+  code: string;
+  title: string;
+  description: string | null;
+  ccp_code: string;
+  ccp_title: string;
+  criteria: string[];
+}
+
+function normalizeCode(s: string): string {
+  return s.toUpperCase().replace(/[\s.]/g, "");
+}
+
+function extractCompetenceCodes(title: string | null | undefined): string[] {
+  if (!title) return [];
+  const up = title.toUpperCase();
+  const matches = up.match(/C{1,3}P*\s*\d+(?:\.\d+)?/g) ?? [];
+  return [...new Set(matches.map(normalizeCode))];
+}
+
+function resolveCompetencesForSlot(
+  slot: SlotRow,
+  map: Map<string, CompetenceRow[]>,
+): CompetenceRow[] {
+  const codes = extractCompetenceCodes(slot.title);
+  if (codes.length === 0) return [];
+  const comps = map.get(slot.formation_id) ?? [];
+  const found: CompetenceRow[] = [];
+  for (const code of codes) {
+    const match = comps.find((c) => normalizeCode(c.code) === code);
+    if (match && !found.some((f) => f.id === match.id)) found.push(match);
+  }
+  return found;
 }
 
 type ViewMode = "month" | "week";
@@ -189,6 +229,11 @@ export function PlanningPage() {
   const [prefillDate, setPrefillDate] = useState<string>("");
   const [showImport, setShowImport] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
+  const [toDeleteSlot, setToDeleteSlot] = useState<SlotRow | null>(null);
+  const [infoSlot, setInfoSlot] = useState<SlotRow | null>(null);
+  const [competencesByFormation, setCompetencesByFormation] = useState<
+    Map<string, CompetenceRow[]>
+  >(new Map());
 
   // Plage de dates affichée
   const dateRange = useMemo(() => {
@@ -255,6 +300,48 @@ export function PlanningPage() {
     loadSlots();
   }, [loadSlots]);
 
+  // Précharge les compétences + critères de toutes les formations visibles
+  // pour résoudre les codes (ex: « CP10 ») présents dans les titres de créneaux.
+  useEffect(() => {
+    if (formations.length === 0) {
+      setCompetencesByFormation(new Map());
+      return;
+    }
+    (async () => {
+      const map = new Map<string, CompetenceRow[]>();
+      for (const f of formations) {
+        const rows = await db.query<{
+          id: string;
+          code: string;
+          title: string;
+          description: string | null;
+          ccp_code: string;
+          ccp_title: string;
+        }>(
+          `SELECT c.id, c.code, c.title, c.description,
+                  cp.code AS ccp_code, cp.title AS ccp_title
+             FROM competences c
+             JOIN ccps cp ON cp.id = c.ccp_id
+            WHERE cp.formation_id = ?
+            ORDER BY cp.sort_order, c.sort_order`,
+          [f.id],
+        );
+
+        const withCriteria: CompetenceRow[] = [];
+        for (const r of rows) {
+          const crit = await db.query<{ description: string }>(
+            `SELECT description FROM evaluation_criteria
+              WHERE competence_id = ? ORDER BY sort_order`,
+            [r.id],
+          );
+          withCriteria.push({ ...r, criteria: crit.map((c) => c.description) });
+        }
+        map.set(f.id, withCriteria);
+      }
+      setCompetencesByFormation(map);
+    })();
+  }, [formations]);
+
   // Filtrage
   const displayedSlots = useMemo(() => {
     if (!filterFormationId) return slots;
@@ -301,10 +388,9 @@ export function PlanningPage() {
     return map;
   }, [displayedSlots]);
 
-  async function deleteSlot(id: string) {
-    if (!confirm("Supprimer ce créneau ?")) return;
-    await db.execute("DELETE FROM slots WHERE id = ?", [id]);
-    await loadSlots();
+  function requestDeleteSlot(id: string) {
+    const slot = slots.find((s) => s.id === id);
+    if (slot) setToDeleteSlot(slot);
   }
 
   async function duplicateSlot(slot: SlotRow) {
@@ -453,16 +539,14 @@ export function PlanningPage() {
         <WeekView
           monday={getMonday(currentDate)}
           slotsByDate={slotsByDate}
-          onClickSlot={(s) => {
-            setEditSlot(s);
-            setShowSlotForm(true);
-          }}
+          competencesByFormation={competencesByFormation}
+          onClickSlot={(s) => setInfoSlot(s)}
           onAddSlot={(date) => {
             setEditSlot(null);
             setPrefillDate(date);
             setShowSlotForm(true);
           }}
-          onDelete={deleteSlot}
+          onDelete={requestDeleteSlot}
           onDuplicate={duplicateSlot}
         />
       ) : (
@@ -470,15 +554,13 @@ export function PlanningPage() {
           year={currentDate.getFullYear()}
           month={currentDate.getMonth()}
           slotsByDate={slotsByDate}
+          competencesByFormation={competencesByFormation}
           onClickDate={(date) => {
             setEditSlot(null);
             setPrefillDate(date);
             setShowSlotForm(true);
           }}
-          onClickSlot={(s) => {
-            setEditSlot(s);
-            setShowSlotForm(true);
-          }}
+          onClickSlot={(s) => setInfoSlot(s)}
         />
       )}
 
@@ -508,6 +590,43 @@ export function PlanningPage() {
           }}
         />
       )}
+
+      {/* Détails d'un créneau (avec compétences résolues) */}
+      {infoSlot && (
+        <SlotInfoDialog
+          slot={infoSlot}
+          competences={resolveCompetencesForSlot(infoSlot, competencesByFormation)}
+          onClose={() => setInfoSlot(null)}
+          onEdit={() => {
+            setEditSlot(infoSlot);
+            setInfoSlot(null);
+            setShowSlotForm(true);
+          }}
+          onDelete={() => {
+            setToDeleteSlot(infoSlot);
+            setInfoSlot(null);
+          }}
+          onDuplicate={async () => {
+            const s = infoSlot;
+            setInfoSlot(null);
+            await duplicateSlot(s);
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={toDeleteSlot !== null}
+        title="Supprimer ce créneau ?"
+        message={`${toDeleteSlot?.title ?? toDeleteSlot?.formation_title ?? ""}\n${toDeleteSlot?.date ?? ""}${toDeleteSlot?.start_time ? ` — ${toDeleteSlot.start_time}–${toDeleteSlot.end_time}` : ""}\n\nCette action est irréversible.`}
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          if (!toDeleteSlot) return;
+          await db.deleteSlot(toDeleteSlot.id);
+          setToDeleteSlot(null);
+          loadSlots();
+        }}
+        onCancel={() => setToDeleteSlot(null)}
+      />
     </div>
   );
 }
@@ -519,6 +638,7 @@ export function PlanningPage() {
 function WeekView({
   monday,
   slotsByDate,
+  competencesByFormation,
   onClickSlot,
   onAddSlot,
   onDelete,
@@ -526,6 +646,7 @@ function WeekView({
 }: {
   monday: Date;
   slotsByDate: Map<string, SlotRow[]>;
+  competencesByFormation: Map<string, CompetenceRow[]>;
   onClickSlot: (s: SlotRow) => void;
   onAddSlot: (date: string) => void;
   onDelete: (id: string) => void;
@@ -568,6 +689,7 @@ function WeekView({
                 <SlotCard
                   key={slot.id}
                   slot={slot}
+                  competences={resolveCompetencesForSlot(slot, competencesByFormation)}
                   onClick={() => onClickSlot(slot)}
                   onDelete={() => onDelete(slot.id)}
                   onDuplicate={() => onDuplicate(slot)}
@@ -589,12 +711,14 @@ function MonthView({
   year,
   month,
   slotsByDate,
+  competencesByFormation,
   onClickDate,
   onClickSlot,
 }: {
   year: number;
   month: number;
   slotsByDate: Map<string, SlotRow[]>;
+  competencesByFormation: Map<string, CompetenceRow[]>;
   onClickDate: (date: string) => void;
   onClickSlot: (s: SlotRow) => void;
 }) {
@@ -637,24 +761,30 @@ function MonthView({
                 {d.getDate()}
               </span>
               <div className="mt-1 space-y-0.5">
-                {daySlots.slice(0, 3).map((slot) => (
-                  <div
-                    key={slot.id}
-                    className="text-[10px] leading-tight px-1 py-0.5 rounded truncate cursor-pointer"
-                    style={{
-                      backgroundColor: `${slot.centre_color}20`,
-                      borderLeft: `2px solid ${slot.centre_color}`,
-                      color: slot.centre_color,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onClickSlot(slot);
-                    }}
-                    title={`${slot.title || slot.formation_title} (${slot.start_time || ""}–${slot.end_time || ""})`}
-                  >
-                    {slot.title || slot.formation_title}
-                  </div>
-                ))}
+                {daySlots.slice(0, 3).map((slot) => {
+                  const comps = resolveCompetencesForSlot(slot, competencesByFormation);
+                  const compLine = comps.length
+                    ? "\n" + comps.map((c) => `${c.code} — ${c.title}`).join("\n")
+                    : "";
+                  return (
+                    <div
+                      key={slot.id}
+                      className="text-[10px] leading-tight px-1 py-0.5 rounded truncate cursor-pointer"
+                      style={{
+                        backgroundColor: `${slot.centre_color}20`,
+                        borderLeft: `2px solid ${slot.centre_color}`,
+                        color: slot.centre_color,
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClickSlot(slot);
+                      }}
+                      title={`${slot.title || slot.formation_title} (${slot.start_time || ""}–${slot.end_time || ""})${compLine}`}
+                    >
+                      {slot.title || slot.formation_title}
+                    </div>
+                  );
+                })}
                 {daySlots.length > 3 && (
                   <span className="text-[10px] text-muted-foreground">
                     +{daySlots.length - 3} de plus
@@ -675,16 +805,30 @@ function MonthView({
 
 function SlotCard({
   slot,
+  competences,
   onClick,
   onDelete,
   onDuplicate,
 }: {
   slot: SlotRow;
+  competences: CompetenceRow[];
   onClick: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
+
+  const tooltip = (() => {
+    const head = `${slot.title || slot.formation_title}${
+      slot.start_time ? ` (${slot.start_time}–${slot.end_time})` : ""
+    }`;
+    if (competences.length === 0) return head;
+    return (
+      head +
+      "\n\n" +
+      competences.map((c) => `${c.code} — ${c.title}`).join("\n")
+    );
+  })();
 
   return (
     <div
@@ -694,6 +838,7 @@ function SlotCard({
         borderLeft: `3px solid ${slot.centre_color}`,
       }}
       onClick={onClick}
+      title={tooltip}
     >
       <div className="font-medium truncate" style={{ color: slot.centre_color }}>
         {slot.title || slot.formation_title}
@@ -702,6 +847,25 @@ function SlotCard({
         <div className="text-muted-foreground flex items-center gap-1 mt-0.5">
           <Clock className="h-2.5 w-2.5" />
           {slot.start_time}–{slot.end_time}
+        </div>
+      )}
+      {competences.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {competences.slice(0, 3).map((c) => (
+            <span
+              key={c.id}
+              className="inline-flex items-center gap-0.5 text-[9px] px-1 py-0 rounded bg-background/70 text-foreground border border-border"
+              title={`${c.code} — ${c.title}`}
+            >
+              <Target className="h-2 w-2" />
+              {c.code}
+            </span>
+          ))}
+          {competences.length > 3 && (
+            <span className="text-[9px] text-muted-foreground">
+              +{competences.length - 3}
+            </span>
+          )}
         </div>
       )}
       {slot.modality !== "presential" && (
@@ -1370,6 +1534,199 @@ function ImportDialog({
           <Button onClick={handleImport} disabled={preview.length === 0 || importing || !formationId}>
             {importing ? "Import en cours..." : `Importer ${preview.length} créneau${preview.length !== 1 ? "x" : ""}`}
           </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Détails d'un créneau (compétences visées + critères)
+// ============================================================
+
+function SlotInfoDialog({
+  slot,
+  competences,
+  onClose,
+  onEdit,
+  onDelete,
+  onDuplicate,
+}: {
+  slot: SlotRow;
+  competences: CompetenceRow[];
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+}) {
+  const dateLabel = (() => {
+    const d = parseDate(slot.date);
+    const day = DAYS_FR[(d.getDay() + 6) % 7];
+    const month = MONTHS_FR[d.getMonth()];
+    return `${day} ${d.getDate()} ${month} ${d.getFullYear()}`;
+  })();
+
+  const codesInTitle = extractCompetenceCodes(slot.title);
+  const missingCodes = codesInTitle.filter(
+    (code) => !competences.some((c) => normalizeCode(c.code) === code),
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card border border-border rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* En-tête */}
+        <div
+          className="flex items-start justify-between p-5 border-b border-border"
+          style={{ borderLeft: `4px solid ${slot.centre_color}` }}
+        >
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              {slot.title || slot.formation_title}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {dateLabel}
+              {slot.start_time && ` · ${slot.start_time}–${slot.end_time}`}
+              {typeof slot.duration_hours === "number" && slot.duration_hours > 0 && (
+                <> · {slot.duration_hours}h</>
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {slot.centre_name} · {slot.formation_title}
+            </p>
+          </div>
+          <button
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+            onClick={onClose}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Contenu */}
+        <div className="p-5 space-y-4">
+          {/* Compétences résolues */}
+          {competences.length > 0 ? (
+            <div>
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-2">
+                <Target className="h-4 w-4 text-primary" />
+                Compétence{competences.length > 1 ? "s" : ""} visée
+                {competences.length > 1 ? "s" : ""}
+              </h3>
+              <div className="space-y-3">
+                {competences.map((c) => (
+                  <div
+                    key={c.id}
+                    className="rounded-lg border border-border bg-background p-3"
+                  >
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-xs font-mono font-semibold text-primary">
+                        {c.code}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {c.ccp_code} — {c.ccp_title}
+                      </span>
+                    </div>
+                    <div className="text-sm font-medium text-foreground">
+                      {c.title}
+                    </div>
+                    {c.description && (
+                      <div className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">
+                        {c.description}
+                      </div>
+                    )}
+                    {c.criteria.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-[11px] font-medium text-muted-foreground mb-1">
+                          Critères d'évaluation :
+                        </div>
+                        <ul className="space-y-1">
+                          {c.criteria.map((crit, i) => (
+                            <li
+                              key={i}
+                              className="text-xs text-foreground flex gap-1.5"
+                            >
+                              <CheckCircle2 className="h-3 w-3 mt-0.5 flex-shrink-0 text-primary/60" />
+                              <span>{crit}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {missingCodes.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Code{missingCodes.length > 1 ? "s" : ""} non reconnu
+                  {missingCodes.length > 1 ? "s" : ""} dans le REAC :{" "}
+                  {missingCodes.join(", ")}.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              {codesInTitle.length > 0 ? (
+                <>
+                  Aucun des codes détectés ({codesInTitle.join(", ")}) n'a été trouvé
+                  dans le REAC de cette formation. Vérifie que le REAC est bien parsé
+                  et que les codes correspondent.
+                </>
+              ) : (
+                <>
+                  Aucun code compétence dans ce créneau (ex : « CP10 » ou « CP1.1 »).
+                  Ajoute-le dans le titre pour lier une compétence.
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Notes */}
+          {slot.description && (
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-1">Notes</h3>
+              <p className="text-sm text-foreground whitespace-pre-wrap">
+                {slot.description}
+              </p>
+            </div>
+          )}
+
+          {/* Modalité / co-animation */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            <Badge variant="secondary">
+              {slot.modality === "remote"
+                ? "Distanciel"
+                : slot.modality === "hybrid"
+                  ? "Hybride"
+                  : "Présentiel"}
+            </Badge>
+            {slot.is_co_animated && (
+              <Badge variant="secondary">
+                Co-animation
+                {slot.co_animator_name ? ` · ${slot.co_animator_name}` : ""}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-between gap-2 p-5 border-t border-border">
+          <Button variant="outline" size="sm" onClick={onDelete} className="text-destructive">
+            <Trash2 className="h-4 w-4 mr-1" /> Supprimer
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onDuplicate}>
+              <Copy className="h-4 w-4 mr-1" /> Dupliquer +7j
+            </Button>
+            <Button size="sm" onClick={onEdit}>
+              <Pencil className="h-4 w-4 mr-1" /> Modifier
+            </Button>
+          </div>
         </div>
       </div>
     </div>

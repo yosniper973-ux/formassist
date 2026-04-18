@@ -5,6 +5,7 @@ import {
   Search,
   MoreHorizontal,
   Pencil,
+  Trash2,
   Calendar,
   ChevronRight,
   BookOpen,
@@ -15,6 +16,7 @@ import type { Formation, Centre } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatDateShort } from "@/lib/utils";
 import { FormationFormDialog } from "./FormationFormDialog";
 import { FormationDetail } from "./FormationDetail";
@@ -29,6 +31,7 @@ export function FormationsPage() {
   const [editFormation, setEditFormation] = useState<Formation | null>(null);
   const [selectedFormation, setSelectedFormation] = useState<Formation | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<Formation | null>(null);
 
   async function loadFormations() {
     setLoading(true);
@@ -224,12 +227,19 @@ export function FormationsPage() {
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
                 {menuOpen === f.id && (
-                  <div className="absolute right-0 top-8 z-50 min-w-[140px] rounded-lg border bg-card shadow-lg">
+                  <div className="absolute right-0 top-8 z-50 min-w-[160px] rounded-lg border bg-card shadow-lg">
                     <button
                       onClick={() => { setEditFormation(f); setShowForm(true); setMenuOpen(null); }}
                       className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
                     >
                       <Pencil className="h-3.5 w-3.5" /> Modifier
+                    </button>
+                    <div className="my-1 h-px bg-border" />
+                    <button
+                      onClick={() => { setMenuOpen(null); setToDelete(f); }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Supprimer
                     </button>
                   </div>
                 )}
@@ -248,6 +258,22 @@ export function FormationsPage() {
           onSaved={() => { setShowForm(false); loadFormations(); }}
         />
       )}
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title={`Supprimer la formation "${toDelete?.title ?? ""}" ?`}
+        message={
+          "Cette action supprime définitivement la formation ET tout ce qui y est rattaché : REAC (CCP, compétences, critères), groupes, apprenants, plannings, contenus générés, fiches pédagogiques, corrections et factures.\n\nCette action est irréversible."
+        }
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await db.deleteFormation(toDelete.id);
+          setToDelete(null);
+          loadFormations();
+        }}
+        onCancel={() => setToDelete(null)}
+      />
     </div>
   );
 }

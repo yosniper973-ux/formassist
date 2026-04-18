@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -763,6 +764,7 @@ function InvoiceDetailView({
 }) {
   const [lines, setLines] = useState<InvoiceLine[]>([]);
   const [updating, setUpdating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -847,8 +849,30 @@ function InvoiceDetailView({
               Marquer pay\u00E9e
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={() => setConfirmDelete(true)}
+            disabled={updating}
+            className="text-red-600 hover:bg-red-50 hover:text-red-700"
+          >
+            <Trash2 className="h-4 w-4" />
+            Supprimer
+          </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Supprimer la facture ${invoice.invoice_number} ?`}
+        message={"Cette action supprime d\u00E9finitivement la facture et toutes ses lignes.\n\nCette action est irr\u00E9versible."}
+        confirmLabel="Supprimer d\u00E9finitivement"
+        onConfirm={async () => {
+          await db.deleteInvoice(invoice.id);
+          setConfirmDelete(false);
+          onUpdated();
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Infos g\u00E9n\u00E9rales */}

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   Pencil,
+  Trash2,
   GraduationCap,
 } from "lucide-react";
 import { db } from "@/lib/db";
@@ -18,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export function ApprenantsPage() {
   const { activeCentreId } = useAppStore();
@@ -34,6 +36,8 @@ export function ApprenantsPage() {
   const [editLearner, setEditLearner] = useState<Learner | null>(null);
   const [targetGroupId, setTargetGroupId] = useState<string>("");
   const [showImport, setShowImport] = useState(false);
+  const [toDeleteGroup, setToDeleteGroup] = useState<Group | null>(null);
+  const [toDeleteLearner, setToDeleteLearner] = useState<Learner | null>(null);
 
   interface GroupWithLearners extends Group {
     learners: Learner[];
@@ -168,7 +172,7 @@ export function ApprenantsPage() {
                 <Badge variant="outline" className="text-xs">
                   {group.learners.length} apprenant(s)
                 </Badge>
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -181,6 +185,13 @@ export function ApprenantsPage() {
                     <Plus className="h-3.5 w-3.5" />
                     Ajouter
                   </Button>
+                  <button
+                    onClick={() => setToDeleteGroup(group)}
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                    aria-label="Supprimer le groupe"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
 
@@ -220,6 +231,13 @@ export function ApprenantsPage() {
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
+                      <button
+                        onClick={() => setToDeleteLearner(learner)}
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                        aria-label="Supprimer l'apprenant"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -256,6 +274,38 @@ export function ApprenantsPage() {
           onSaved={() => { setShowImport(false); loadGroups(); }}
         />
       )}
+
+      <ConfirmDialog
+        open={toDeleteGroup !== null}
+        title={`Supprimer le groupe "${toDeleteGroup?.name ?? ""}" ?`}
+        message={
+          "Cette action supprime définitivement le groupe ET tous les apprenants qui y sont rattachés, ainsi que leurs contenus générés, corrections et fiches pédagogiques associés.\n\nCette action est irréversible."
+        }
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          if (!toDeleteGroup) return;
+          await db.deleteGroup(toDeleteGroup.id);
+          setToDeleteGroup(null);
+          loadGroups();
+        }}
+        onCancel={() => setToDeleteGroup(null)}
+      />
+
+      <ConfirmDialog
+        open={toDeleteLearner !== null}
+        title={`Supprimer "${toDeleteLearner?.first_name ?? ""} ${toDeleteLearner?.last_name ?? ""}" ?`}
+        message={
+          "Cette action supprime définitivement l'apprenant ET tous ses contenus générés, corrections et fiches pédagogiques associés.\n\nCette action est irréversible."
+        }
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          if (!toDeleteLearner) return;
+          await db.deleteLearner(toDeleteLearner.id);
+          setToDeleteLearner(null);
+          loadGroups();
+        }}
+        onCancel={() => setToDeleteLearner(null)}
+      />
     </div>
   );
 }

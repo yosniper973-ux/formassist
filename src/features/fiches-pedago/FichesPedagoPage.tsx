@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatDateShort } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ---------------------------------------------------------------------------
 // Types locaux
@@ -136,6 +137,9 @@ export function FichesPedagoPage() {
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+
+  // Suppression
+  const [toDeleteSheet, setToDeleteSheet] = useState<PedagogicalSheet | null>(null);
 
   // -------------------------------------------------------------------------
   // Chargement des donnees
@@ -451,11 +455,7 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
   }
 
   async function deleteSheet(sheetId: string) {
-    const nowStr = new Date().toISOString().replace("T", " ").substring(0, 19);
-    await db.execute(
-      "UPDATE pedagogical_sheets SET archived_at = ?, updated_at = ? WHERE id = ?",
-      [nowStr, nowStr, sheetId],
-    );
+    await db.deletePedagogicalSheet(sheetId);
     backToList();
   }
 
@@ -689,12 +689,25 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
           <Button
             variant="destructive"
             size="sm"
-            onClick={() => deleteSheet(selectedSheet.id)}
+            onClick={() => setToDeleteSheet(selectedSheet)}
           >
             <Trash2 className="h-4 w-4" />
             Supprimer
           </Button>
         </div>
+
+        <ConfirmDialog
+          open={toDeleteSheet !== null}
+          title={`Supprimer la fiche "${toDeleteSheet?.title ?? ""}" ?`}
+          message={"Cette action supprime définitivement la fiche pédagogique et toutes ses phases.\n\nCette action est irréversible."}
+          confirmLabel="Supprimer définitivement"
+          onConfirm={async () => {
+            if (!toDeleteSheet) return;
+            await deleteSheet(toDeleteSheet.id);
+            setToDeleteSheet(null);
+          }}
+          onCancel={() => setToDeleteSheet(null)}
+        />
 
         {/* Objectifs */}
         <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -1009,12 +1022,36 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
                       +{sheet.targeted_cps.length - 3}
                     </Badge>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setToDeleteSheet(sheet);
+                    }}
+                    className="rounded-md p-1.5 text-muted-foreground opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                    aria-label="Supprimer la fiche"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={toDeleteSheet !== null && view === "list"}
+        title={`Supprimer la fiche "${toDeleteSheet?.title ?? ""}" ?`}
+        message={"Cette action supprime définitivement la fiche pédagogique et toutes ses phases.\n\nCette action est irréversible."}
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          if (!toDeleteSheet) return;
+          await db.deletePedagogicalSheet(toDeleteSheet.id);
+          setToDeleteSheet(null);
+          loadSheets();
+        }}
+        onCancel={() => setToDeleteSheet(null)}
+      />
     </div>
   );
 }

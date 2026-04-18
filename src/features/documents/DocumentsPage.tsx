@@ -10,7 +10,9 @@ import {
   AlertTriangle,
   Loader2,
   ChevronRight,
+  Trash2,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
 import type { Centre } from "@/types";
@@ -67,6 +69,7 @@ export function DocumentsPage() {
 
   // Templates
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [toDeleteTemplate, setToDeleteTemplate] = useState<EmailTemplate | null>(null);
 
   useEffect(() => {
     loadCentres();
@@ -399,16 +402,40 @@ export function DocumentsPage() {
                 className="flex items-center justify-between rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50"
                 onClick={() => applyTemplate(t)}
               >
-                <div>
+                <div className="flex-1">
                   <p className="text-sm font-medium">{t.name}</p>
                   <p className="text-xs text-muted-foreground">{t.subject}</p>
                 </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setToDeleteTemplate(t);
+                  }}
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                  aria-label="Supprimer le modèle"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
             ))
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={toDeleteTemplate !== null}
+        title={`Supprimer le modèle "${toDeleteTemplate?.name ?? ""}" ?`}
+        message={"Cette action supprime définitivement le modèle d'email.\n\nCette action est irréversible."}
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          if (!toDeleteTemplate) return;
+          await db.deleteEmailTemplate(toDeleteTemplate.id);
+          setToDeleteTemplate(null);
+          loadTemplates();
+        }}
+        onCancel={() => setToDeleteTemplate(null)}
+      />
     </div>
   );
 }

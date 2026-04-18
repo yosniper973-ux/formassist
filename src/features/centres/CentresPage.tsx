@@ -8,12 +8,14 @@ import {
   Search,
   MoreHorizontal,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import type { Centre } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CentreFormDialog } from "./CentreFormDialog";
 
 export function CentresPage() {
@@ -24,6 +26,7 @@ export function CentresPage() {
   const [showForm, setShowForm] = useState(false);
   const [editCentre, setEditCentre] = useState<Centre | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<Centre | null>(null);
 
   async function loadCentres() {
     setLoading(true);
@@ -65,6 +68,13 @@ export function CentresPage() {
   async function archiveCentre(centre: Centre) {
     if (!confirm(`Archiver "${centre.name}" ? Tu pourras le réactiver plus tard.`)) return;
     await db.archiveCentre(centre.id);
+    loadCentres();
+  }
+
+  async function confirmDelete() {
+    if (!toDelete) return;
+    await db.deleteCentre(toDelete.id);
+    setToDelete(null);
     loadCentres();
   }
 
@@ -143,6 +153,10 @@ export function CentresPage() {
                     onEdit={() => openEdit(c)}
                     onTogglePin={() => togglePin(c)}
                     onArchive={() => archiveCentre(c)}
+                    onDelete={() => {
+                      setMenuOpen(null);
+                      setToDelete(c);
+                    }}
                   />
                 ))}
               </div>
@@ -170,6 +184,10 @@ export function CentresPage() {
                     onEdit={() => openEdit(c)}
                     onTogglePin={() => togglePin(c)}
                     onArchive={() => archiveCentre(c)}
+                    onDelete={() => {
+                      setMenuOpen(null);
+                      setToDelete(c);
+                    }}
                   />
                 ))}
               </div>
@@ -189,6 +207,18 @@ export function CentresPage() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title={`Supprimer "${toDelete?.name ?? ""}" ?`}
+        message={
+          "Cette action supprime définitivement le centre ET toutes les formations, groupes, apprenants, plannings, contenus générés, corrections et factures liés.\n\n" +
+          "Si tu veux juste le masquer, utilise plutôt « Archiver »."
+        }
+        confirmLabel="Supprimer définitivement"
+        onConfirm={confirmDelete}
+        onCancel={() => setToDelete(null)}
+      />
     </div>
   );
 }
@@ -204,6 +234,7 @@ interface CentreCardProps {
   onEdit: () => void;
   onTogglePin: () => void;
   onArchive: () => void;
+  onDelete: () => void;
 }
 
 function CentreCard({
@@ -213,6 +244,7 @@ function CentreCard({
   onEdit,
   onTogglePin,
   onArchive,
+  onDelete,
 }: CentreCardProps) {
   return (
     <div className="relative rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
@@ -295,6 +327,14 @@ function CentreCard({
             >
               <Archive className="h-3.5 w-3.5" />
               Archiver
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Supprimer
             </button>
           </div>
         )}

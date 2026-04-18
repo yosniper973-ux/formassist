@@ -7,7 +7,9 @@ import {
   Loader2,
   ChevronRight,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
 import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -437,6 +439,7 @@ Corrige cette copie. Reponds en JSON avec cette structure exacte :
           history={history}
           loading={historyLoading}
           gradeColor={gradeColor}
+          onDeleted={loadHistory}
         />
       )}
     </div>
@@ -768,11 +771,15 @@ function HistoryTab({
   history,
   loading,
   gradeColor,
+  onDeleted,
 }: {
   history: CorrectionWithDetails[];
   loading: boolean;
   gradeColor: (grade: number, max: number) => string;
+  onDeleted: () => void;
 }) {
+  const [toDelete, setToDelete] = useState<CorrectionWithDetails | null>(null);
+
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -836,9 +843,31 @@ function HistoryTab({
             </Badge>
           )}
 
+          <button
+            onClick={() => setToDelete(c)}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label="Supprimer la correction"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </div>
       ))}
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title={`Supprimer cette correction ?`}
+        message={`Correction de ${toDelete?.learner_first_name ?? ""} ${toDelete?.learner_last_name ?? ""}.\n\nCette action est irréversible.`}
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await db.deleteCorrection(toDelete.id);
+          setToDelete(null);
+          onDeleted();
+        }}
+        onCancel={() => setToDelete(null)}
+      />
     </div>
   );
 }

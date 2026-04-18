@@ -137,6 +137,47 @@ async function archiveCentre(id: string): Promise<void> {
 }
 
 // ============================================================
+// Suppressions définitives (ON DELETE CASCADE gère les enfants)
+// ============================================================
+
+async function deleteCentre(id: string): Promise<void> {
+  await execute("DELETE FROM centres WHERE id = ?", [id]);
+}
+async function deleteFormation(id: string): Promise<void> {
+  await execute("DELETE FROM formations WHERE id = ?", [id]);
+}
+async function deleteGroup(id: string): Promise<void> {
+  await execute("DELETE FROM groups WHERE id = ?", [id]);
+}
+async function deleteLearner(id: string): Promise<void> {
+  await execute("DELETE FROM learners WHERE id = ?", [id]);
+}
+async function deleteSlot(id: string): Promise<void> {
+  await execute("DELETE FROM slots WHERE id = ?", [id]);
+}
+async function deleteContent(id: string): Promise<void> {
+  await execute("DELETE FROM generated_contents WHERE id = ?", [id]);
+}
+async function deleteCorrection(id: string): Promise<void> {
+  await execute("DELETE FROM corrections WHERE id = ?", [id]);
+}
+async function deleteInvoice(id: string): Promise<void> {
+  await execute("DELETE FROM invoices WHERE id = ?", [id]);
+}
+async function deletePedagogicalSheet(id: string): Promise<void> {
+  await execute("DELETE FROM pedagogical_sheets WHERE id = ?", [id]);
+}
+async function deleteEmailTemplate(id: string): Promise<void> {
+  await execute("DELETE FROM email_templates WHERE id = ?", [id]);
+}
+async function resetStyleProfile(): Promise<void> {
+  await execute(
+    "UPDATE style_profile SET self_description = NULL, analyzed_profile = NULL, confirmed = 0, sample_files = NULL, updated_at = ? WHERE id = 'main'",
+    [now()],
+  );
+}
+
+// ============================================================
 // Formations
 // ============================================================
 
@@ -224,6 +265,92 @@ async function saveParsedReac(
   await execute("UPDATE formations SET reac_parsed = 1, updated_at = ? WHERE id = ?", [
     now(),
     formationId,
+  ]);
+}
+
+async function copyReacToFormation(
+  sourceFormationId: string,
+  targetFormationId: string,
+): Promise<void> {
+  // Purge cible
+  const existingCcps = await query<{ id: string }>(
+    "SELECT id FROM ccps WHERE formation_id = ?",
+    [targetFormationId],
+  );
+  for (const ccp of existingCcps) {
+    const comps = await query<{ id: string }>(
+      "SELECT id FROM competences WHERE ccp_id = ?",
+      [ccp.id],
+    );
+    for (const comp of comps) {
+      await execute("DELETE FROM evaluation_criteria WHERE competence_id = ?", [comp.id]);
+    }
+    await execute("DELETE FROM competences WHERE ccp_id = ?", [ccp.id]);
+  }
+  await execute("DELETE FROM ccps WHERE formation_id = ?", [targetFormationId]);
+
+  // Lecture source
+  const srcCcps = await query<{
+    id: string;
+    code: string;
+    title: string;
+    sort_order: number;
+  }>(
+    "SELECT id, code, title, sort_order FROM ccps WHERE formation_id = ? ORDER BY sort_order",
+    [sourceFormationId],
+  );
+
+  for (const srcCcp of srcCcps) {
+    const newCcpId = generateId();
+    await execute(
+      "INSERT INTO ccps (id, formation_id, code, title, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [newCcpId, targetFormationId, srcCcp.code, srcCcp.title, srcCcp.sort_order, now()],
+    );
+
+    const srcComps = await query<{
+      id: string;
+      code: string;
+      title: string;
+      description: string | null;
+      sort_order: number;
+      in_scope: number;
+    }>(
+      "SELECT id, code, title, description, sort_order, in_scope FROM competences WHERE ccp_id = ? ORDER BY sort_order",
+      [srcCcp.id],
+    );
+
+    for (const srcComp of srcComps) {
+      const newCompId = generateId();
+      await execute(
+        "INSERT INTO competences (id, ccp_id, code, title, description, sort_order, in_scope, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          newCompId,
+          newCcpId,
+          srcComp.code,
+          srcComp.title,
+          srcComp.description,
+          srcComp.sort_order,
+          srcComp.in_scope,
+          now(),
+        ],
+      );
+
+      const srcCriteria = await query<{ description: string; sort_order: number }>(
+        "SELECT description, sort_order FROM evaluation_criteria WHERE competence_id = ? ORDER BY sort_order",
+        [srcComp.id],
+      );
+      for (const crit of srcCriteria) {
+        await execute(
+          "INSERT INTO evaluation_criteria (id, competence_id, description, sort_order) VALUES (?, ?, ?, ?)",
+          [generateId(), newCompId, crit.description, crit.sort_order],
+        );
+      }
+    }
+  }
+
+  await execute("UPDATE formations SET reac_parsed = 1, updated_at = ? WHERE id = ?", [
+    now(),
+    targetFormationId,
   ]);
 }
 
@@ -449,27 +576,42 @@ export const db = {
   createCentre,
   updateCentre,
   archiveCentre,
+  deleteCentre,
   // Formations
   getFormations,
   createFormation,
+  deleteFormation,
   // REAC
   saveParsedReac,
+  copyReacToFormation,
   // Groups & Learners
   getGroups,
   createGroup,
+  deleteGroup,
   getLearners,
   createLearner,
+  deleteLearner,
   // Slots
   getSlots,
   getAllSlots,
   createSlot,
+  deleteSlot,
   // Contents
   createContent,
   getContents,
+  deleteContent,
   // Invoices
   getInvoices,
   createInvoice,
+  deleteInvoice,
+  // Fiches pédago
+  deletePedagogicalSheet,
+  // Corrections
+  deleteCorrection,
+  // Email templates
+  deleteEmailTemplate,
   // Style
   getStyleProfile,
   updateStyleProfile,
+  resetStyleProfile,
 };

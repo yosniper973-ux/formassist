@@ -9,7 +9,9 @@ import {
   FileText,
   X,
   Euro,
+  Trash2,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
 import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -56,6 +58,7 @@ export function StylePage() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   // Load existing profile on mount
   useEffect(() => {
@@ -260,13 +263,44 @@ export function StylePage() {
             Definis ton style pedagogique pour que l'IA adapte ses productions.
           </p>
         </div>
-        {confirmed && (
-          <Badge variant="default" className="flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" />
-            Confirme
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {confirmed && (
+            <Badge variant="default" className="flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3" />
+              Confirme
+            </Badge>
+          )}
+          {(selfDescription || analyzedProfile) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmReset(true)}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Réinitialiser
+            </Button>
+          )}
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="Réinitialiser le profil de style ?"
+        message={"Cette action supprime définitivement ta description, l'analyse IA et la confirmation du profil. Tu devras tout recommencer depuis le début.\n\nCette action est irréversible."}
+        confirmLabel="Réinitialiser"
+        onConfirm={async () => {
+          await db.resetStyleProfile();
+          setSelfDescription("");
+          setSampleFiles([]);
+          setAnalyzedProfile(null);
+          setConfirmed(false);
+          setChatMessages([]);
+          setCurrentStep(1);
+          setConfirmReset(false);
+        }}
+        onCancel={() => setConfirmReset(false)}
+      />
 
       {/* Step Indicator */}
       <div className="flex items-center gap-2">

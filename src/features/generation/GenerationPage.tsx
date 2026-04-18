@@ -20,7 +20,9 @@ import {
   Wand2,
   FileText,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
 import { request as claudeRequest, estimateCost } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -946,7 +948,7 @@ Taille du groupe : ${groupSize} apprenants`;
                   {history
                     .filter((c) => !historyFilter || c.content_type === historyFilter)
                     .map((item) => (
-                      <HistoryCard key={item.id} item={item} />
+                      <HistoryCard key={item.id} item={item} onDeleted={loadHistory} />
                     ))}
                 </div>
               )}
@@ -960,9 +962,10 @@ Taille du groupe : ${groupSize} apprenants`;
 
 // ─── HistoryCard ──────────────────────────────────────────────
 
-function HistoryCard({ item }: { item: GeneratedContent }) {
+function HistoryCard({ item, onDeleted }: { item: GeneratedContent; onDeleted: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function handleCopy() {
     await navigator.clipboard.writeText(item.content_markdown);
@@ -1015,10 +1018,19 @@ function HistoryCard({ item }: { item: GeneratedContent }) {
       </CardHeader>
       {expanded && (
         <CardContent className="pt-0">
-          <div className="mb-3 flex justify-end">
+          <div className="mb-3 flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={handleCopy}>
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
               {copied ? "Copié" : "Copier"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmDelete(true)}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Supprimer
             </Button>
           </div>
           <div className="max-h-96 overflow-y-auto rounded-lg border bg-muted/30 p-4">
@@ -1026,6 +1038,18 @@ function HistoryCard({ item }: { item: GeneratedContent }) {
           </div>
         </CardContent>
       )}
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Supprimer "${item.title}" ?`}
+        message={"Cette action supprime définitivement ce contenu généré.\n\nCette action est irréversible."}
+        confirmLabel="Supprimer définitivement"
+        onConfirm={async () => {
+          await db.deleteContent(item.id);
+          setConfirmDelete(false);
+          onDeleted();
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </Card>
   );
 }
