@@ -41,7 +41,7 @@ export const ESTIMATED_OUTPUT_TOKENS: Record<TaskType, number> = {
   generation_fiche_pedagogique: 5000,
   analyse_style: 2000,
   affinage_style: 1500,
-  parsing_reac: 3000,
+  parsing_reac: 6000,
   parsing_planning: 2000,
   parsing_repartition: 1500,
   correction: 1500,

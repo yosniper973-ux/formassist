@@ -228,6 +228,11 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
       });
 
       if (response.status === 429 || response.status === 529) {
+        lastError = new Error(
+          response.status === 429
+            ? "Trop de requêtes envoyées à Claude. Réessaie dans quelques secondes."
+            : "Les serveurs Claude sont temporairement surchargés. Réessaie dans un moment.",
+        );
         const waitMs = RETRY_BASE_MS * Math.pow(2, attempt);
         await new Promise((r) => setTimeout(r, waitMs));
         continue;
