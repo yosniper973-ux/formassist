@@ -374,6 +374,13 @@ async function createGroup(formationId: string, name: string, description?: stri
   return id;
 }
 
+async function updateGroup(id: string, name: string, description?: string): Promise<void> {
+  await execute(
+    "UPDATE groups SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+    [name, description ?? null, now(), id],
+  );
+}
+
 async function getLearners(groupId: string): Promise<Row[]> {
   return query(
     "SELECT * FROM learners WHERE group_id = ? AND archived_at IS NULL ORDER BY last_name, first_name",
@@ -719,6 +726,7 @@ export const db = {
   // Groups & Learners
   getGroups,
   createGroup,
+  updateGroup,
   deleteGroup,
   getLearners,
   createLearner,

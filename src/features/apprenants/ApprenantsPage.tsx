@@ -39,6 +39,7 @@ export function ApprenantsPage() {
   const [targetGroupId, setTargetGroupId] = useState<string>("");
   const [showImport, setShowImport] = useState(false);
   const [toDeleteGroup, setToDeleteGroup] = useState<Group | null>(null);
+  const [editGroup, setEditGroup] = useState<Group | null>(null);
   const [toDeleteLearner, setToDeleteLearner] = useState<Learner | null>(null);
   const [detailLearner, setDetailLearner] = useState<Learner | null>(null);
 
@@ -189,6 +190,13 @@ export function ApprenantsPage() {
                     Ajouter
                   </Button>
                   <button
+                    onClick={() => setEditGroup(group)}
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="Renommer le groupe"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
                     onClick={() => setToDeleteGroup(group)}
                     className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
                     aria-label="Supprimer le groupe"
@@ -264,6 +272,16 @@ export function ApprenantsPage() {
         />
       )}
 
+      {/* Dialogue édition groupe */}
+      {editGroup && (
+        <GroupFormDialog
+          formationId={selectedFormationId}
+          group={editGroup}
+          onClose={() => setEditGroup(null)}
+          onSaved={() => { setEditGroup(null); loadGroups(); }}
+        />
+      )}
+
       {/* Dialogue apprenant */}
       {showLearnerForm && (
         <LearnerFormDialog
@@ -329,29 +347,38 @@ export function ApprenantsPage() {
 
 function GroupFormDialog({
   formationId,
+  group,
   onClose,
   onSaved,
 }: {
   formationId: string;
+  group?: Group;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
+  const isEdit = !!group;
+  const [name, setName] = useState(group?.name ?? "");
+  const [desc, setDesc] = useState(group?.description ?? "");
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
-    await db.createGroup(formationId, name.trim(), desc || undefined);
+    if (isEdit && group) {
+      await db.updateGroup(group.id, name.trim(), desc || undefined);
+    } else {
+      await db.createGroup(formationId, name.trim(), desc || undefined);
+    }
     onSaved();
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-sm rounded-xl bg-card shadow-xl p-6">
-        <h2 className="mb-4 text-lg font-semibold">Nouveau groupe</h2>
+        <h2 className="mb-4 text-lg font-semibold">
+          {isEdit ? "Modifier le groupe" : "Nouveau groupe"}
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="group-name">Nom du groupe *</Label>
@@ -375,7 +402,7 @@ function GroupFormDialog({
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
             <Button type="submit" disabled={!name.trim() || saving}>
-              {saving ? "Création…" : "Créer"}
+              {saving ? (isEdit ? "Enregistrement…" : "Création…") : (isEdit ? "Enregistrer" : "Créer")}
             </Button>
           </div>
         </form>
