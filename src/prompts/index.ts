@@ -16,6 +16,7 @@ import { CORRECTION_EXERCICE_PROMPT } from "./correction_exercice";
 import { RECOMMANDATIONS_DASHBOARD_PROMPT } from "./recommandations_dashboard";
 import { MAIL_COORDINATEUR_PROMPT } from "./mail_coordinateur";
 import { CORRECTION_DOSSIER_PROMPT } from "./correction_dossier";
+import { PREFILL_DEROULEMENT_PROMPT } from "./prefill_deroulement";
 
 const PROMPTS: Record<TaskType, string> = {
   parsing_reac: PARSING_REAC_PROMPT,
@@ -34,6 +35,7 @@ const PROMPTS: Record<TaskType, string> = {
   qcm_simple: GENERATION_EXERCICE_INDIVIDUEL_PROMPT,
   reformulation: GENERATION_COURS_PROMPT,
   correction_dossier: CORRECTION_DOSSIER_PROMPT,
+  prefill_deroulement: PREFILL_DEROULEMENT_PROMPT,
 };
 
 export function getPromptForTask(task: TaskType): string {

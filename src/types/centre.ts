@@ -24,6 +24,7 @@ export interface Centre {
   imap_password: string | null;
   invoice_template_path: string | null;
   fiche_template_path: string | null;
+  deroulement_template_path: string | null;
   hourly_rate: number | null;
   billing_unit: "hour" | "half_day" | "day" | "flat";
   payment_delay_days: number;

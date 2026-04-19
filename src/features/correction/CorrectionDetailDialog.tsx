@@ -69,18 +69,34 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
       ? `${data.learner.first_name} ${data.learner.last_name}`
       : "Apprenant";
     const lines: string[] = [];
-    lines.push(`# Correction — ${learnerName}`);
+    const titleBase = data.content_title ?? "Exercice";
+    lines.push(`# CORRECTION — ${titleBase.toUpperCase()}`);
     lines.push("");
     lines.push("| Rubrique | Détail |");
     lines.push("|----------|--------|");
     lines.push(`| Apprenant | ${learnerName} |`);
     if (data.content_title) lines.push(`| Exercice | ${data.content_title} |`);
-    if (data.grade != null) lines.push(`| Note | **${data.grade} / ${data.max_grade}** |`);
-    lines.push(`| Date | ${new Date(data.created_at).toLocaleDateString("fr-FR")} |`);
+    if (data.grade != null) lines.push(`| Note globale | **${data.grade} / ${data.max_grade}** |`);
+    lines.push(`| Date de correction | ${new Date(data.created_at).toLocaleDateString("fr-FR")} |`);
+    if (data.validated) lines.push(`| Statut | Validée |`);
     lines.push("");
 
+    let section = 1;
+
+    if (data.grade != null) {
+      lines.push(`## ${section}. NOTE GLOBALE`);
+      lines.push("");
+      const ratio = data.grade / data.max_grade;
+      const kind = ratio >= 0.8 ? "success" : ratio >= 0.6 ? "info" : ratio >= 0.4 ? "warning" : "danger";
+      const label = ratio >= 0.8 ? "Très bon travail" : ratio >= 0.6 ? "Travail satisfaisant" : ratio >= 0.4 ? "Travail à consolider" : "Travail à reprendre";
+      lines.push(`> [!${kind}] ${label}`);
+      lines.push(`> **${data.grade} / ${data.max_grade}**`);
+      lines.push("");
+      section++;
+    }
+
     if (data.criteria_grid && data.criteria_grid.criteria.length > 0) {
-      lines.push("## Grille d'évaluation");
+      lines.push(`## ${section}. GRILLE D'ÉVALUATION`);
       lines.push("");
       lines.push("| Critère | Points | Commentaire |");
       lines.push("|---------|:------:|-------------|");
@@ -88,15 +104,20 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
         lines.push(`| ${c.criterion} | ${c.awarded_points} / ${c.max_points} | ${c.comment} |`);
       }
       lines.push("");
+      section++;
+
       if (data.criteria_grid.general_comment) {
-        lines.push("> [!info] Commentaire général");
+        lines.push(`## ${section}. COMMENTAIRE GÉNÉRAL`);
+        lines.push("");
+        lines.push(`> [!info] Synthèse`);
         lines.push(`> ${data.criteria_grid.general_comment}`);
         lines.push("");
+        section++;
       }
     }
 
     if (data.feedback_markdown) {
-      lines.push("## Feedback détaillé");
+      lines.push(`## ${section}. FEEDBACK DÉTAILLÉ`);
       lines.push("");
       lines.push(data.feedback_markdown);
       lines.push("");

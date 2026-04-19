@@ -50,6 +50,7 @@ export const ESTIMATED_OUTPUT_TOKENS: Record<TaskType, number> = {
   qcm_simple: 1000,
   reformulation: 500,
   correction_dossier: 4000,
+  prefill_deroulement: 3000,
 };
 
 /** Température par défaut par type de tâche */
@@ -70,6 +71,7 @@ export const DEFAULT_TEMPERATURE: Record<TaskType, number> = {
   qcm_simple: 0.5,
   reformulation: 0.4,
   correction_dossier: 0.3,
+  prefill_deroulement: 0.4,
 };
 
 /** Préréglages multi-modèles */
@@ -91,6 +93,7 @@ export const PRESETS: Record<string, Record<TaskType, ModelTier>> = {
     qcm_simple: "haiku",
     reformulation: "haiku",
     correction_dossier: "opus",
+    prefill_deroulement: "sonnet",
   },
   balanced: {
     generation_cours: "sonnet",
@@ -109,6 +112,7 @@ export const PRESETS: Record<string, Record<TaskType, ModelTier>> = {
     qcm_simple: "haiku",
     reformulation: "haiku",
     correction_dossier: "sonnet",
+    prefill_deroulement: "sonnet",
   },
   economic: {
     generation_cours: "sonnet",
@@ -127,6 +131,7 @@ export const PRESETS: Record<string, Record<TaskType, ModelTier>> = {
     qcm_simple: "haiku",
     reformulation: "haiku",
     correction_dossier: "sonnet",
+    prefill_deroulement: "haiku",
   },
 };
 

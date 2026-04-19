@@ -21,6 +21,12 @@ pub fn run() {
             sql: include_str!("../migrations/002_dossiers.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "fiches_deroulement",
+            sql: include_str!("../migrations/003_deroulement.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

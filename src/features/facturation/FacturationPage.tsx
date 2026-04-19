@@ -9,6 +9,7 @@ import {
   Clock,
   Building2,
   Search,
+  ClipboardList,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
@@ -19,6 +20,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DeroulementEditor } from "./deroulement/DeroulementEditor";
+import { listDeroulementSheetsForInvoice } from "./deroulement/queries";
+import type { DeroulementSheetRow } from "./deroulement/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -765,6 +769,13 @@ function InvoiceDetailView({
   const [lines, setLines] = useState<InvoiceLine[]>([]);
   const [updating, setUpdating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showDeroulement, setShowDeroulement] = useState(false);
+  const [deroulementSheets, setDeroulementSheets] = useState<DeroulementSheetRow[]>([]);
+
+  const loadDeroulementSheets = useCallback(async () => {
+    const rows = await listDeroulementSheetsForInvoice(invoice.id);
+    setDeroulementSheets(rows);
+  }, [invoice.id]);
 
   useEffect(() => {
     (async () => {
@@ -773,8 +784,9 @@ function InvoiceDetailView({
         [invoice.id],
       );
       setLines(rows);
+      await loadDeroulementSheets();
     })();
-  }, [invoice.id]);
+  }, [invoice.id, loadDeroulementSheets]);
 
   const parsedAdjustments: InvoiceAdjustment[] = (() => {
     if (!invoice.adjustments) return [];
@@ -837,6 +849,19 @@ function InvoiceDetailView({
 
         {/* Actions de statut */}
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowDeroulement(true)}
+            disabled={updating}
+          >
+            <ClipboardList className="h-4 w-4" />
+            Fiches de d\u00E9roulement
+            {deroulementSheets.length > 0 && (
+              <Badge className="ml-1 bg-emerald-100 text-emerald-700">
+                {deroulementSheets.length}
+              </Badge>
+            )}
+          </Button>
           {invoice.status === "draft" && (
             <Button onClick={() => updateStatus("sent")} disabled={updating}>
               <Send className="h-4 w-4" />
@@ -991,6 +1016,47 @@ function InvoiceDetailView({
           </div>
         </div>
       </div>
+
+      {/* Fiches de d\u00E9roulement rattach\u00E9es */}
+      {deroulementSheets.length > 0 && (
+        <div className="rounded-xl border bg-card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold text-foreground">
+              Fiches de d\u00E9roulement li\u00E9es
+            </h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDeroulement(true)}
+            >
+              G\u00E9rer
+            </Button>
+          </div>
+          <ul className="space-y-1.5 text-sm">
+            {deroulementSheets.map((s) => (
+              <li key={s.id} className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-primary" />
+                <span className="font-medium">{s.title}</span>
+                {s.file_path_docx && (
+                  <Badge className="bg-emerald-100 text-emerald-700">
+                    DOCX export\u00E9
+                  </Badge>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {showDeroulement && (
+        <DeroulementEditor
+          invoice={invoice}
+          onClose={() => {
+            setShowDeroulement(false);
+            loadDeroulementSheets();
+          }}
+        />
+      )}
     </div>
   );
 }

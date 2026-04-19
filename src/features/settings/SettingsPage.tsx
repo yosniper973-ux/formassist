@@ -34,6 +34,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   qcm_simple: "QCM automatiques",
   reformulation: "Reformulations",
   correction_dossier: "Dossiers DP / Projet",
+  prefill_deroulement: "Fiches de déroulement",
 };
 
 export function SettingsPage() {

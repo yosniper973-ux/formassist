@@ -1,5 +1,19 @@
 import { useState, useEffect } from "react";
-import { X, Building2, User, Mail, Phone, Globe, CreditCard, FileText } from "lucide-react";
+import {
+  X,
+  Building2,
+  User,
+  Mail,
+  Phone,
+  Globe,
+  CreditCard,
+  FileText,
+  FileType2,
+  Upload,
+  Trash2,
+} from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
 import type { Centre } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -43,6 +57,7 @@ interface FormData {
   invoice_numbering: string;
   bank_details: string;
   legal_mentions: string;
+  deroulement_template_path: string;
 }
 
 const EMPTY_FORM: FormData = {
@@ -61,13 +76,17 @@ const EMPTY_FORM: FormData = {
   invoice_numbering: "",
   bank_details: "",
   legal_mentions: "",
+  deroulement_template_path: "",
 };
 
 export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
-  const [activeTab, setActiveTab] = useState<"infos" | "facturation" | "mentions">("infos");
+  const [activeTab, setActiveTab] = useState<
+    "infos" | "facturation" | "mentions" | "modeles"
+  >("infos");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (centre) {
@@ -87,9 +106,37 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         invoice_numbering: centre.invoice_numbering ?? "",
         bank_details: centre.bank_details ?? "",
         legal_mentions: centre.legal_mentions ?? "",
+        deroulement_template_path: centre.deroulement_template_path ?? "",
       });
     }
   }, [centre]);
+
+  async function handleUploadTemplate() {
+    setError("");
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Modèle Word", extensions: ["docx"] }],
+      });
+      if (!selected || typeof selected !== "string") return;
+      setUploading(true);
+      const savedPath = await invoke<string>("save_imported_file", {
+        sourcePath: selected,
+        category: "deroulement_templates",
+      });
+      update("deroulement_template_path", savedPath);
+    } catch (err) {
+      console.error(err);
+      setError("Impossible d'importer le modèle. Réessaie.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleRemoveTemplate() {
+    update("deroulement_template_path", "");
+  }
 
   function update(field: keyof FormData, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -122,6 +169,7 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         invoice_numbering: form.invoice_numbering || null,
         bank_details: form.bank_details || null,
         legal_mentions: form.legal_mentions || null,
+        deroulement_template_path: form.deroulement_template_path || null,
       };
 
       if (centre) {
@@ -143,7 +191,12 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
     { id: "infos" as const, label: "Informations", icon: <Building2 className="h-4 w-4" /> },
     { id: "facturation" as const, label: "Facturation", icon: <CreditCard className="h-4 w-4" /> },
     { id: "mentions" as const, label: "Mentions & PDF", icon: <FileText className="h-4 w-4" /> },
+    { id: "modeles" as const, label: "Modèles", icon: <FileType2 className="h-4 w-4" /> },
   ];
+
+  const templateFileName = form.deroulement_template_path
+    ? form.deroulement_template_path.split(/[/\\]/).pop() ?? form.deroulement_template_path
+    : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -408,6 +461,92 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
                     placeholder="IBAN : FR76…&#10;BIC : BNPAFRPP&#10;Banque : BNP Paribas"
                     rows={3}
                   />
+                </div>
+              </div>
+            )}
+
+            {/* ─── Modèles ─── */}
+            {activeTab === "modeles" && (
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <Label>Modèle de fiche de déroulement de séance (.docx)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Ce modèle sera utilisé pour générer toutes les fiches de déroulement de
+                    séance rattachées aux factures de ce centre. Il doit contenir les balises
+                    ci-dessous — l'IA les remplacera par les données planifiées. Si aucun
+                    modèle n'est importé, un modèle standard FormAssist sera utilisé.
+                  </p>
+                  {form.deroulement_template_path ? (
+                    <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                      <FileType2 className="h-5 w-5 shrink-0 text-primary" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{templateFileName}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {form.deroulement_template_path}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleUploadTemplate}
+                        disabled={uploading}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        Remplacer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRemoveTemplate}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleUploadTemplate}
+                      disabled={uploading}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 px-4 py-6 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+                    >
+                      <Upload className="h-4 w-4" />
+                      {uploading ? "Import en cours…" : "Importer un modèle .docx"}
+                    </button>
+                  )}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Balises à insérer dans votre modèle</p>
+                  <p className="text-xs text-muted-foreground">
+                    Ouvrez votre modèle Word et insérez (en texte normal) les balises
+                    ci-dessous aux emplacements voulus. Elles seront automatiquement
+                    remplacées lors de la génération.
+                  </p>
+                  <div className="rounded-md border bg-muted/30 p-3 text-xs font-mono space-y-1.5">
+                    <div><code className="text-primary">{"{formation}"}</code> — titre de la formation</div>
+                    <div><code className="text-primary">{"{dates}"}</code> — liste des dates de la période</div>
+                    <div><code className="text-primary">{"{duree_totale}"}</code> — durée totale en heures</div>
+                    <div><code className="text-primary">{"{redacteur}"}</code> — nom du rédacteur</div>
+                    <div><code className="text-primary">{"{titre_seance}"}</code> — intitulé du CCP / de la séance</div>
+                    <div><code className="text-primary">{"{objectif_general}"}</code> — objectif général</div>
+                    <div className="pt-1.5 border-t mt-2">
+                      <div className="font-semibold text-foreground/80 mb-1">Répéter pour chaque phase :</div>
+                      <div><code className="text-primary">{"{#phases}"}</code> … <code className="text-primary">{"{/phases}"}</code></div>
+                      <div className="pl-3 mt-1 space-y-1">
+                        <div><code className="text-primary">{"{numero}"}</code>, <code className="text-primary">{"{duree}"}</code>, <code className="text-primary">{"{intitule}"}</code></div>
+                        <div><code className="text-primary">{"{objectifs_operationnels}"}</code></div>
+                        <div><code className="text-primary">{"{contenu}"}</code></div>
+                        <div><code className="text-primary">{"{methodes}"}</code></div>
+                        <div><code className="text-primary">{"{outils}"}</code></div>
+                        <div><code className="text-primary">{"{evaluation}"}</code></div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

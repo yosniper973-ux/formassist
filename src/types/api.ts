@@ -16,7 +16,8 @@ export type TaskType =
   | "mail_redaction"
   | "qcm_simple"
   | "reformulation"
-  | "correction_dossier";
+  | "correction_dossier"
+  | "prefill_deroulement";
 
 export interface ClaudeTextBlock {
   type: "text";
