@@ -220,9 +220,8 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
           "anthropic-version": API_VERSION,
-          // Tauri-plugin-http route la requête via la webview : Anthropic la
-          // détecte comme "CORS request" et exige cet header pour l'autoriser.
           "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-beta": "pdfs-2024-09-25",
         },
         body: JSON.stringify(buildBody()),
       });

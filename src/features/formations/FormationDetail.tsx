@@ -124,8 +124,8 @@ export function FormationDetail({ formation, onBack }: Props) {
         const buffer = await file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
         const chunks: string[] = [];
-        for (let i = 0; i < bytes.byteLength; i += 65536) {
-          chunks.push(String.fromCharCode(...bytes.subarray(i, i + 65536)));
+        for (let i = 0; i < bytes.byteLength; i += 8192) {
+          chunks.push(String.fromCharCode(...bytes.subarray(i, i + 8192)));
         }
         const base64 = btoa(chunks.join(""));
         messageContent = [
