@@ -33,6 +33,9 @@ WebView2Installer.exe
 *.log
 npm-debug.log*
 
+# Claude Code local state
+.claude/
+
 # Fichiers locaux à ignorer
 *.pages
 *.exe
