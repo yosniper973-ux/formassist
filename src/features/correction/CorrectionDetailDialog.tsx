@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { X, Mail, Download, Loader2, Check } from "lucide-react";
 import { db } from "@/lib/db";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
@@ -151,8 +150,9 @@ ${noteLine}${gridLines}${generalComment}${feedback}
 
 Bon courage pour la suite.`;
 
-      const mailto = `mailto:${encodeURIComponent(data.learner.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      await shellOpen(mailto);
+      const trimmedBody = body.length > 1800 ? body.slice(0, 1800) + "…" : body;
+      const mailto = `mailto:${encodeURIComponent(data.learner.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(trimmedBody)}`;
+      window.location.href = mailto;
 
       const now = new Date().toISOString().replace("T", " ").substring(0, 19);
       await db.execute(

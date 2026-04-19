@@ -636,39 +636,72 @@ function NewCorrectionTab({
   gradeColor: (grade: number, max: number) => string;
   gradeBg: (grade: number, max: number) => string;
 }) {
-  const [showEmailDialog, setShowEmailDialog] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
+  async function handleSendEmailDirect() {
+    const learner = learners.find((l) => l.id === selectedLearnerId);
+    if (!learner?.email) return;
+
+    const contentTitle = contents.find((c) => c.id === selectedContentId)?.title;
+    const subject = `Correction : ${contentTitle ?? "ton exercice"}`;
+    const noteLine = `Note : ${adjustedGrade}/20\n\n`;
+    const gridLines = correctionResult?.criteriaGrid?.criteria
+      .map((c) => `- ${c.criterion} : ${c.awarded_points}/${c.max_points} — ${c.comment}`)
+      .join("\n") ?? "";
+    const generalComment = correctionResult?.criteriaGrid?.general_comment
+      ? `\n\nCommentaire général :\n${correctionResult.criteriaGrid.general_comment}`
+      : "";
+
+    const body = `Bonjour ${learner.first_name},\n\nVoici le retour sur ${contentTitle ?? "ton exercice"}.\n\n${noteLine}${gridLines}${generalComment}\n\nBon courage pour la suite.`;
+    const trimmed = body.length > 1800 ? body.slice(0, 1800) + "…" : body;
+    const mailto = `mailto:${encodeURIComponent(learner.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(trimmed)}`;
+
+    window.location.href = mailto;
+
+    if (savedCorrectionId) {
+      const now = new Date().toISOString().replace("T", " ").substring(0, 19);
+      await db.execute(
+        `UPDATE corrections SET sent_at = ?, updated_at = ? WHERE id = ?`,
+        [now, now, savedCorrectionId],
+      );
+    }
+    setEmailSent(true);
+  }
 
   if (validated) {
+    const learner = learners.find((l) => l.id === selectedLearnerId);
+    const hasEmail = Boolean(learner?.email);
+
     return (
-      <>
-        <div className="flex flex-col items-center gap-4 py-16">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-            <Check className="h-8 w-8 text-green-600" />
-          </div>
-          <h2 className="text-xl font-semibold">Correction enregistrée</h2>
-          <p className="text-muted-foreground">
-            La note de {adjustedGrade}/20 a été sauvegardée.
-          </p>
-          <div className="flex gap-3">
-            {savedCorrectionId && (
-              <Button variant="outline" onClick={() => setShowEmailDialog(true)}>
-                <Mail className="h-4 w-4" />
-                Envoyer par email
-              </Button>
-            )}
-            <Button onClick={onNewCorrection}>
-              <FileCheck className="h-4 w-4" />
-              Nouvelle correction
-            </Button>
-          </div>
+      <div className="flex flex-col items-center gap-4 py-16">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+          <Check className="h-8 w-8 text-green-600" />
         </div>
-        {showEmailDialog && savedCorrectionId && (
-          <CorrectionDetailDialog
-            correctionId={savedCorrectionId}
-            onClose={() => setShowEmailDialog(false)}
-          />
+        <h2 className="text-xl font-semibold">Correction enregistrée</h2>
+        <p className="text-muted-foreground">
+          La note de {adjustedGrade}/20 a été sauvegardée.
+        </p>
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            onClick={handleSendEmailDirect}
+            disabled={!hasEmail || emailSent}
+            title={!hasEmail ? "Aucun email enregistré pour cet apprenant" : undefined}
+          >
+            {emailSent ? <Check className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+            {emailSent ? "Email ouvert" : "Envoyer par email"}
+          </Button>
+          <Button onClick={onNewCorrection}>
+            <FileCheck className="h-4 w-4" />
+            Nouvelle correction
+          </Button>
+        </div>
+        {!hasEmail && (
+          <p className="text-xs text-muted-foreground">
+            Aucun email enregistré pour cet apprenant.
+          </p>
         )}
-      </>
+      </div>
     );
   }
 
