@@ -15,6 +15,7 @@ import {
   PiggyBank,
   Palette,
   HelpCircle,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { to: "/generation", icon: Sparkles, label: "Génération" },
   { to: "/fiches", icon: FileText, label: "Fiches pédago" },
   { to: "/corrections", icon: CheckCircle, label: "Corrections" },
+  { to: "/dossiers", icon: FolderOpen, label: "Dossiers DP / Projet" },
   { to: "/documents", icon: Send, label: "Documents & Envoi" },
   { to: "/facturation", icon: Receipt, label: "Facturation" },
   { to: "/finances", icon: PiggyBank, label: "Finances" },

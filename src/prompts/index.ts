@@ -15,6 +15,7 @@ import { AFFINAGE_STYLE_PROMPT } from "./affinage_style";
 import { CORRECTION_EXERCICE_PROMPT } from "./correction_exercice";
 import { RECOMMANDATIONS_DASHBOARD_PROMPT } from "./recommandations_dashboard";
 import { MAIL_COORDINATEUR_PROMPT } from "./mail_coordinateur";
+import { CORRECTION_DOSSIER_PROMPT } from "./correction_dossier";
 
 const PROMPTS: Record<TaskType, string> = {
   parsing_reac: PARSING_REAC_PROMPT,
@@ -32,6 +33,7 @@ const PROMPTS: Record<TaskType, string> = {
   mail_redaction: MAIL_COORDINATEUR_PROMPT,
   qcm_simple: GENERATION_EXERCICE_INDIVIDUEL_PROMPT,
   reformulation: GENERATION_COURS_PROMPT,
+  correction_dossier: CORRECTION_DOSSIER_PROMPT,
 };
 
 export function getPromptForTask(task: TaskType): string {

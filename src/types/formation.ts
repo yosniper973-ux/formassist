@@ -8,6 +8,8 @@ export interface Formation {
   language: string;
   reac_file_path: string | null;
   reac_parsed: boolean;
+  rcre_text: string | null;
+  rcre_pdf_b64: string | null;
   scope_mode: "all" | "partial" | "imported";
   archived_at: string | null;
   created_at: string;

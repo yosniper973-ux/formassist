@@ -33,6 +33,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   mail_redaction: "Rédaction de mails",
   qcm_simple: "QCM automatiques",
   reformulation: "Reformulations",
+  correction_dossier: "Dossiers DP / Projet",
 };
 
 export function SettingsPage() {

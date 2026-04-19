@@ -30,6 +30,9 @@ const FichesPedagoPage = lazy(() =>
 const CorrectionsPage = lazy(() =>
   import("@/features/correction/CorrectionsPage").then((m) => ({ default: m.CorrectionsPage })),
 );
+const DossiersPage = lazy(() =>
+  import("@/features/dossiers/DossiersPage").then((m) => ({ default: m.DossiersPage })),
+);
 const FacturationPage = lazy(() =>
   import("@/features/facturation/FacturationPage").then((m) => ({ default: m.FacturationPage })),
 );
@@ -101,6 +104,10 @@ export function Router() {
         <Route
           path="/corrections"
           element={<LazyRoute><CorrectionsPage /></LazyRoute>}
+        />
+        <Route
+          path="/dossiers"
+          element={<LazyRoute><DossiersPage /></LazyRoute>}
         />
         <Route
           path="/documents"

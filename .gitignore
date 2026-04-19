@@ -32,3 +32,11 @@ WebView2Installer.exe
 # Logs
 *.log
 npm-debug.log*
+
+# Fichiers locaux à ignorer
+*.pages
+*.exe
+*.tsbuildinfo
+*.png
+*.jpg
+*.jpeg

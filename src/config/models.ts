@@ -49,6 +49,7 @@ export const ESTIMATED_OUTPUT_TOKENS: Record<TaskType, number> = {
   mail_redaction: 800,
   qcm_simple: 1000,
   reformulation: 500,
+  correction_dossier: 4000,
 };
 
 /** Température par défaut par type de tâche */
@@ -68,6 +69,7 @@ export const DEFAULT_TEMPERATURE: Record<TaskType, number> = {
   mail_redaction: 0.5,
   qcm_simple: 0.5,
   reformulation: 0.4,
+  correction_dossier: 0.3,
 };
 
 /** Préréglages multi-modèles */
@@ -88,6 +90,7 @@ export const PRESETS: Record<string, Record<TaskType, ModelTier>> = {
     mail_redaction: "sonnet",
     qcm_simple: "haiku",
     reformulation: "haiku",
+    correction_dossier: "opus",
   },
   balanced: {
     generation_cours: "sonnet",
@@ -105,6 +108,7 @@ export const PRESETS: Record<string, Record<TaskType, ModelTier>> = {
     mail_redaction: "haiku",
     qcm_simple: "haiku",
     reformulation: "haiku",
+    correction_dossier: "sonnet",
   },
   economic: {
     generation_cours: "sonnet",
@@ -122,6 +126,7 @@ export const PRESETS: Record<string, Record<TaskType, ModelTier>> = {
     mail_redaction: "haiku",
     qcm_simple: "haiku",
     reformulation: "haiku",
+    correction_dossier: "sonnet",
   },
 };
 
