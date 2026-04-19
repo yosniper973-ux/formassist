@@ -32,7 +32,7 @@ function formatEuros(amount: number): string {
   return amount
     .toFixed(2)
     .replace(".", ",")
-    .replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " \u20AC";
+    .replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " €";
 }
 
 function statusLabel(status: string): string {
@@ -40,9 +40,9 @@ function statusLabel(status: string): string {
     case "draft":
       return "Brouillon";
     case "sent":
-      return "Envoy\u00E9e";
+      return "Envoyée";
     case "paid":
-      return "Pay\u00E9e";
+      return "Payée";
     default:
       return status;
   }
@@ -71,7 +71,7 @@ function statusColor(status: string): string {
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "\u2014";
+  if (!dateStr) return "—";
   const d = new Date(dateStr);
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -178,14 +178,14 @@ export function FacturationPage() {
 
   return (
     <div className="space-y-6">
-      {/* En-t\u00EAte */}
+      {/* En-tête */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Facturation</h1>
           <p className="text-sm text-muted-foreground">
             {invoices.length} facture(s)
             {invoices.filter((i) => i.status === "draft").length > 0 &&
-              ` \u00B7 ${invoices.filter((i) => i.status === "draft").length} brouillon(s)`}
+              ` · ${invoices.filter((i) => i.status === "draft").length} brouillon(s)`}
           </p>
         </div>
         <Button onClick={() => setView("create")}>
@@ -199,7 +199,7 @@ export function FacturationPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Rechercher une facture\u2026"
+            placeholder="Rechercher une facture…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -277,8 +277,8 @@ function InvoiceRow({
           </Badge>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {formatDate(invoice.period_start)} \u2014 {formatDate(invoice.period_end)}
-          {" \u00B7 "}
+          {formatDate(invoice.period_start)} — {formatDate(invoice.period_end)}
+          {" · "}
           {invoice.total_hours}h
         </p>
       </div>
@@ -291,7 +291,7 @@ function InvoiceRow({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// \u00C9tat vide
+// État vide
 // ─────────────────────────────────────────────────────────────────────────────
 
 function EmptyState({
@@ -305,7 +305,7 @@ function EmptyState({
     return (
       <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
         <Search className="h-10 w-10 opacity-30" />
-        <p>Aucune facture ne correspond \u00E0 ta recherche.</p>
+        <p>Aucune facture ne correspond à ta recherche.</p>
       </div>
     );
   }
@@ -318,19 +318,19 @@ function EmptyState({
       <div className="text-center">
         <p className="font-semibold text-foreground">Aucune facture</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cr\u00E9e ta premi\u00E8re facture pour commencer \u00E0 suivre tes paiements.
+          Crée ta première facture pour commencer à suivre tes paiements.
         </p>
       </div>
       <Button onClick={onCreate}>
         <Plus className="h-4 w-4" />
-        Cr\u00E9er ma premi\u00E8re facture
+        Créer ma première facture
       </Button>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cr\u00E9ation de facture
+// Création de facture
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CreateInvoiceView({
@@ -370,7 +370,7 @@ function CreateInvoiceView({
       setFormations(rows as unknown as Formation[]);
       setFormationId("");
 
-      // R\u00E9cup\u00E9rer le taux horaire du centre
+      // Récupérer le taux horaire du centre
       const centre = await db.getCentre(centreId);
       if (centre) {
         const c = centre as unknown as Centre;
@@ -379,7 +379,7 @@ function CreateInvoiceView({
     })();
   }, [centreId]);
 
-  // Charger les cr\u00E9neaux quand la formation et la p\u00E9riode changent
+  // Charger les créneaux quand la formation et la période changent
   useEffect(() => {
     if (!formationId || !periodStart || !periodEnd) {
       setSlots([]);
@@ -427,19 +427,19 @@ function CreateInvoiceView({
   async function handleSubmit() {
     setError("");
     if (!centreId) {
-      setError("S\u00E9lectionne un centre.");
+      setError("Sélectionne un centre.");
       return;
     }
     if (!formationId) {
-      setError("S\u00E9lectionne une formation.");
+      setError("Sélectionne une formation.");
       return;
     }
     if (!periodStart || !periodEnd) {
-      setError("Renseigne la p\u00E9riode de facturation.");
+      setError("Renseigne la période de facturation.");
       return;
     }
     if (totalHours <= 0) {
-      setError("Aucune heure trouv\u00E9e sur cette p\u00E9riode.");
+      setError("Aucune heure trouvée sur cette période.");
       return;
     }
 
@@ -469,7 +469,7 @@ function CreateInvoiceView({
         notes: notes || null,
       });
 
-      // Cr\u00E9er les lignes de facture
+      // Créer les lignes de facture
       for (let i = 0; i < slots.length; i++) {
         const slot = slots[i]!;
         await db.execute(
@@ -479,7 +479,7 @@ function CreateInvoiceView({
             db.generateId(),
             invoiceId,
             slot.id,
-            slot.title ?? `Cr\u00E9neau du ${formatDate(slot.date)}`,
+            slot.title ?? `Créneau du ${formatDate(slot.date)}`,
             slot.duration_hours,
             hourlyRate,
             Math.round(slot.duration_hours * hourlyRate * 100) / 100,
@@ -490,7 +490,7 @@ function CreateInvoiceView({
 
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur lors de la cr\u00E9ation.");
+      setError(err instanceof Error ? err.message : "Erreur lors de la création.");
     } finally {
       setSaving(false);
     }
@@ -498,7 +498,7 @@ function CreateInvoiceView({
 
   return (
     <div className="space-y-6">
-      {/* En-t\u00EAte */}
+      {/* En-tête */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
@@ -506,7 +506,7 @@ function CreateInvoiceView({
         <div>
           <h1 className="text-2xl font-bold text-foreground">Nouvelle facture</h1>
           <p className="text-sm text-muted-foreground">
-            S\u00E9lectionne le centre, la formation et la p\u00E9riode \u00E0 facturer.
+            Sélectionne le centre, la formation et la période à facturer.
           </p>
         </div>
       </div>
@@ -557,10 +557,10 @@ function CreateInvoiceView({
             </select>
           </div>
 
-          {/* P\u00E9riode */}
+          {/* Période */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="period-start">D\u00E9but de p\u00E9riode</Label>
+              <Label htmlFor="period-start">Début de période</Label>
               <Input
                 id="period-start"
                 type="date"
@@ -569,7 +569,7 @@ function CreateInvoiceView({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="period-end">Fin de p\u00E9riode</Label>
+              <Label htmlFor="period-end">Fin de période</Label>
               <Input
                 id="period-end"
                 type="date"
@@ -582,7 +582,7 @@ function CreateInvoiceView({
           {/* Taux */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="hourly-rate">Taux horaire (\u20AC/h)</Label>
+              <Label htmlFor="hourly-rate">Taux horaire (€/h)</Label>
               <Input
                 id="hourly-rate"
                 type="number"
@@ -613,7 +613,7 @@ function CreateInvoiceView({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
-              placeholder="Remarques, r\u00E9f\u00E9rences, bon de commande\u2026"
+              placeholder="Remarques, références, bon de commande…"
               className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             />
           </div>
@@ -664,18 +664,18 @@ function CreateInvoiceView({
           </div>
         </div>
 
-        {/* Colonne droite : r\u00E9capitulatif */}
+        {/* Colonne droite : récapitulatif */}
         <div className="space-y-5">
-          {/* Cr\u00E9neaux trouv\u00E9s */}
+          {/* Créneaux trouvés */}
           <div className="rounded-xl border bg-card p-5">
             <h3 className="mb-3 font-semibold text-foreground">
-              Cr\u00E9neaux trouv\u00E9s
+              Créneaux trouvés
             </h3>
             {slots.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 {formationId && periodStart && periodEnd
-                  ? "Aucun cr\u00E9neau sur cette p\u00E9riode."
-                  : "S\u00E9lectionne une formation et une p\u00E9riode pour voir les cr\u00E9neaux."}
+                  ? "Aucun créneau sur cette période."
+                  : "Sélectionne une formation et une période pour voir les créneaux."}
               </p>
             ) : (
               <div className="max-h-64 space-y-1.5 overflow-y-auto">
@@ -700,9 +700,9 @@ function CreateInvoiceView({
             )}
           </div>
 
-          {/* R\u00E9capitulatif financier */}
+          {/* Récapitulatif financier */}
           <div className="rounded-xl border bg-card p-5">
-            <h3 className="mb-3 font-semibold text-foreground">R\u00E9capitulatif</h3>
+            <h3 className="mb-3 font-semibold text-foreground">Récapitulatif</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Heures</span>
@@ -745,7 +745,7 @@ function CreateInvoiceView({
             ) : (
               <FileText className="h-4 w-4" />
             )}
-            {saving ? "Cr\u00E9ation en cours\u2026" : "Cr\u00E9er le brouillon"}
+            {saving ? "Création en cours…" : "Créer le brouillon"}
           </Button>
         </div>
       </div>
@@ -754,7 +754,7 @@ function CreateInvoiceView({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// D\u00E9tail facture
+// Détail facture
 // ─────────────────────────────────────────────────────────────────────────────
 
 function InvoiceDetailView({
@@ -823,7 +823,7 @@ function InvoiceDetailView({
 
   return (
     <div className="space-y-6">
-      {/* En-t\u00EAte */}
+      {/* En-tête */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onBack}>
@@ -855,7 +855,7 @@ function InvoiceDetailView({
             disabled={updating}
           >
             <ClipboardList className="h-4 w-4" />
-            Fiches de d\u00E9roulement
+            Fiches de déroulement
             {deroulementSheets.length > 0 && (
               <Badge className="ml-1 bg-emerald-100 text-emerald-700">
                 {deroulementSheets.length}
@@ -865,13 +865,13 @@ function InvoiceDetailView({
           {invoice.status === "draft" && (
             <Button onClick={() => updateStatus("sent")} disabled={updating}>
               <Send className="h-4 w-4" />
-              Marquer envoy\u00E9e
+              Marquer envoyée
             </Button>
           )}
           {invoice.status === "sent" && (
             <Button onClick={() => updateStatus("paid")} disabled={updating}>
               <CheckCircle2 className="h-4 w-4" />
-              Marquer pay\u00E9e
+              Marquer payée
             </Button>
           )}
           <Button
@@ -889,8 +889,8 @@ function InvoiceDetailView({
       <ConfirmDialog
         open={confirmDelete}
         title={`Supprimer la facture ${invoice.invoice_number} ?`}
-        message={"Cette action supprime d\u00E9finitivement la facture et toutes ses lignes.\n\nCette action est irr\u00E9versible."}
-        confirmLabel="Supprimer d\u00E9finitivement"
+        message={"Cette action supprime définitivement la facture et toutes ses lignes.\n\nCette action est irréversible."}
+        confirmLabel="Supprimer définitivement"
         onConfirm={async () => {
           await db.deleteInvoice(invoice.id);
           setConfirmDelete(false);
@@ -900,18 +900,18 @@ function InvoiceDetailView({
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Infos g\u00E9n\u00E9rales */}
+        {/* Infos générales */}
         <div className="rounded-xl border bg-card p-5 lg:col-span-1">
           <h3 className="mb-3 font-semibold text-foreground">Informations</h3>
           <dl className="space-y-3 text-sm">
             <div>
-              <dt className="text-muted-foreground">P\u00E9riode</dt>
+              <dt className="text-muted-foreground">Période</dt>
               <dd className="font-medium">
-                {formatDate(invoice.period_start)} \u2014 {formatDate(invoice.period_end)}
+                {formatDate(invoice.period_start)} — {formatDate(invoice.period_end)}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Heures factur\u00E9es</dt>
+              <dt className="text-muted-foreground">Heures facturées</dt>
               <dd className="font-medium">{invoice.total_hours}h</dd>
             </div>
             <div>
@@ -920,19 +920,19 @@ function InvoiceDetailView({
             </div>
             {invoice.due_date && (
               <div>
-                <dt className="text-muted-foreground">\u00C9ch\u00E9ance</dt>
+                <dt className="text-muted-foreground">Échéance</dt>
                 <dd className="font-medium">{formatDate(invoice.due_date)}</dd>
               </div>
             )}
             {invoice.paid_date && (
               <div>
-                <dt className="text-muted-foreground">Pay\u00E9e le</dt>
+                <dt className="text-muted-foreground">Payée le</dt>
                 <dd className="font-medium">{formatDate(invoice.paid_date)}</dd>
               </div>
             )}
             {invoice.sent_at && (
               <div>
-                <dt className="text-muted-foreground">Envoy\u00E9e le</dt>
+                <dt className="text-muted-foreground">Envoyée le</dt>
                 <dd className="font-medium">{formatDate(invoice.sent_at)}</dd>
               </div>
             )}
@@ -948,7 +948,7 @@ function InvoiceDetailView({
         {/* Lignes de facture */}
         <div className="rounded-xl border bg-card p-5 lg:col-span-2">
           <h3 className="mb-3 font-semibold text-foreground">
-            D\u00E9tail des lignes
+            Détail des lignes
           </h3>
 
           {lines.length === 0 ? (
@@ -1017,19 +1017,19 @@ function InvoiceDetailView({
         </div>
       </div>
 
-      {/* Fiches de d\u00E9roulement rattach\u00E9es */}
+      {/* Fiches de déroulement rattachées */}
       {deroulementSheets.length > 0 && (
         <div className="rounded-xl border bg-card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-semibold text-foreground">
-              Fiches de d\u00E9roulement li\u00E9es
+              Fiches de déroulement liées
             </h3>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setShowDeroulement(true)}
             >
-              G\u00E9rer
+              Gérer
             </Button>
           </div>
           <ul className="space-y-1.5 text-sm">
@@ -1039,7 +1039,7 @@ function InvoiceDetailView({
                 <span className="font-medium">{s.title}</span>
                 {s.file_path_docx && (
                   <Badge className="bg-emerald-100 text-emerald-700">
-                    DOCX export\u00E9
+                    DOCX exporté
                   </Badge>
                 )}
               </li>

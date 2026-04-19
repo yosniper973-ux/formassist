@@ -43,7 +43,7 @@ interface DashboardData {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function formatEuros(amount: number): string {
-  return amount.toFixed(2).replace(".", ",") + " \u20AC";
+  return amount.toFixed(2).replace(".", ",") + " €";
 }
 
 function getMonthStart(): string {

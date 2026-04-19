@@ -526,7 +526,7 @@ function DraftEditor({
 
       const templatePath = centre?.deroulement_template_path ?? null;
       const safeTitle = draft.titre_seance
-        .replace(/[^a-zA-Z0-9\u00C0-\u017F]+/g, "_")
+        .replace(/[^a-zA-Z0-9À-ſ]+/g, "_")
         .substring(0, 60);
       const fileName = `Fiche_deroulement_${safeTitle}`;
       const savedPath = await exportDeroulementDocx({
