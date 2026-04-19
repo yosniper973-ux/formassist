@@ -120,7 +120,7 @@ export function FormationDetail({ formation, onBack }: Props) {
       let messageContent: string | ClaudeContentBlock[];
 
       if (isPdf) {
-        // Anthropic lit les PDFs nativement via base64 — bien meilleur que file.text()
+        // Anthropic lit les PDFs nativement via base64
         const buffer = await file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
         const chunks: string[] = [];
@@ -138,6 +138,14 @@ export function FormationDetail({ formation, onBack }: Props) {
             text: `Voici le REAC (Référentiel Emploi Activités Compétences) pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète : tous les CCP, toutes les compétences (CP) de chaque CCP, tous les critères d'évaluation, et les activités-types. Ne saute aucune compétence, même si le document est dense.`,
           },
         ];
+      } else if (file.name.toLowerCase().endsWith(".docx")) {
+        const mammoth = await import("mammoth");
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        if (!result.value.trim()) {
+          throw new Error("Impossible de lire ce fichier Word. Essaie de l'exporter en PDF depuis Word.");
+        }
+        messageContent = `Voici le contenu d'un document REAC pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète (CCP, compétences, critères d'évaluation, activités-types).\n\n---\n\n${result.value}`;
       } else {
         const text = await file.text();
         messageContent = `Voici le contenu d'un document REAC pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète (CCP, compétences, critères d'évaluation, activités-types).\n\n---\n\n${text}`;
@@ -355,7 +363,7 @@ export function FormationDetail({ formation, onBack }: Props) {
                         <input
                           type="file"
                           className="hidden"
-                          accept=".pdf,.docx,.xlsx,.csv,.txt"
+                          accept=".pdf,.docx,.txt"
                           onChange={handleReacFile}
                         />
                         <span className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
@@ -620,7 +628,7 @@ function ReacImportPanel({
               <input
                 type="file"
                 className="hidden"
-                accept=".pdf,.docx,.xlsx,.csv,.txt"
+                accept=".pdf,.docx,.txt"
                 onChange={onFileChange}
               />
               <span className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
@@ -631,7 +639,7 @@ function ReacImportPanel({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Formats acceptés : PDF, Word, Excel, CSV, texte
+            Formats acceptés : PDF (recommandé), Word (.docx), texte
           </p>
 
           {parseError && (
