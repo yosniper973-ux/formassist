@@ -1211,6 +1211,8 @@ interface LinkableItem {
   formation_id: string;
   content_type?: string;
   duration_minutes?: number;
+  /** Si présent : le contenu est déjà rattaché à un autre créneau (date) */
+  attached_to_date?: string | null;
 }
 
 function SlotFormDialog({
@@ -1252,8 +1254,8 @@ function SlotFormDialog({
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [unassignedContents, unassignedSheets, attachedContents, attachedSheets] = await Promise.all([
-        db.getUnassignedContents(),
+      const [allContentsRows, unassignedSheets, attachedContents, attachedSheets] = await Promise.all([
+        db.getAllContents(),
         db.getUnassignedSheets(),
         slot ? db.getContentsForSlot(slot.id) : Promise.resolve([]),
         slot ? db.getSheetsForSlot(slot.id) : Promise.resolve([]),
@@ -1271,14 +1273,20 @@ function SlotFormDialog({
             : typeof r.duration_minutes === "number"
               ? r.duration_minutes
               : undefined,
+        attached_to_date:
+          r.slot_id && (!slot || r.slot_id !== slot.id)
+            ? (r.slot_date ? String(r.slot_date) : null)
+            : null,
       });
 
-      const mergedContents = [...attachedContents.map(toItem), ...unassignedContents.map(toItem)];
-      const mergedSheets = [...attachedSheets.map(toItem), ...unassignedSheets.map(toItem)];
-      // dedupe
       const seenC = new Set<string>();
+      const contents = allContentsRows
+        .map(toItem)
+        .filter((i) => (seenC.has(i.id) ? false : (seenC.add(i.id), true)));
+      setAllContents(contents);
+
+      const mergedSheets = [...attachedSheets.map(toItem), ...unassignedSheets.map(toItem)];
       const seenS = new Set<string>();
-      setAllContents(mergedContents.filter((i) => (seenC.has(i.id) ? false : (seenC.add(i.id), true))));
       setAllSheets(mergedSheets.filter((i) => (seenS.has(i.id) ? false : (seenS.add(i.id), true))));
 
       const origC = new Set(attachedContents.map((r: Record<string, unknown>) => String(r.id)));
@@ -1355,8 +1363,17 @@ function SlotFormDialog({
       }
 
       // Diff & sync links
+      // Pour les contenus nouvellement cochés :
+      //   - si le contenu est déjà attaché à un autre créneau → on duplique (copie indépendante)
+      //   - sinon → simple liaison (slot_id = ce slot)
       for (const id of selectedContentIds) {
-        if (!originalContentIds.has(id)) await db.linkContentToSlot(id, slotId);
+        if (originalContentIds.has(id)) continue;
+        const item = allContents.find((c) => c.id === id);
+        if (item?.attached_to_date) {
+          await db.duplicateContentToSlot(id, slotId);
+        } else {
+          await db.linkContentToSlot(id, slotId);
+        }
       }
       for (const id of originalContentIds) {
         if (!selectedContentIds.has(id)) await db.unlinkContentFromSlot(id);
@@ -1528,6 +1545,9 @@ function SlotFormDialog({
               {linkableContents.length > 0 && (
                 <div className="mb-3">
                   <p className="text-xs font-semibold text-muted-foreground mb-1">Cours & exercices</p>
+                  <p className="text-[11px] text-muted-foreground mb-1.5">
+                    💡 Cocher un contenu déjà placé ailleurs en crée une copie indépendante sur ce créneau.
+                  </p>
                   <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-border p-2 bg-background">
                     {linkableContents.map((c) => (
                       <label
@@ -1544,6 +1564,14 @@ function SlotFormDialog({
                           {c.title}
                           {c.content_type && (
                             <span className="ml-2 text-xs text-muted-foreground">({c.content_type})</span>
+                          )}
+                          {c.attached_to_date && (
+                            <span
+                              className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 whitespace-nowrap"
+                              title="Déjà placé sur un autre créneau — la cocher créera une copie."
+                            >
+                              📌 {new Date(c.attached_to_date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })} → copie
+                            </span>
                           )}
                         </span>
                       </label>

@@ -489,6 +489,59 @@ async function getContents(formationId: string, contentType?: string): Promise<R
   return query(sql + " ORDER BY created_at DESC", params);
 }
 
+/**
+ * Tous les contenus (assignés ou non) d'un centre, avec date du créneau
+ * actuel s'il est assigné. Utilisé pour réutiliser un contenu sur plusieurs
+ * créneaux (chaque réutilisation = duplication indépendante).
+ */
+async function getAllContents(centreId?: string): Promise<Row[]> {
+  const sql = `
+    SELECT gc.*, f.title AS formation_title, f.rncp_code AS formation_code,
+           f.centre_id AS centre_id, s.date AS slot_date
+      FROM generated_contents gc
+      JOIN formations f ON f.id = gc.formation_id
+      LEFT JOIN slots s ON s.id = gc.slot_id
+     WHERE gc.archived_at IS NULL
+       ${centreId ? "AND f.centre_id = ?" : ""}
+     ORDER BY gc.created_at DESC
+  `;
+  return query(sql, centreId ? [centreId] : []);
+}
+
+/**
+ * Duplique un contenu existant et l'assigne au créneau cible. Copie toutes
+ * les colonnes (titre, markdown, html, durée…) et les compétences liées,
+ * mais avec un nouvel ID. Le contenu d'origine reste intact.
+ */
+async function duplicateContentToSlot(contentId: string, slotId: string): Promise<string> {
+  const rows = await query<Row>("SELECT * FROM generated_contents WHERE id = ?", [contentId]);
+  const orig = rows[0];
+  if (!orig) throw new Error("Contenu introuvable");
+
+  const newId = generateId();
+  const ts = now();
+  // Recopie toutes les colonnes sauf id/slot_id/created_at/updated_at/archived_at
+  const skip = new Set(["id", "slot_id", "created_at", "updated_at", "archived_at"]);
+  const fields = Object.keys(orig).filter((k) => !skip.has(k));
+  const values = fields.map((k) => orig[k] as unknown);
+  const placeholders = fields.map(() => "?").join(", ");
+
+  await execute(
+    `INSERT INTO generated_contents (id, ${fields.join(", ")}, slot_id, created_at, updated_at)
+     VALUES (?, ${placeholders}, ?, ?, ?)`,
+    [newId, ...values, slotId, ts, ts],
+  );
+
+  // Recopie les compétences associées (relation N-N)
+  await execute(
+    `INSERT OR IGNORE INTO content_competences (content_id, competence_id)
+     SELECT ?, competence_id FROM content_competences WHERE content_id = ?`,
+    [newId, contentId],
+  );
+
+  return newId;
+}
+
 async function getUnassignedContents(centreId?: string): Promise<Row[]> {
   const sql = `
     SELECT gc.*, f.title AS formation_title, f.rncp_code AS formation_code, f.centre_id AS centre_id
@@ -818,10 +871,12 @@ export const db = {
   // Contents
   createContent,
   getContents,
+  getAllContents,
   getUnassignedContents,
   getContentsForSlot,
   linkContentToSlot,
   unlinkContentFromSlot,
+  duplicateContentToSlot,
   deleteContent,
   // Pedagogical sheets links
   getUnassignedSheets,
