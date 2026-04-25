@@ -66,10 +66,18 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
 // Composant principal
 // ─────────────────────────────────────────────────────────────────────────────
 
+function getGreetingPrefix(): string {
+  const h = new Date().getHours();
+  if (h < 5 || h >= 22) return "Bonne nuit";
+  if (h >= 18) return "Bonsoir";
+  return "Bonjour";
+}
+
 export function DashboardPedagoPage() {
   const activeCentreId = useAppStore((s) => s.activeCentreId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState<string>("");
   const [data, setData] = useState<DashboardData>({
     activeFormations: 0,
     totalLearners: 0,
@@ -203,6 +211,21 @@ export function DashboardPedagoPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      db.getConfig("user_first_name").then((v) => {
+        if (!cancelled) setFirstName((v ?? "").trim());
+      });
+    };
+    load();
+    window.addEventListener("user-profile-updated", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("user-profile-updated", load);
+    };
+  }, []);
+
   // ─── Pas de centre sélectionné ───
   if (!activeCentreId) {
     return (
@@ -236,9 +259,12 @@ export function DashboardPedagoPage() {
       {/* En-tête */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Tableau de bord pédagogique</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            {getGreetingPrefix()}
+            {firstName ? ` ${firstName}` : ""} <span aria-hidden>👋</span>
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Vue d'ensemble de tes formations et de la progression
+            Voici un aperçu de tes formations et de la progression
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadData}>

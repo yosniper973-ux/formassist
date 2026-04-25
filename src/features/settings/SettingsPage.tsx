@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { Eye, EyeOff, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload } from "lucide-react";
+import { Eye, EyeOff, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User } from "lucide-react";
 import { db } from "@/lib/db";
 import { encryptValue, decryptValue } from "@/lib/crypto";
 import { testConnection } from "@/lib/claude";
@@ -38,8 +38,11 @@ const TASK_LABELS: Record<TaskType, string> = {
 };
 
 export function SettingsPage() {
-  const [activeSection, setActiveSection] = useState("api");
+  const [activeSection, setActiveSection] = useState("profil");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // Profil utilisateur
+  const [userFirstName, setUserFirstName] = useState("");
 
   // Clé API
   const [apiKey, setApiKey] = useState("");
@@ -67,14 +70,17 @@ export function SettingsPage() {
 
   async function loadSettings() {
     try {
-      const [encKey, presetVal, budgetVal, thresholdVal, lockVal, version] = await Promise.all([
+      const [encKey, presetVal, budgetVal, thresholdVal, lockVal, version, firstName] = await Promise.all([
         db.getConfig("api_key"),
         db.getConfig("model_preset"),
         db.getConfig("budget_monthly"),
         db.getConfig("cost_alert_threshold"),
         db.getConfig("auto_lock_minutes"),
         invoke<string>("get_app_version").catch(() => "0.1.0"),
+        db.getConfig("user_first_name"),
       ]);
+
+      if (firstName) setUserFirstName(firstName);
 
       if (encKey) {
         try {
@@ -169,7 +175,21 @@ export function SettingsPage() {
     }
   }
 
+  async function saveFirstName() {
+    setSaveStatus("saving");
+    try {
+      await db.setConfig("user_first_name", userFirstName.trim());
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+      window.dispatchEvent(new Event("user-profile-updated"));
+    } catch (err) {
+      console.error("Erreur enregistrement prénom :", err);
+      setSaveStatus("error");
+    }
+  }
+
   const sections = [
+    { id: "profil", label: "Profil", icon: <User className="h-4 w-4" /> },
     { id: "api", label: "Clé API Claude", icon: <Key className="h-4 w-4" /> },
     { id: "modeles", label: "Modèles IA", icon: <Sliders className="h-4 w-4" /> },
     { id: "budget", label: "Budget", icon: <DollarSign className="h-4 w-4" /> },
@@ -206,6 +226,36 @@ export function SettingsPage() {
             <Check className="h-4 w-4" />
             Paramètres enregistrés
           </div>
+        )}
+
+        {/* ─── Profil ─── */}
+        {activeSection === "profil" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Profil</CardTitle>
+              <CardDescription>
+                Ton prénom est utilisé pour personnaliser l'accueil de FormAssist.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="first-name">Prénom</Label>
+                <Input
+                  id="first-name"
+                  value={userFirstName}
+                  onChange={(e) => setUserFirstName(e.target.value)}
+                  placeholder="Ex. Jo-Anne"
+                  maxLength={40}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Affiché sur le tableau de bord : « Bonjour {userFirstName.trim() || "…"} 👋 »
+                </p>
+              </div>
+              <Button onClick={saveFirstName} disabled={saveStatus === "saving"}>
+                {saveStatus === "saving" ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         {/* ─── Clé API ─── */}

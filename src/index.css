@@ -1,3 +1,9 @@
+/* Police principale — Fredoka (arrondie, ludique) */
+@import "@fontsource/fredoka/400.css";
+@import "@fontsource/fredoka/500.css";
+@import "@fontsource/fredoka/600.css";
+@import "@fontsource/fredoka/700.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -52,6 +58,7 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Fredoka', -apple-system, "Segoe UI", system-ui, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }

@@ -4,6 +4,7 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { getNavItemForPath } from "./navConfig";
 import { HelpBanner } from "@/components/help/HelpBanner";
 import { useAutoLock } from "@/hooks/useAutoLock";
 import { useOnline } from "@/hooks/useOnline";
@@ -173,6 +174,8 @@ export function AppShell() {
   }
 
   const routeHelp = ROUTE_HELP[location.pathname];
+  const activeNav = getNavItemForPath(location.pathname);
+  const mainBackground = `radial-gradient(1200px 600px at 100% 0%, ${activeNav.grad1} 0%, transparent 65%), radial-gradient(900px 500px at 0% 100%, ${activeNav.grad2} 0%, transparent 60%), hsl(var(--background))`;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -210,7 +213,10 @@ export function AppShell() {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-6">
+        <main
+          className="flex-1 overflow-y-auto p-6 transition-[background] duration-500"
+          style={{ background: mainBackground }}
+        >
           {/* Bandeau d'aide contextuel (première visite seulement) */}
           {routeHelp && (
             <HelpBanner

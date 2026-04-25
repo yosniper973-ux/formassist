@@ -1,101 +1,75 @@
 import { NavLink } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Building2,
-  GraduationCap,
-  Users,
-  Calendar,
-  Sparkles,
-  FileText,
-  CheckCircle,
-  Send,
-  Receipt,
-  BarChart3,
-  Settings,
-  PiggyBank,
-  Palette,
-  HelpCircle,
-  FolderOpen,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NAV_ITEMS, FOOTER_NAV_ITEMS, type NavItem } from "./navConfig";
 
-const NAV_ITEMS = [
-  { to: "/", icon: LayoutDashboard, label: "Tableau de bord" },
-  { to: "/centres", icon: Building2, label: "Centres" },
-  { to: "/formations", icon: GraduationCap, label: "Formations" },
-  { to: "/apprenants", icon: Users, label: "Apprenants" },
-  { to: "/planning", icon: Calendar, label: "Planning" },
-  { to: "/style", icon: Palette, label: "Profil de style" },
-  { to: "/generation", icon: Sparkles, label: "Génération" },
-  { to: "/fiches", icon: FileText, label: "Fiches pédago" },
-  { to: "/corrections", icon: CheckCircle, label: "Corrections" },
-  { to: "/dossiers", icon: FolderOpen, label: "Dossiers DP / Projet" },
-  { to: "/documents", icon: Send, label: "Documents & Envoi" },
-  { to: "/facturation", icon: Receipt, label: "Facturation" },
-  { to: "/finances", icon: PiggyBank, label: "Finances" },
-  { to: "/statistiques", icon: BarChart3, label: "Statistiques" },
-] as const;
+const SECTIONS = ["Pilotage", "Formation", "Création", "Gestion"] as const;
+
+function NavRow({ item }: { item: NavItem }) {
+  // Variables CSS injectées par item — utilisées uniquement par .nav-item via :hover et &.active
+  const style: React.CSSProperties = {
+    // @ts-expect-error CSS custom properties
+    "--accent": item.accent,
+    "--accent-soft": item.accentSoft,
+    "--accent-border": item.accentBorder,
+    "--accent-glow": item.accentGlow,
+  };
+  return (
+    <NavLink
+      to={item.to}
+      style={style}
+      className={({ isActive }) =>
+        cn(
+          "nav-item flex items-center gap-3 rounded-xl px-3 py-2 text-[15px] transition-all duration-150",
+          "border border-transparent text-muted-foreground",
+          "hover:[background-color:var(--accent-soft)] hover:[color:var(--accent)] hover:[border-color:var(--accent-border)] hover:translate-x-0.5",
+          isActive &&
+            "[background-color:var(--accent-soft)] [color:var(--accent)] [border-color:var(--accent-border)] font-semibold shadow-[0_4px_12px_-4px_var(--accent-glow)]",
+        )
+      }
+    >
+      <span className="text-[22px] leading-none drop-shadow-sm">{item.emoji}</span>
+      <span>{item.label}</span>
+    </NavLink>
+  );
+}
 
 export function Sidebar() {
   return (
-    <aside className="flex h-full w-60 flex-col border-r" style={{ background: "hsl(var(--sidebar))" }}>
+    <aside
+      className="flex h-full w-60 flex-col border-r"
+      style={{ background: "hsl(var(--sidebar))" }}
+    >
       {/* Logo */}
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Sparkles className="h-6 w-6 text-primary" />
+        <span className="text-2xl drop-shadow-sm">✨</span>
         <span className="text-lg font-bold text-foreground">FormAssist</span>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV_ITEMS.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
-              )
-            }
-          >
-            <item.icon className="h-4 w-4 flex-shrink-0" />
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
+      <nav className="flex-1 overflow-y-auto p-3">
+        {SECTIONS.map((section) => {
+          const items = NAV_ITEMS.filter((i) => i.section === section);
+          if (items.length === 0) return null;
+          return (
+            <div key={section} className="mb-3">
+              <div className="px-3 pb-1.5 pt-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/60">
+                {section}
+              </div>
+              <div className="space-y-0.5">
+                {items.map((item) => (
+                  <NavRow key={item.to} item={item} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </nav>
 
       {/* Aide + Paramètres en bas */}
-      <div className="border-t p-3 space-y-1">
-        <NavLink
-          to="/aide"
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )
-          }
-        >
-          <HelpCircle className="h-4 w-4" />
-          <span>Aide</span>
-        </NavLink>
-        <NavLink
-          to="/parametres"
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )
-          }
-        >
-          <Settings className="h-4 w-4" />
-          <span>Paramètres</span>
-        </NavLink>
+      <div className="border-t p-3 space-y-0.5">
+        {FOOTER_NAV_ITEMS.map((item) => (
+          <NavRow key={item.to} item={item} />
+        ))}
       </div>
     </aside>
   );
