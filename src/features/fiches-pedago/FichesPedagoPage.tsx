@@ -13,7 +13,13 @@ import {
   Loader2,
   Save,
   GripVertical,
+  CalendarPlus,
+  Check,
+  Download,
 } from "lucide-react";
+import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
+import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
+import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
 import { db } from "@/lib/db";
 import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -98,6 +104,67 @@ function safeParseJson<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
+function parsePhaseMinutes(duration: string): number {
+  if (!duration) return 0;
+  const text = duration.toLowerCase();
+  const hoursMatch = text.match(/(\d+(?:[.,]\d+)?)\s*h/);
+  const minutesMatch = text.match(/(\d+)\s*m/);
+  let total = 0;
+  if (hoursMatch?.[1]) total += Math.round(parseFloat(hoursMatch[1].replace(",", ".")) * 60);
+  if (minutesMatch?.[1]) total += parseInt(minutesMatch[1], 10);
+  if (total === 0) {
+    const bare = text.match(/(\d+)/);
+    if (bare?.[1]) total = parseInt(bare[1], 10);
+  }
+  return total;
+}
+
+function totalMinutesFromPhases(phases: Phase[]): number | null {
+  const total = phases.reduce((sum, p) => sum + parsePhaseMinutes(p.duration), 0);
+  return total > 0 ? total : null;
+}
+
+function sheetToMarkdown(sheet: PedagogicalSheet, formationTitle?: string): string {
+  const lines: string[] = [];
+  lines.push(`# ${sheet.title}`);
+  if (formationTitle) lines.push("", `*${formationTitle} — v${sheet.version}*`);
+
+  if (sheet.general_objective) {
+    lines.push("", "## Objectif général", "", sheet.general_objective);
+  }
+
+  if (sheet.sub_objectives.length > 0) {
+    lines.push("", "## Sous-objectifs", "");
+    sheet.sub_objectives.forEach((o) => lines.push(`- ${o}`));
+  }
+
+  if (sheet.targeted_cps.length > 0) {
+    lines.push("", "## Compétences ciblées", "");
+    sheet.targeted_cps.forEach((c) => lines.push(`- ${c}`));
+  }
+
+  if (sheet.phases.length > 0) {
+    lines.push("", "## Déroulement", "");
+    lines.push("| # | Phase | Durée | Méthode | Matériel |");
+    lines.push("|---|-------|-------|---------|----------|");
+    sheet.phases.forEach((p, idx) => {
+      lines.push(
+        `| ${idx + 1} | ${p.name} | ${p.duration} | ${p.method} | ${p.materials} |`,
+      );
+    });
+
+    sheet.phases.forEach((p, idx) => {
+      lines.push("", `### Phase ${idx + 1} — ${p.name}`, "");
+      if (p.duration) lines.push(`**Durée :** ${p.duration}`);
+      if (p.method) lines.push(`**Méthode :** ${p.method}`);
+      if (p.materials) lines.push(`**Matériel :** ${p.materials}`);
+      if (p.content) lines.push("", p.content);
+    });
+  }
+
+  return lines.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Composant principal
 // ---------------------------------------------------------------------------
@@ -140,6 +207,10 @@ export function FichesPedagoPage() {
 
   // Suppression
   const [toDeleteSheet, setToDeleteSheet] = useState<PedagogicalSheet | null>(null);
+
+  // Add to planning
+  const [showAddToPlanning, setShowAddToPlanning] = useState(false);
+  const [planningToast, setPlanningToast] = useState<string | null>(null);
 
   // -------------------------------------------------------------------------
   // Chargement des donnees
@@ -686,15 +757,94 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
               </p>
             </div>
           </div>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setToDeleteSheet(selectedSheet)}
-          >
-            <Trash2 className="h-4 w-4" />
-            Supprimer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const md = sheetToMarkdown(selectedSheet, formation?.title);
+                  const blob = await markdownToDocx(md);
+                  const savedPath = await downloadDocx(blob, selectedSheet.title || "fiche-pedago");
+                  if (savedPath) {
+                    setPlanningToast(`Fiche exportée : ${savedPath.split(/[\\/]/).pop()}`);
+                    setTimeout(() => setPlanningToast(null), 4000);
+                  }
+                } catch (err) {
+                  console.error("Export Word fiche:", err);
+                  alert(err instanceof Error ? err.message : "Erreur export Word");
+                }
+              }}
+            >
+              <Download className="h-4 w-4" />
+              Word
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const md = sheetToMarkdown(selectedSheet, formation?.title);
+                  const blob = await markdownToPdf(md);
+                  const savedPath = await downloadPdf(blob, selectedSheet.title || "fiche-pedago");
+                  if (savedPath) {
+                    setPlanningToast(`Fiche exportée : ${savedPath.split(/[\\/]/).pop()}`);
+                    setTimeout(() => setPlanningToast(null), 4000);
+                  }
+                } catch (err) {
+                  console.error("Export PDF fiche:", err);
+                  alert(err instanceof Error ? err.message : "Erreur export PDF");
+                }
+              }}
+            >
+              <Download className="h-4 w-4" />
+              PDF
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAddToPlanning(true)}
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Ajouter au planning
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setToDeleteSheet(selectedSheet)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Supprimer
+            </Button>
+          </div>
         </div>
+
+        <AddToPlanningDialog
+          open={showAddToPlanning}
+          onClose={() => setShowAddToPlanning(false)}
+          defaultFormationId={selectedSheet.formation_id}
+          defaultTitle={selectedSheet.title}
+          defaultDescription={selectedSheet.general_objective}
+          defaultDurationMinutes={totalMinutesFromPhases(selectedSheet.phases)}
+          onCreated={async (slotId) => {
+            try {
+              await db.linkSheetToSlot(selectedSheet.id, slotId);
+              setPlanningToast("Créneau créé et fiche liée au planning.");
+              setTimeout(() => setPlanningToast(null), 4000);
+            } catch (err) {
+              console.error("Erreur liaison fiche/slot:", err);
+            }
+          }}
+        />
+
+        {planningToast && (
+          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4 shadow-lg animate-in slide-in-from-bottom-4">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
+              <Check className="h-4 w-4 text-green-700" />
+            </div>
+            <p className="text-sm font-medium text-green-900">{planningToast}</p>
+          </div>
+        )}
 
         <ConfirmDialog
           open={toDeleteSheet !== null}

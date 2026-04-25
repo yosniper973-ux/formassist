@@ -23,10 +23,13 @@ import {
   Trash2,
   Download,
   X,
+  CalendarPlus,
 } from "lucide-react";
+import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
+import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { db } from "@/lib/db";
 import { request as claudeRequest, estimateCost } from "@/lib/claude";
@@ -124,6 +127,56 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   trainer_sheet: "QCM",
 };
 
+// ─── Draft persistence ───────────────────────────────────────
+// Restaure le travail en cours après un verrouillage / mise en veille.
+
+const DRAFT_KEY = "formassist:generation:draft:v1";
+
+interface Draft {
+  formationId: string;
+  typeValue: string | null;
+  competenceIds: string[];
+  bloomLevels: BloomLevel[];
+  duration: string;
+  groupSize: string;
+  additionalInstructions: string;
+  generatedContent: string;
+  generatedTitle: string;
+  generationModel: string;
+  generationCost: number;
+  editBuffer: string;
+  editing: boolean;
+  savedAt: number;
+}
+
+function readDraft(): Draft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Draft;
+    if (typeof d?.generatedContent !== "string" || !d.generatedContent.trim()) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(d: Draft): void {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+  } catch {
+    /* quota / SSR — silent */
+  }
+}
+
+function clearDraft(): void {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* silent */
+  }
+}
+
 // ─── Component ───────────────────────────────────────────────
 
 export function GenerationPage() {
@@ -144,7 +197,7 @@ export function GenerationPage() {
   const [ccps, setCcps] = useState<(CCP & { competences: Competence[] })[]>([]);
   const [selectedCompetenceIds, setSelectedCompetenceIds] = useState<Set<string>>(new Set());
   const [expandedCcps, setExpandedCcps] = useState<Set<string>>(new Set());
-  const [bloomLevel, setBloomLevel] = useState<BloomLevel>("apply");
+  const [bloomLevels, setBloomLevels] = useState<BloomLevel[]>(["apply"]);
   const [duration, setDuration] = useState("60");
   const [groupSize, setGroupSize] = useState("12");
   const [additionalInstructions, setAdditionalInstructions] = useState("");
@@ -164,6 +217,9 @@ export function GenerationPage() {
   const [generationModel, setGenerationModel] = useState("");
   const [generationCost, setGenerationCost] = useState(0);
   const [saved, setSaved] = useState(false);
+  const [savedContentId, setSavedContentId] = useState<string | null>(null);
+  const [showAddToPlanning, setShowAddToPlanning] = useState(false);
+  const [planningToast, setPlanningToast] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
@@ -173,6 +229,10 @@ export function GenerationPage() {
   const [editing, setEditing] = useState(false);
   const [editBuffer, setEditBuffer] = useState("");
 
+  // Brouillon restauré (verrouillage / veille)
+  const [restoredAt, setRestoredAt] = useState<number | null>(null);
+  const draftHydratedRef = useRef(false);
+
   // History
   const [history, setHistory] = useState<GeneratedContent[]>([]);
   const [historyFilter, setHistoryFilter] = useState("");
@@ -180,6 +240,88 @@ export function GenerationPage() {
 
   // Error
   const [error, setError] = useState("");
+
+  // ─── Restauration brouillon (avant tout autre useEffect) ───
+
+  useEffect(() => {
+    const d = readDraft();
+    if (!d) {
+      draftHydratedRef.current = true;
+      return;
+    }
+    setSelectedFormationId(d.formationId || "");
+    if (d.typeValue) {
+      const opt = CONTENT_TYPES.find((c) => c.value === d.typeValue);
+      if (opt) setSelectedType(opt);
+    }
+    setSelectedCompetenceIds(new Set(d.competenceIds || []));
+    if (Array.isArray(d.bloomLevels) && d.bloomLevels.length > 0) {
+      setBloomLevels(d.bloomLevels);
+    }
+    setDuration(d.duration || "60");
+    setGroupSize(d.groupSize || "12");
+    setAdditionalInstructions(d.additionalInstructions || "");
+    setGeneratedContent(d.generatedContent || "");
+    setGeneratedTitle(d.generatedTitle || "");
+    setGenerationModel(d.generationModel || "");
+    setGenerationCost(d.generationCost || 0);
+    setEditBuffer(d.editBuffer || "");
+    setEditing(Boolean(d.editing));
+    setRestoredAt(d.savedAt || Date.now());
+    setActiveTab("generate");
+    // Hydrate flag posé après un tick pour éviter qu'un useEffect d'écriture
+    // ne se déclenche immédiatement avec un état partiel.
+    queueMicrotask(() => {
+      draftHydratedRef.current = true;
+    });
+  }, []);
+
+  // ─── Persistance brouillon (à chaque changement utile) ───
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return;
+    if (saved) {
+      // Une sauvegarde DB a réussi → on retire le brouillon.
+      clearDraft();
+      return;
+    }
+    if (!generatedContent.trim()) {
+      // Rien à restaurer → pas de brouillon.
+      clearDraft();
+      return;
+    }
+    writeDraft({
+      formationId: selectedFormationId,
+      typeValue: selectedType?.value ?? null,
+      competenceIds: Array.from(selectedCompetenceIds),
+      bloomLevels,
+      duration,
+      groupSize,
+      additionalInstructions,
+      generatedContent,
+      generatedTitle,
+      generationModel,
+      generationCost,
+      editBuffer,
+      editing,
+      savedAt: Date.now(),
+    });
+  }, [
+    saved,
+    selectedFormationId,
+    selectedType,
+    selectedCompetenceIds,
+    bloomLevels,
+    duration,
+    groupSize,
+    additionalInstructions,
+    generatedContent,
+    generatedTitle,
+    generationModel,
+    generationCost,
+    editBuffer,
+    editing,
+  ]);
 
   // ─── Load formations ───
 
@@ -260,14 +402,19 @@ export function GenerationPage() {
       .join("\n");
 
     const typeLabel = selectedType?.label ?? "contenu";
-    const bloomLabel = BLOOM_LEVELS.find((b) => b.value === bloomLevel)?.label ?? bloomLevel;
+    const bloomLabels = bloomLevels
+      .map((lvl) => BLOOM_LEVELS.find((b) => b.value === lvl)?.label ?? lvl);
+    const bloomText =
+      bloomLabels.length > 1
+        ? `Niveaux taxonomiques de Bloom (à couvrir) : ${bloomLabels.join(", ")}`
+        : `Niveau taxonomique de Bloom : ${bloomLabels[0] ?? ""}`;
 
     let prompt = `Génère un ${typeLabel} pour la formation "${formation?.title ?? ""}".
 
 Compétences ciblées :
 ${compList || "(aucune compétence sélectionnée)"}
 
-Niveau taxonomique de Bloom : ${bloomLabel}
+${bloomText}
 Durée estimée : ${duration} minutes
 Taille du groupe : ${groupSize} apprenants`;
 
@@ -275,9 +422,55 @@ Taille du groupe : ${groupSize} apprenants`;
       prompt += `\n\nInstructions supplémentaires :\n${additionalInstructions.trim()}`;
     }
 
+    prompt += `
+
+EXIGENCE OBLIGATOIRE — Vidéos pédagogiques :
+
+Si tu proposes que les apprenants regardent une vidéo, tu **dois impérativement** fournir au moins **un lien cliquable** menant à la vidéo (ou à des résultats de recherche pertinents). La formatrice ne doit JAMAIS avoir à chercher la vidéo elle-même.
+
+Règles strictes :
+1. **N'invente AUCUNE URL de vidéo précise** (ni \`youtube.com/watch?v=…\` inventé, ni \`vimeo.com/12345\` inventé). Les IDs hallucinés mènent à des 404.
+2. **Plateforme libre** : YouTube *ou* toute autre source pertinente (Vimeo, Dailymotion, INA, France TV / Lumni, Canal-U, TED, Khan Academy, site officiel d'un organisme, MOOC, etc.). YouTube par défaut s'il n'y a pas mieux.
+3. **Format des liens** — utilise UNE de ces deux formes selon ce qui est le plus fiable :
+   - **URL de recherche** (préférée si tu n'es pas sûr d'un titre exact) :
+     • YouTube : \`https://www.youtube.com/results?search_query=MOTS+CLES\`
+     • Vimeo : \`https://vimeo.com/search?q=MOTS+CLES\`
+     • Lumni : \`https://www.lumni.fr/recherche?query=MOTS+CLES\`
+     • Canal-U : \`https://www.canal-u.tv/recherche/?q=MOTS+CLES\`
+     • Recherche générique : \`https://www.google.com/search?q=MOTS+CLES+vidéo&tbm=vid\`
+   - **URL exacte d'une chaîne ou d'une page établie** (uniquement si tu es certain qu'elle existe et est stable, ex : la page d'une chaîne YouTube reconnue, la page d'un MOOC public officiel). En cas de doute → URL de recherche.
+4. Choisis des **mots-clés français précis et pédagogiques** : sujet + niveau + angle ("introduction", "expliqué simplement", "tuto", "cas concret"…).
+5. Propose **2 à 3 angles différents** (cadrage théorique, démo pratique, exemple concret) pour donner du choix.
+6. Si tu connais une **chaîne ou un producteur francophone reconnu** pour le sujet (Khan Academy France, ScienceEtonnante, Hygiène Mentale, Le Réveilleur, France TV/Lumni, Canal-U, INA, etc.), nomme-le et inclus son nom dans la recherche.
+7. Présente chaque suggestion ainsi :
+   > **🎬 [Titre court de l'angle]** — [phrase d'intention pédagogique en 1 ligne]
+   > 🔗 [Plateforme + descriptif court](https://...)
+
+Cette section est OBLIGATOIRE dès qu'une vidéo est mentionnée dans le déroulé.`;
+
+    if (selectedType?.value === "course") {
+      prompt += `
+
+EXIGENCE OBLIGATOIRE — Objectifs (à placer juste après le titre, avant tout déroulé) :
+
+## Objectifs pédagogiques
+- Formule **un ou plusieurs** objectifs pédagogiques de haut niveau, exprimés du point de vue de l'apprenant ("À l'issue de ce cours, l'apprenant sera capable de…"), alignés sur les compétences ciblées et les niveaux de Bloom retenus.
+
+## Objectifs opérationnels
+- Pour **chaque compétence sélectionnée**, formule **au moins un** objectif opérationnel rédigé strictement selon la **règle des 3C** :
+  1. **Comportement observable** — un verbe d'action mesurable (ex : identifier, calculer, rédiger, paramétrer, argumenter…). Évite "comprendre", "connaître", "savoir".
+  2. **Condition de réalisation** — le contexte, les outils, les ressources, les contraintes ("à partir de…", "en disposant de…", "sans documentation…").
+  3. **Critère de réussite** — un seuil de performance vérifiable (quantité, qualité, temps, marge d'erreur, conformité à un standard).
+
+Présente chaque objectif opérationnel sous cette forme structurée :
+> **[Code compétence]** — *Comportement* : … · *Condition* : … · *Critère* : …
+
+Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont demandés, répartis-les sur les objectifs.`;
+    }
+
     prompt += `\n\nRéponds en français. Structure le contenu en Markdown avec :
 - Un titre clair
-- Les objectifs pédagogiques
+- Les objectifs pédagogiques${selectedType?.value === "course" ? " et opérationnels (selon les exigences ci-dessus)" : ""}
 - Le déroulé détaillé
 - Les consignes pour le formateur
 - Le matériel nécessaire si applicable`;
@@ -316,6 +509,7 @@ Taille du groupe : ${groupSize} apprenants`;
     setGeneratedContent("");
     setGeneratedTitle("");
     setSaved(false);
+    setSavedContentId(null);
     setCopied(false);
     setEditing(false);
 
@@ -351,17 +545,18 @@ Taille du groupe : ${groupSize} apprenants`;
     if (!selectedFormationId || !selectedType) return;
     try {
       const content = editing ? editBuffer : generatedContent;
-      await db.createContent({
+      const newId = await db.createContent({
         formation_id: selectedFormationId,
         content_type: selectedType.value,
         title: generatedTitle,
         content_markdown: content,
         model_used: generationModel,
         generation_cost: generationCost,
-        bloom_level: bloomLevel,
+        bloom_level: bloomLevels.join(","),
         estimated_duration: parseInt(duration, 10),
       });
       setSaved(true);
+      setSavedContentId(newId);
       if (editing) {
         setGeneratedContent(editBuffer);
         setEditing(false);
@@ -429,9 +624,12 @@ Taille du groupe : ${groupSize} apprenants`;
     setGeneratedTitle("");
     setCostEstimate(null);
     setSaved(false);
+    setSavedContentId(null);
     setCopied(false);
     setEditing(false);
     setError("");
+    setRestoredAt(null);
+    clearDraft();
   }
 
   // ─── Helpers ───
@@ -645,24 +843,46 @@ Taille du groupe : ${groupSize} apprenants`;
 
             {/* Options */}
             {selectedType && (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="bloom">Niveau de Bloom</Label>
-                  <Select
-                    id="bloom"
-                    value={bloomLevel}
-                    onChange={(e) => {
-                      setBloomLevel(e.target.value as BloomLevel);
-                      setCostEstimate(null);
-                    }}
-                  >
-                    {BLOOM_LEVELS.map((b) => (
-                      <option key={b.value} value={b.value}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </Select>
+                  <Label>Niveaux de Bloom <span className="text-xs text-muted-foreground font-normal">(plusieurs choix possibles)</span></Label>
+                  <div className="flex flex-wrap gap-2">
+                    {BLOOM_LEVELS.map((b) => {
+                      const active = bloomLevels.includes(b.value);
+                      return (
+                        <button
+                          type="button"
+                          key={b.value}
+                          onClick={() => {
+                            setBloomLevels((prev) => {
+                              const has = prev.includes(b.value);
+                              if (has) {
+                                // Garde au moins 1 niveau sélectionné
+                                if (prev.length === 1) return prev;
+                                return prev.filter((v) => v !== b.value);
+                              }
+                              // Ajoute en respectant l'ordre canonique de BLOOM_LEVELS
+                              const next = [...prev, b.value];
+                              return BLOOM_LEVELS.filter((l) => next.includes(l.value)).map(
+                                (l) => l.value,
+                              );
+                            });
+                            setCostEstimate(null);
+                          }}
+                          className={
+                            "px-3 py-1.5 rounded-full border text-xs font-medium transition-colors " +
+                            (active
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background text-foreground border-border hover:bg-muted")
+                          }
+                        >
+                          {b.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="duration">Durée (min)</Label>
                   <Input
@@ -691,6 +911,7 @@ Taille du groupe : ${groupSize} apprenants`;
                     }}
                   />
                 </div>
+              </div>
               </div>
             )}
 
@@ -819,6 +1040,28 @@ Taille du groupe : ${groupSize} apprenants`;
 
             {generatedContent && !generating && (
               <div className="space-y-3">
+                {restoredAt && !saved && (
+                  <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                    <div className="text-xs">
+                      <p className="font-semibold">Brouillon récupéré</p>
+                      <p className="text-amber-800">
+                        Génération du{" "}
+                        {new Date(restoredAt).toLocaleString("fr-FR", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}{" "}
+                        — pense à <strong>l'enregistrer</strong> pour ne pas la reperdre.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRestoredAt(null)}
+                      className="text-xs text-amber-900 hover:text-amber-700 underline shrink-0"
+                    >
+                      Compris
+                    </button>
+                  </div>
+                )}
                 {/* Actions bar */}
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
@@ -869,6 +1112,28 @@ Taille du groupe : ${groupSize} apprenants`;
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={async () => {
+                        try {
+                          const blob = await markdownToPdf(generatedContent);
+                          const savedPath = await downloadPdf(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                          if (savedPath) {
+                            const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
+                            setDownloadToast({ path: savedPath, name });
+                            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+                            toastTimerRef.current = window.setTimeout(() => setDownloadToast(null), 8000);
+                          }
+                        } catch (err) {
+                          console.error("Export PDF:", err);
+                          setError(err instanceof Error ? err.message : "Erreur export PDF");
+                        }
+                      }}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         if (editing) {
                           setGeneratedContent(editBuffer);
@@ -895,6 +1160,16 @@ Taille du groupe : ${groupSize} apprenants`;
                       )}
                       {saved ? "Enregistré" : "Enregistrer"}
                     </Button>
+                    {saved && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAddToPlanning(true)}
+                      >
+                        <CalendarPlus className="h-3.5 w-3.5" />
+                        Ajouter au planning
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1003,6 +1278,11 @@ Taille du groupe : ${groupSize} apprenants`;
                           if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
                           toastTimerRef.current = window.setTimeout(() => setDownloadToast(null), 8000);
                         }}
+                        onLinked={() => {
+                          setPlanningToast("Créneau créé et contenu lié au planning.");
+                          setTimeout(() => setPlanningToast(null), 4000);
+                          loadHistory();
+                        }}
                       />
                     ))}
                 </div>
@@ -1056,16 +1336,45 @@ Taille du groupe : ${groupSize} apprenants`;
           </button>
         </div>
       )}
+
+      <AddToPlanningDialog
+        open={showAddToPlanning}
+        onClose={() => setShowAddToPlanning(false)}
+        defaultFormationId={selectedFormationId}
+        defaultTitle={generatedTitle}
+        defaultDurationMinutes={parseInt(duration, 10) || null}
+        onCreated={async (slotId) => {
+          if (savedContentId) {
+            try {
+              await db.linkContentToSlot(savedContentId, slotId);
+            } catch (err) {
+              console.error("Erreur liaison contenu/slot:", err);
+            }
+          }
+          setPlanningToast("Créneau créé et contenu lié au planning.");
+          setTimeout(() => setPlanningToast(null), 4000);
+        }}
+      />
+
+      {planningToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4 shadow-lg animate-in slide-in-from-bottom-4">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
+            <Check className="h-4 w-4 text-green-700" />
+          </div>
+          <p className="text-sm font-medium text-green-900">{planningToast}</p>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── HistoryCard ──────────────────────────────────────────────
 
-function HistoryCard({ item, onDeleted, onDownloaded }: { item: GeneratedContent; onDeleted: () => void; onDownloaded?: (path: string) => void }) {
+function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: GeneratedContent; onDeleted: () => void; onDownloaded?: (path: string) => void; onLinked?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showAddToPlanning, setShowAddToPlanning] = useState(false);
 
   async function handleCopy() {
     await navigator.clipboard.writeText(item.content_markdown);
@@ -1073,7 +1382,11 @@ function HistoryCard({ item, onDeleted, onDownloaded }: { item: GeneratedContent
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const bloomLabel = BLOOM_LEVELS.find((b) => b.value === item.bloom_level)?.label;
+  const bloomLabel = (item.bloom_level ?? "")
+    .split(",")
+    .map((v) => BLOOM_LEVELS.find((b) => b.value === v.trim())?.label)
+    .filter((l): l is string => Boolean(l))
+    .join(" · ");
 
   return (
     <Card>
@@ -1104,6 +1417,12 @@ function HistoryCard({ item, onDeleted, onDownloaded }: { item: GeneratedContent
                     <Clock className="h-3 w-3" />
                     {item.estimated_duration} min
                   </span>
+                )}
+                {item.slot_id && (
+                  <Badge variant="outline" className="text-xs text-primary border-primary/40">
+                    <CalendarPlus className="h-3 w-3" />
+                    Dans le planning
+                  </Badge>
                 )}
               </div>
             </div>
@@ -1143,6 +1462,33 @@ function HistoryCard({ item, onDeleted, onDownloaded }: { item: GeneratedContent
             <Button
               variant="outline"
               size="sm"
+              onClick={async () => {
+                try {
+                  const blob = await markdownToPdf(item.content_markdown);
+                  const savedPath = await downloadPdf(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
+                  if (savedPath) onDownloaded?.(savedPath);
+                } catch (err) {
+                  console.error("Export PDF:", err);
+                  alert(err instanceof Error ? err.message : "Erreur export PDF");
+                }
+              }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              PDF
+            </Button>
+            {!item.slot_id && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddToPlanning(true)}
+              >
+                <CalendarPlus className="h-3.5 w-3.5" />
+                Ajouter au planning
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setConfirmDelete(true)}
               className="text-red-600 hover:bg-red-50 hover:text-red-700"
             >
@@ -1166,6 +1512,21 @@ function HistoryCard({ item, onDeleted, onDownloaded }: { item: GeneratedContent
           onDeleted();
         }}
         onCancel={() => setConfirmDelete(false)}
+      />
+      <AddToPlanningDialog
+        open={showAddToPlanning}
+        onClose={() => setShowAddToPlanning(false)}
+        defaultFormationId={item.formation_id}
+        defaultTitle={item.title}
+        defaultDurationMinutes={item.estimated_duration ?? null}
+        onCreated={async (slotId) => {
+          try {
+            await db.linkContentToSlot(item.id, slotId);
+            onLinked?.();
+          } catch (err) {
+            console.error("Erreur liaison contenu/slot:", err);
+          }
+        }}
       />
     </Card>
   );

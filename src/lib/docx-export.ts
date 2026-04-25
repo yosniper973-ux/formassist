@@ -12,6 +12,7 @@ import {
   BorderStyle,
   ShadingType,
   LevelFormat,
+  ExternalHyperlink,
 } from "docx";
 
 /**
@@ -155,17 +156,37 @@ export async function markdownToDocx(markdown: string): Promise<Blob> {
 const NAVY = "1A3C5E";
 const BLUE = "2471A3";
 
-function runs(text: string): TextRun[] {
-  const parts: TextRun[] = [];
-  const regex = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*([^*]+?)\*|`([^`]+?)`)/g;
+type Run = TextRun | ExternalHyperlink;
+
+function hyperlinkRun(label: string, url: string): ExternalHyperlink {
+  return new ExternalHyperlink({
+    link: url,
+    children: [
+      new TextRun({
+        text: label,
+        font: "Arial",
+        color: "2471A3",
+        underline: {},
+      }),
+    ],
+  });
+}
+
+function runs(text: string): Run[] {
+  const parts: Run[] = [];
+  // 1) [texte](url)  2) URL nue  3) ***x***  4) **x**  5) *x*  6) `x`
+  const regex =
+    /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>]+)|\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*([^*]+?)\*|`([^`]+?)`)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {
     if (m.index > last) parts.push(new TextRun({ text: text.slice(last, m.index), font: "Arial" }));
-    if (m[2]) parts.push(new TextRun({ text: m[2]!, bold: true, italics: true, font: "Arial" }));
-    else if (m[3]) parts.push(new TextRun({ text: m[3]!, bold: true, font: "Arial" }));
-    else if (m[4]) parts.push(new TextRun({ text: m[4]!, italics: true, font: "Arial" }));
-    else if (m[5]) parts.push(new TextRun({ text: m[5]!, font: "Consolas" }));
+    if (m[3]) parts.push(hyperlinkRun(m[2]!, m[3]!));
+    else if (m[4]) parts.push(hyperlinkRun(m[4]!, m[4]!));
+    else if (m[5]) parts.push(new TextRun({ text: m[5]!, bold: true, italics: true, font: "Arial" }));
+    else if (m[6]) parts.push(new TextRun({ text: m[6]!, bold: true, font: "Arial" }));
+    else if (m[7]) parts.push(new TextRun({ text: m[7]!, italics: true, font: "Arial" }));
+    else if (m[8]) parts.push(new TextRun({ text: m[8]!, font: "Consolas" }));
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push(new TextRun({ text: text.slice(last), font: "Arial" }));

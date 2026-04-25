@@ -331,22 +331,72 @@ function renderBlock(b: Block, key: number): React.ReactNode {
   }
 }
 
+// Ouvre une URL externe via Tauri shell.open (sinon fallback navigateur).
+function openExternal(url: string): void {
+  (async () => {
+    try {
+      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      if (isTauri) {
+        const { open } = await import("@tauri-apps/plugin-shell");
+        await open(url);
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("Ouverture lien:", err);
+    }
+  })();
+}
+
+function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        openExternal(href);
+      }}
+      style={{
+        color: "#2471A3",
+        textDecoration: "underline",
+        cursor: "pointer",
+        wordBreak: "break-word",
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 function renderInline(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
-  const regex = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*([^*]+?)\*|`([^`]+?)`)/g;
+  // 1) [texte](url)  2) URL nue (http/https)  3) ***x***  4) **x**  5) *x*  6) `x`
+  const regex =
+    /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>]+)|\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*([^*]+?)\*|`([^`]+?)`)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let k = 0;
   while ((m = regex.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
-    if (m[2]) parts.push(<strong key={k++} style={{ fontWeight: 700, fontStyle: "italic" }}>{m[2]}</strong>);
-    else if (m[3]) parts.push(<strong key={k++} style={{ fontWeight: 700 }}>{m[3]}</strong>);
-    else if (m[4]) parts.push(<em key={k++} style={{ fontStyle: "italic" }}>{m[4]}</em>);
-    else if (m[5]) parts.push(
-      <code key={k++} style={{ background: "#F2F3F4", padding: "1px 5px", borderRadius: 3, fontFamily: "Consolas, Menlo, monospace", fontSize: "0.9em" }}>
-        {m[5]}
-      </code>,
-    );
+    if (m[3]) {
+      // [texte](url)
+      parts.push(<ExternalLink key={k++} href={m[3]!}>{m[2]!}</ExternalLink>);
+    } else if (m[4]) {
+      // URL nue
+      parts.push(<ExternalLink key={k++} href={m[4]!}>{m[4]!}</ExternalLink>);
+    } else if (m[5]) {
+      parts.push(<strong key={k++} style={{ fontWeight: 700, fontStyle: "italic" }}>{m[5]}</strong>);
+    } else if (m[6]) {
+      parts.push(<strong key={k++} style={{ fontWeight: 700 }}>{m[6]}</strong>);
+    } else if (m[7]) {
+      parts.push(<em key={k++} style={{ fontStyle: "italic" }}>{m[7]}</em>);
+    } else if (m[8]) {
+      parts.push(
+        <code key={k++} style={{ background: "#F2F3F4", padding: "1px 5px", borderRadius: 3, fontFamily: "Consolas, Menlo, monospace", fontSize: "0.9em" }}>
+          {m[8]}
+        </code>,
+      );
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));

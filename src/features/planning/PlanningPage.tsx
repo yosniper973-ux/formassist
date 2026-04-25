@@ -14,7 +14,12 @@ import {
   X,
   Target,
   CheckCircle2,
+  Inbox,
+  BookOpen,
+  FileText,
+  CalendarPlus,
 } from "lucide-react";
+import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Centre, Slot, Group } from "@/types";
@@ -52,6 +57,62 @@ interface CompetenceRow {
   ccp_code: string;
   ccp_title: string;
   criteria: string[];
+}
+
+interface UnassignedContent {
+  id: string;
+  formation_id: string;
+  formation_title: string;
+  title: string;
+  content_type: string;
+  estimated_duration: number | null;
+  created_at: string;
+}
+
+interface UnassignedSheet {
+  id: string;
+  formation_id: string;
+  formation_title: string;
+  title: string;
+  general_objective: string | null;
+  phases: string; // JSON
+  created_at: string;
+}
+
+const CONTENT_TYPE_SHORT: Record<string, string> = {
+  course: "Cours",
+  exercise_individual: "Exo individuel",
+  exercise_small_group: "Exo petit groupe",
+  exercise_collective: "Exo collectif",
+  pedagogical_game: "Jeu",
+  role_play: "Mise en situation",
+  trainer_sheet: "QCM",
+};
+
+function parsePhaseMinutesLocal(duration: string | null | undefined): number {
+  if (!duration) return 0;
+  const text = duration.toLowerCase();
+  const hoursMatch = text.match(/(\d+(?:[.,]\d+)?)\s*h/);
+  const minutesMatch = text.match(/(\d+)\s*m/);
+  let total = 0;
+  if (hoursMatch?.[1]) total += Math.round(parseFloat(hoursMatch[1].replace(",", ".")) * 60);
+  if (minutesMatch?.[1]) total += parseInt(minutesMatch[1], 10);
+  if (total === 0) {
+    const bare = text.match(/(\d+)/);
+    if (bare?.[1]) total = parseInt(bare[1], 10);
+  }
+  return total;
+}
+
+function totalMinutesFromPhasesJson(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  try {
+    const phases = JSON.parse(raw) as { duration?: string }[];
+    const total = phases.reduce((s, p) => s + parsePhaseMinutesLocal(p.duration), 0);
+    return total > 0 ? total : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeCode(s: string): string {
@@ -235,6 +296,14 @@ export function PlanningPage() {
     Map<string, CompetenceRow[]>
   >(new Map());
 
+  // Panel "contenus non assignés"
+  const [showUnassigned, setShowUnassigned] = useState(false);
+  const [unassignedTab, setUnassignedTab] = useState<"contents" | "sheets">("contents");
+  const [unassignedContents, setUnassignedContents] = useState<UnassignedContent[]>([]);
+  const [unassignedSheets, setUnassignedSheets] = useState<UnassignedSheet[]>([]);
+  const [toPlanContent, setToPlanContent] = useState<UnassignedContent | null>(null);
+  const [toPlanSheet, setToPlanSheet] = useState<UnassignedSheet | null>(null);
+
   // Plage de dates affichée
   const dateRange = useMemo(() => {
     if (viewMode === "week") {
@@ -299,6 +368,27 @@ export function PlanningPage() {
   useEffect(() => {
     loadSlots();
   }, [loadSlots]);
+
+  const loadUnassigned = useCallback(async () => {
+    try {
+      const [contents, sheets] = await Promise.all([
+        db.getUnassignedContents(activeCentreId || undefined) as unknown as Promise<
+          UnassignedContent[]
+        >,
+        db.getUnassignedSheets(activeCentreId || undefined) as unknown as Promise<
+          UnassignedSheet[]
+        >,
+      ]);
+      setUnassignedContents(contents);
+      setUnassignedSheets(sheets);
+    } catch (err) {
+      console.error("Erreur chargement contenus non assignés:", err);
+    }
+  }, [activeCentreId]);
+
+  useEffect(() => {
+    loadUnassigned();
+  }, [loadUnassigned]);
 
   // Précharge les compétences + critères de toutes les formations visibles
   // pour résoudre les codes (ex: « CP10 ») présents dans les titres de créneaux.
@@ -437,6 +527,19 @@ export function PlanningPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button
+            variant={showUnassigned ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowUnassigned(!showUnassigned)}
+          >
+            <Inbox className="h-4 w-4 mr-1" />
+            Non assignés
+            {(unassignedContents.length + unassignedSheets.length) > 0 && (
+              <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs">
+                {unassignedContents.length + unassignedSheets.length}
+              </Badge>
+            )}
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             onClick={() => setShowImport(true)}
@@ -530,6 +633,180 @@ export function PlanningPage() {
         </div>
       </div>
 
+      {/* Panneau "Contenus non assignés" */}
+      {showUnassigned && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Contenus non assignés</h3>
+              <span className="text-xs text-muted-foreground">
+                (cours, exercices et fiches sans créneau)
+              </span>
+            </div>
+            <div className="flex border border-border rounded-md overflow-hidden">
+              <button
+                className={`px-3 py-1 text-xs flex items-center gap-1 ${
+                  unassignedTab === "contents"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-foreground hover:bg-muted"
+                }`}
+                onClick={() => setUnassignedTab("contents")}
+              >
+                <BookOpen className="h-3 w-3" />
+                Cours / Exos
+                <span className="ml-1 opacity-70">({unassignedContents.length})</span>
+              </button>
+              <button
+                className={`px-3 py-1 text-xs flex items-center gap-1 ${
+                  unassignedTab === "sheets"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-foreground hover:bg-muted"
+                }`}
+                onClick={() => setUnassignedTab("sheets")}
+              >
+                <FileText className="h-3 w-3" />
+                Fiches péda
+                <span className="ml-1 opacity-70">({unassignedSheets.length})</span>
+              </button>
+            </div>
+          </div>
+
+          {unassignedTab === "contents" && (
+            unassignedContents.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">
+                Aucun contenu en attente d'assignation.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {unassignedContents.map((c) => (
+                  <div
+                    key={c.id}
+                    className="rounded-md border border-border bg-background p-3 flex flex-col gap-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate" title={c.title}>
+                          {c.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {c.formation_title}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] shrink-0">
+                        {CONTENT_TYPE_SHORT[c.content_type] ?? c.content_type}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        {c.estimated_duration ? (
+                          <>
+                            <Clock className="h-3 w-3" />
+                            {c.estimated_duration} min
+                          </>
+                        ) : (
+                          <>{new Date(c.created_at).toLocaleDateString("fr-FR")}</>
+                        )}
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => setToPlanContent(c)}>
+                        <CalendarPlus className="h-3 w-3" />
+                        Planifier
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {unassignedTab === "sheets" && (
+            unassignedSheets.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">
+                Aucune fiche en attente d'assignation.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {unassignedSheets.map((s) => {
+                  const mins = totalMinutesFromPhasesJson(s.phases);
+                  return (
+                    <div
+                      key={s.id}
+                      className="rounded-md border border-border bg-background p-3 flex flex-col gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate" title={s.title}>
+                          {s.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {s.formation_title}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                          {mins ? (
+                            <>
+                              <Clock className="h-3 w-3" />
+                              {mins} min
+                            </>
+                          ) : (
+                            <>{new Date(s.created_at).toLocaleDateString("fr-FR")}</>
+                          )}
+                        </span>
+                        <Button size="sm" variant="outline" onClick={() => setToPlanSheet(s)}>
+                          <CalendarPlus className="h-3 w-3" />
+                          Planifier
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* Dialogs "Planifier" depuis le panneau */}
+      <AddToPlanningDialog
+        open={toPlanContent !== null}
+        onClose={() => setToPlanContent(null)}
+        defaultFormationId={toPlanContent?.formation_id}
+        defaultTitle={toPlanContent?.title}
+        defaultDurationMinutes={toPlanContent?.estimated_duration ?? null}
+        onCreated={async (slotId) => {
+          if (toPlanContent) {
+            try {
+              await db.linkContentToSlot(toPlanContent.id, slotId);
+            } catch (err) {
+              console.error("Erreur liaison contenu/slot:", err);
+            }
+          }
+          await loadUnassigned();
+          await loadSlots();
+        }}
+      />
+      <AddToPlanningDialog
+        open={toPlanSheet !== null}
+        onClose={() => setToPlanSheet(null)}
+        defaultFormationId={toPlanSheet?.formation_id}
+        defaultTitle={toPlanSheet?.title}
+        defaultDescription={toPlanSheet?.general_objective ?? null}
+        defaultDurationMinutes={
+          toPlanSheet ? totalMinutesFromPhasesJson(toPlanSheet.phases) : null
+        }
+        onCreated={async (slotId) => {
+          if (toPlanSheet) {
+            try {
+              await db.linkSheetToSlot(toPlanSheet.id, slotId);
+            } catch (err) {
+              console.error("Erreur liaison fiche/slot:", err);
+            }
+          }
+          await loadUnassigned();
+          await loadSlots();
+        }}
+      />
+
       {/* Vue calendrier */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -575,6 +852,7 @@ export function PlanningPage() {
           onSaved={() => {
             setShowSlotForm(false);
             loadSlots();
+            loadUnassigned();
           }}
         />
       )}

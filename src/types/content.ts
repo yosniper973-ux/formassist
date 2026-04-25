@@ -25,7 +25,8 @@ export interface GeneratedContent {
   content_html: string | null;
   model_used: string;
   generation_cost: number | null;
-  bloom_level: BloomLevel | null;
+  // CSV de BloomLevel (ex: "apply,analyze") — un seul niveau historiquement, plusieurs depuis v0.2.27.
+  bloom_level: string | null;
   estimated_duration: number | null;
   version: number;
   parent_id: string | null;

@@ -489,6 +489,60 @@ async function getContents(formationId: string, contentType?: string): Promise<R
   return query(sql + " ORDER BY created_at DESC", params);
 }
 
+async function getUnassignedContents(centreId?: string): Promise<Row[]> {
+  const sql = `
+    SELECT gc.*, f.title AS formation_title, f.rncp_code AS formation_code, f.centre_id AS centre_id
+      FROM generated_contents gc
+      JOIN formations f ON f.id = gc.formation_id
+     WHERE gc.slot_id IS NULL
+       AND gc.archived_at IS NULL
+       ${centreId ? "AND f.centre_id = ?" : ""}
+     ORDER BY gc.created_at DESC
+  `;
+  return query(sql, centreId ? [centreId] : []);
+}
+
+async function linkContentToSlot(contentId: string, slotId: string): Promise<void> {
+  await execute(
+    "UPDATE generated_contents SET slot_id = ?, updated_at = ? WHERE id = ?",
+    [slotId, now(), contentId],
+  );
+}
+
+async function unlinkContentFromSlot(contentId: string): Promise<void> {
+  await execute(
+    "UPDATE generated_contents SET slot_id = NULL, updated_at = ? WHERE id = ?",
+    [now(), contentId],
+  );
+}
+
+async function getUnassignedSheets(centreId?: string): Promise<Row[]> {
+  const sql = `
+    SELECT ps.*, f.title AS formation_title, f.rncp_code AS formation_code, f.centre_id AS centre_id
+      FROM pedagogical_sheets ps
+      JOIN formations f ON f.id = ps.formation_id
+     WHERE ps.archived_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM sheet_slots ss WHERE ss.sheet_id = ps.id)
+       ${centreId ? "AND f.centre_id = ?" : ""}
+     ORDER BY ps.created_at DESC
+  `;
+  return query(sql, centreId ? [centreId] : []);
+}
+
+async function linkSheetToSlot(sheetId: string, slotId: string): Promise<void> {
+  await execute(
+    "INSERT OR IGNORE INTO sheet_slots (sheet_id, slot_id) VALUES (?, ?)",
+    [sheetId, slotId],
+  );
+}
+
+async function unlinkSheetFromSlot(sheetId: string, slotId: string): Promise<void> {
+  await execute(
+    "DELETE FROM sheet_slots WHERE sheet_id = ? AND slot_id = ?",
+    [sheetId, slotId],
+  );
+}
+
 // ============================================================
 // Invoices
 // ============================================================
@@ -739,7 +793,14 @@ export const db = {
   // Contents
   createContent,
   getContents,
+  getUnassignedContents,
+  linkContentToSlot,
+  unlinkContentFromSlot,
   deleteContent,
+  // Pedagogical sheets links
+  getUnassignedSheets,
+  linkSheetToSlot,
+  unlinkSheetFromSlot,
   // Invoices
   getInvoices,
   createInvoice,
