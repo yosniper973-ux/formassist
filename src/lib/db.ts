@@ -502,6 +502,18 @@ async function getUnassignedContents(centreId?: string): Promise<Row[]> {
   return query(sql, centreId ? [centreId] : []);
 }
 
+async function getContentsForSlot(slotId: string): Promise<Row[]> {
+  return query(
+    `SELECT gc.*, f.title AS formation_title, f.rncp_code AS formation_code
+       FROM generated_contents gc
+       JOIN formations f ON f.id = gc.formation_id
+      WHERE gc.slot_id = ?
+        AND gc.archived_at IS NULL
+      ORDER BY gc.created_at DESC`,
+    [slotId],
+  );
+}
+
 async function linkContentToSlot(contentId: string, slotId: string): Promise<void> {
   await execute(
     "UPDATE generated_contents SET slot_id = ?, updated_at = ? WHERE id = ?",
@@ -527,6 +539,19 @@ async function getUnassignedSheets(centreId?: string): Promise<Row[]> {
      ORDER BY ps.created_at DESC
   `;
   return query(sql, centreId ? [centreId] : []);
+}
+
+async function getSheetsForSlot(slotId: string): Promise<Row[]> {
+  return query(
+    `SELECT ps.*, f.title AS formation_title, f.rncp_code AS formation_code
+       FROM pedagogical_sheets ps
+       JOIN formations f ON f.id = ps.formation_id
+       JOIN sheet_slots ss ON ss.sheet_id = ps.id
+      WHERE ss.slot_id = ?
+        AND ps.archived_at IS NULL
+      ORDER BY ps.created_at DESC`,
+    [slotId],
+  );
 }
 
 async function linkSheetToSlot(sheetId: string, slotId: string): Promise<void> {
@@ -794,11 +819,13 @@ export const db = {
   createContent,
   getContents,
   getUnassignedContents,
+  getContentsForSlot,
   linkContentToSlot,
   unlinkContentFromSlot,
   deleteContent,
   // Pedagogical sheets links
   getUnassignedSheets,
+  getSheetsForSlot,
   linkSheetToSlot,
   unlinkSheetFromSlot,
   // Invoices

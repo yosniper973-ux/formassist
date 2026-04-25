@@ -389,6 +389,21 @@ export function GenerationPage() {
     }
   }, [activeTab, selectedFormationId, loadHistory]);
 
+  // ─── Build competence code prefix (e.g. "CCP1/CP2+CP3" or "CCP1/CP2 · CCP2/CP1") ───
+
+  function buildCompetenceCode(): string {
+    const groups: { ccpCode: string; compCodes: string[] }[] = [];
+    for (const ccp of ccps) {
+      const codes = ccp.competences
+        .filter((c) => selectedCompetenceIds.has(c.id))
+        .map((c) => c.code);
+      if (codes.length > 0) groups.push({ ccpCode: ccp.code, compCodes: codes });
+    }
+    return groups
+      .map((g) => `${g.ccpCode}/${g.compCodes.join("+")}`)
+      .join(" · ");
+  }
+
   // ─── Build prompt ───
 
   function buildMessages(): ClaudeMessage[] {
@@ -529,9 +544,22 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
       setGenerationCost(result.costEuros);
       addApiCost(result.costEuros);
 
-      // Extract title from first heading
+      // Extract title from first heading and prefix with type + competence codes
       const titleMatch = result.content.match(/^#\s+(.+)$/m);
-      setGeneratedTitle(titleMatch?.[1] ?? `${selectedType.label} — ${new Date().toLocaleDateString("fr-FR")}`);
+      const rawTitle = titleMatch?.[1]?.trim() ?? "";
+      const typeLabel = selectedType.label;
+      // Strip duplicate type label / generic prefixes Claude may have added
+      const stripPattern = new RegExp(
+        `^(?:${typeLabel}|cours|exercice|qcm|jeu|jeu de r[oô]le|cas pratique)s?\\s*(?:[—:\\-]\\s*)?`,
+        "i",
+      );
+      const cleanTitle = rawTitle.replace(stripPattern, "").trim();
+      const compCode = buildCompetenceCode();
+      const subject = cleanTitle || new Date().toLocaleDateString("fr-FR");
+      const finalTitle = compCode
+        ? `${typeLabel} ${compCode} - ${subject}`
+        : `${typeLabel} - ${subject}`;
+      setGeneratedTitle(finalTitle);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de la génération");
     } finally {

@@ -1205,6 +1205,14 @@ function SlotCard({
 // Formulaire créneau (dialogue)
 // ============================================================
 
+interface LinkableItem {
+  id: string;
+  title: string;
+  formation_id: string;
+  content_type?: string;
+  duration_minutes?: number;
+}
+
 function SlotFormDialog({
   slot,
   prefillDate,
@@ -1233,7 +1241,79 @@ function SlotFormDialog({
   const [coAnimatorName, setCoAnimatorName] = useState(slot?.co_animator_name ?? "");
   const [saving, setSaving] = useState(false);
 
+  // Contenus & fiches liés
+  const [allContents, setAllContents] = useState<LinkableItem[]>([]);
+  const [allSheets, setAllSheets] = useState<LinkableItem[]>([]);
+  const [originalContentIds, setOriginalContentIds] = useState<Set<string>>(new Set());
+  const [originalSheetIds, setOriginalSheetIds] = useState<Set<string>>(new Set());
+  const [selectedContentIds, setSelectedContentIds] = useState<Set<string>>(new Set());
+  const [selectedSheetIds, setSelectedSheetIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const [unassignedContents, unassignedSheets, attachedContents, attachedSheets] = await Promise.all([
+        db.getUnassignedContents(),
+        db.getUnassignedSheets(),
+        slot ? db.getContentsForSlot(slot.id) : Promise.resolve([]),
+        slot ? db.getSheetsForSlot(slot.id) : Promise.resolve([]),
+      ]);
+      if (cancelled) return;
+
+      const toItem = (r: Record<string, unknown>): LinkableItem => ({
+        id: String(r.id),
+        title: String(r.title ?? "(sans titre)"),
+        formation_id: String(r.formation_id),
+        content_type: r.content_type ? String(r.content_type) : undefined,
+        duration_minutes:
+          typeof r.estimated_duration === "number"
+            ? r.estimated_duration
+            : typeof r.duration_minutes === "number"
+              ? r.duration_minutes
+              : undefined,
+      });
+
+      const mergedContents = [...attachedContents.map(toItem), ...unassignedContents.map(toItem)];
+      const mergedSheets = [...attachedSheets.map(toItem), ...unassignedSheets.map(toItem)];
+      // dedupe
+      const seenC = new Set<string>();
+      const seenS = new Set<string>();
+      setAllContents(mergedContents.filter((i) => (seenC.has(i.id) ? false : (seenC.add(i.id), true))));
+      setAllSheets(mergedSheets.filter((i) => (seenS.has(i.id) ? false : (seenS.add(i.id), true))));
+
+      const origC = new Set(attachedContents.map((r: Record<string, unknown>) => String(r.id)));
+      const origS = new Set(attachedSheets.map((r: Record<string, unknown>) => String(r.id)));
+      setOriginalContentIds(origC);
+      setOriginalSheetIds(origS);
+      setSelectedContentIds(new Set(origC));
+      setSelectedSheetIds(new Set(origS));
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [slot]);
+
   const filteredGroups = groups.filter((g) => g.formation_id === formationId);
+  const linkableContents = allContents.filter((c) => c.formation_id === formationId);
+  const linkableSheets = allSheets.filter((s) => s.formation_id === formationId);
+
+  function toggleContent(id: string) {
+    setSelectedContentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleSheet(id: string) {
+    setSelectedSheetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const durationHours = useMemo(() => {
     if (!startTime || !endTime) return 0;
@@ -1260,6 +1340,7 @@ function SlotFormDialog({
         co_animator_name: isCoAnimated ? coAnimatorName : null,
       };
 
+      let slotId: string;
       if (slot) {
         const keys = Object.keys(data);
         const sets = keys.map((k) => `${k} = ?`).join(", ");
@@ -1268,9 +1349,25 @@ function SlotFormDialog({
           `UPDATE slots SET ${sets}, updated_at = datetime('now') WHERE id = ?`,
           [...values, slot.id],
         );
+        slotId = slot.id;
       } else {
-        await db.createSlot(data);
+        slotId = await db.createSlot(data);
       }
+
+      // Diff & sync links
+      for (const id of selectedContentIds) {
+        if (!originalContentIds.has(id)) await db.linkContentToSlot(id, slotId);
+      }
+      for (const id of originalContentIds) {
+        if (!selectedContentIds.has(id)) await db.unlinkContentFromSlot(id);
+      }
+      for (const id of selectedSheetIds) {
+        if (!originalSheetIds.has(id)) await db.linkSheetToSlot(id, slotId);
+      }
+      for (const id of originalSheetIds) {
+        if (!selectedSheetIds.has(id)) await db.unlinkSheetFromSlot(id, slotId);
+      }
+
       onSaved();
     } catch (err) {
       console.error("Erreur sauvegarde créneau:", err);
@@ -1417,6 +1514,67 @@ function SlotFormDialog({
               placeholder="Notes internes..."
             />
           </div>
+
+          {/* Contenus & fiches liés */}
+          {formationId && (linkableContents.length > 0 || linkableSheets.length > 0) && (
+            <div className="border-t border-border pt-4">
+              <Label className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4" /> Contenus & fiches à rattacher
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1 mb-2">
+                Cochez les contenus et fiches à associer à ce créneau.
+              </p>
+
+              {linkableContents.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Cours & exercices</p>
+                  <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-border p-2 bg-background">
+                    {linkableContents.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-start gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1 rounded"
+                          checked={selectedContentIds.has(c.id)}
+                          onChange={() => toggleContent(c.id)}
+                        />
+                        <span className="flex-1 leading-tight">
+                          {c.title}
+                          {c.content_type && (
+                            <span className="ml-2 text-xs text-muted-foreground">({c.content_type})</span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {linkableSheets.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Fiches pédagogiques</p>
+                  <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-border p-2 bg-background">
+                    {linkableSheets.map((s) => (
+                      <label
+                        key={s.id}
+                        className="flex items-start gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1 rounded"
+                          checked={selectedSheetIds.has(s.id)}
+                          onChange={() => toggleSheet(s.id)}
+                        />
+                        <span className="flex-1 leading-tight">{s.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Actions */}
