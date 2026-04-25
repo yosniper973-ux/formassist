@@ -424,14 +424,62 @@ export function GenerationPage() {
         ? `Niveaux taxonomiques de Bloom (à couvrir) : ${bloomLabels.join(", ")}`
         : `Niveau taxonomique de Bloom : ${bloomLabels[0] ?? ""}`;
 
+    const durationMin = parseInt(duration, 10) || 60;
+    const durationHoursDecimal = (durationMin / 60).toFixed(durationMin % 60 === 0 ? 0 : 1);
+
     let prompt = `Génère un ${typeLabel} pour la formation "${formation?.title ?? ""}".
 
 Compétences ciblées :
 ${compList || "(aucune compétence sélectionnée)"}
 
 ${bloomText}
-Durée estimée : ${duration} minutes
+Durée demandée : **${durationMin} minutes (${durationHoursDecimal}h)** — **CONTRAINTE FERME, NON NÉGOCIABLE**
 Taille du groupe : ${groupSize} apprenants`;
+
+    // Sizing rules per content type — ensures the generated content actually fills the requested duration
+    const sizingBlock = (() => {
+      const t = selectedType?.value;
+      if (t === "trainer_sheet") {
+        // QCM : ~1 min 30 à 2 min par question (lecture + réflexion + correction collective)
+        const minQ = Math.max(10, Math.round(durationMin / 2.5));
+        const maxQ = Math.max(minQ + 5, Math.round(durationMin / 1.5));
+        return `
+
+EXIGENCE OBLIGATOIRE — Dimensionnement du QCM :
+
+La durée demandée est de **${durationMin} minutes**. Tu dois produire **entre ${minQ} et ${maxQ} questions** (compter ~1 min 30 à 2 min par question : lecture + réflexion + correction collective).
+
+- En dessous de ${minQ} questions, le QCM est trop court → INACCEPTABLE.
+- Couvre l'ensemble des compétences sélectionnées et tous les niveaux de Bloom demandés, en variant la difficulté.
+- Numérote les questions et regroupe-les en sections logiques si pertinent (ex : "Bases", "Application", "Analyse de cas").
+- Termine par un **corrigé détaillé** avec, pour chaque question, la bonne réponse et une **justification pédagogique** (1-2 phrases).
+- Indique la **durée totale estimée** dans l'introduction et la **répartition** (passation / correction).`;
+      }
+      if (t === "course") {
+        return `
+
+EXIGENCE OBLIGATOIRE — Dimensionnement du cours :
+
+La durée demandée est de **${durationMin} minutes (${durationHoursDecimal}h)**. Tu dois produire un déroulé **réellement calibré pour cette durée**, ni plus court ni plus long.
+
+- Découpe le cours en **phases datées en minutes** (ex : "Phase 1 — Introduction (15 min)", "Phase 2 — Apport théorique (40 min)", …).
+- La somme des durées de phases doit **égaler ${durationMin} minutes** (tolérance ±5 %).
+- Inclus systématiquement : accueil/introduction, apports, activités d'appropriation, synthèse, évaluation/clôture.
+- Pour une durée ≥ 90 min, prévois au moins une **pause** explicite.`;
+      }
+      // exercices, jeux, mises en situation
+      return `
+
+EXIGENCE OBLIGATOIRE — Dimensionnement de l'activité :
+
+La durée demandée est de **${durationMin} minutes (${durationHoursDecimal}h)**. L'activité doit **réellement remplir cette durée**.
+
+- Découpe le déroulé en **étapes datées en minutes** (consignes / temps individuel / mise en commun / debriefing).
+- La somme des durées doit **égaler ${durationMin} minutes** (tolérance ±5 %).
+- Si la durée dépasse ce qu'une activité unique permet de couvrir naturellement, propose **plusieurs sous-activités enchaînées** (variantes, niveaux progressifs, débriefing approfondi) plutôt que de raccourcir.
+- Inclus toujours : présentation/consigne, déroulement, mise en commun, débriefing pédagogique.`;
+    })();
+    prompt += sizingBlock;
 
     if (additionalInstructions.trim()) {
       prompt += `\n\nInstructions supplémentaires :\n${additionalInstructions.trim()}`;
