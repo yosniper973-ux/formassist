@@ -72,7 +72,12 @@ function statusColor(status: string): string {
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—";
-  const d = new Date(dateStr);
+  // Parse YYYY-MM-DD comme date locale pour éviter le décalage UTC qui peut
+  // faire reculer la date d'un jour selon le fuseau.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  const d = m
+    ? new Date(parseInt(m[1]!, 10), parseInt(m[2]!, 10) - 1, parseInt(m[3]!, 10), 12, 0, 0)
+    : new Date(dateStr);
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
@@ -451,6 +456,7 @@ function CreateInvoiceView({
       const paymentDelay = c?.payment_delay_days ?? 30;
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + paymentDelay);
+      const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`;
 
       const invoiceId = await db.createInvoice({
         centre_id: centreId,
@@ -464,7 +470,7 @@ function CreateInvoiceView({
         tva_rate: tvaRate,
         total_ttc: Math.round(totalTtc * 100) / 100,
         status: "draft",
-        due_date: dueDate.toISOString().substring(0, 10),
+        due_date: dueDateStr,
         adjustments: adjustments.length > 0 ? JSON.stringify(adjustments) : null,
         notes: notes || null,
       });

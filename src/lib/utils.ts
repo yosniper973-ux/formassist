@@ -14,9 +14,25 @@ export function formatEuros(amount: number): string {
   }).format(amount);
 }
 
+/**
+ * Parse une date qui peut être au format YYYY-MM-DD (date "civile" sans heure)
+ * en respectant le fuseau local. Évite le décalage UTC qui peut faire reculer
+ * la date d'un jour selon le fuseau.
+ */
+export function parseLocalDate(value: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (m) {
+    const y = parseInt(m[1]!, 10);
+    const mo = parseInt(m[2]!, 10) - 1;
+    const d = parseInt(m[3]!, 10);
+    return new Date(y, mo, d, 12, 0, 0, 0);
+  }
+  return new Date(value);
+}
+
 /** Formate une date ISO en format français */
 export function formatDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString("fr-FR", {
+  return parseLocalDate(isoDate).toLocaleDateString("fr-FR", {
     day: "2-digit",
     month: "long",
     year: "numeric",
@@ -25,7 +41,7 @@ export function formatDate(isoDate: string): string {
 
 /** Formate une date courte */
 export function formatDateShort(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString("fr-FR", {
+  return parseLocalDate(isoDate).toLocaleDateString("fr-FR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

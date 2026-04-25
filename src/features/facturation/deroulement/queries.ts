@@ -11,9 +11,24 @@ import type {
 
 const DEFAULT_REDACTEUR = "CASTRY JO-ANNE";
 
+function normalizeCode(s: string): string {
+  return s.toUpperCase().replace(/[\s.]/g, "");
+}
+
+/** Extrait les codes compétences présents dans le titre d'un créneau (ex: "C1, CP2.1"). */
+function extractCompetenceCodes(title: string | null | undefined): string[] {
+  if (!title) return [];
+  const matches = title.toUpperCase().match(/C{1,3}P*\s*\d+(?:\.\d+)?/g) ?? [];
+  return [...new Set(matches.map(normalizeCode))];
+}
+
 /**
  * Détecte tous les CCP touchés par les séances planifiées entre period_start et period_end
  * pour la formation donnée. Retourne 1 structure par CCP avec compétences, critères, exercices disponibles, slots.
+ *
+ * Le rattachement séance ↔ compétence se fait en parsant les codes compétence
+ * dans le titre du créneau (même règle que la page Planning), puis en les
+ * faisant correspondre aux compétences de la formation.
  */
 export async function detectCcpsForInvoice(params: {
   formationId: string;
@@ -35,36 +50,35 @@ export async function detectCcpsForInvoice(params: {
 
   if (slots.length === 0) return [];
 
-  const slotIds = slots.map((s) => s.id);
-  const slotPlaceholders = slotIds.map(() => "?").join(",");
-
-  // 2. Compétences touchées par ces slots (via slot_competences)
-  const compsRaw = await db.query<CompetenceRow & { slot_id: string }>(
-    `SELECT DISTINCT c.id, c.ccp_id, c.code, c.title, c.description, c.sort_order,
-            sc.slot_id as slot_id
-     FROM slot_competences sc
-     JOIN competences c ON c.id = sc.competence_id
-     WHERE sc.slot_id IN (${slotPlaceholders})`,
-    slotIds,
+  // 2. Toutes les compétences de la formation (via les CCPs)
+  const allComps = await db.query<CompetenceRow>(
+    `SELECT c.id, c.ccp_id, c.code, c.title, c.description, c.sort_order
+       FROM competences c
+       JOIN ccps cp ON cp.id = c.ccp_id
+      WHERE cp.formation_id = ?`,
+    [formationId],
   );
 
-  if (compsRaw.length === 0) return [];
+  if (allComps.length === 0) return [];
 
-  // Dédupliquer compétences
+  const compByCode = new Map<string, CompetenceRow>();
+  for (const c of allComps) compByCode.set(normalizeCode(c.code), c);
+
+  // 3. Pour chaque slot, extraire les codes du titre et résoudre les compétences
   const competencesById = new Map<string, CompetenceRow>();
   const slotsByCompetence = new Map<string, Set<string>>();
-  for (const row of compsRaw) {
-    competencesById.set(row.id, {
-      id: row.id,
-      ccp_id: row.ccp_id,
-      code: row.code,
-      title: row.title,
-      description: row.description,
-      sort_order: row.sort_order,
-    });
-    if (!slotsByCompetence.has(row.id)) slotsByCompetence.set(row.id, new Set());
-    slotsByCompetence.get(row.id)!.add(row.slot_id);
+  for (const slot of slots) {
+    const codes = extractCompetenceCodes(slot.title);
+    for (const code of codes) {
+      const comp = compByCode.get(code);
+      if (!comp) continue;
+      competencesById.set(comp.id, comp);
+      if (!slotsByCompetence.has(comp.id)) slotsByCompetence.set(comp.id, new Set());
+      slotsByCompetence.get(comp.id)!.add(slot.id);
+    }
   }
+
+  if (competencesById.size === 0) return [];
 
   // 3. Récupérer les CCPs concernés
   const ccpIds = Array.from(new Set(Array.from(competencesById.values()).map((c) => c.ccp_id)));
