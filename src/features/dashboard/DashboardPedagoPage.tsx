@@ -259,9 +259,10 @@ export function DashboardPedagoPage() {
       {/* En-tête */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-foreground">
+            <span className="emoji-bounce text-[34px] leading-none drop-shadow-sm" aria-hidden>👋</span>
             {getGreetingPrefix()}
-            {firstName ? ` ${firstName}` : ""} <span aria-hidden>👋</span>
+            {firstName ? ` ${firstName}` : ""}
           </h1>
           <p className="text-sm text-muted-foreground">
             Voici un aperçu de tes formations et de la progression

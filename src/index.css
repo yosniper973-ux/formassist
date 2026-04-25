@@ -71,6 +71,39 @@
   }
 }
 
+/* ─── Animations de transition de page ──────────────────────── */
+/* "Page tournée" : la page se déplie depuis la gauche en 3D */
+@keyframes pageTurnIn {
+  0%   { opacity: 0; transform: rotateY(-95deg); box-shadow: -30px 0 50px -20px rgba(0,0,0,.25); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: rotateY(0); box-shadow: 0 0 0 0 transparent; }
+}
+.page-flip {
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  animation: pageTurnIn .65s cubic-bezier(.4,.05,.2,1) both;
+}
+.page-flip-perspective { perspective: 1600px; }
+
+/* Bond élastique pour l'emoji du titre */
+@keyframes emojiBounce {
+  0%   { transform: scale(.4) rotate(-12deg); opacity: 0; }
+  55%  { transform: scale(1.25) rotate(8deg);  opacity: 1; }
+  75%  { transform: scale(.92) rotate(-3deg); }
+  100% { transform: scale(1)    rotate(0); opacity: 1; }
+}
+.emoji-bounce {
+  display: inline-block;
+  transform-origin: 50% 70%;
+  animation: emojiBounce .65s .12s cubic-bezier(.34,1.56,.64,1) both;
+}
+
+/* Respecte les préférences d'accessibilité */
+@media (prefers-reduced-motion: reduce) {
+  .page-flip, .emoji-bounce { animation: none !important; }
+}
+
 /* Scrollbar discrète */
 ::-webkit-scrollbar {
   width: 6px;

@@ -214,19 +214,33 @@ export function AppShell() {
         )}
 
         <main
-          className="flex-1 overflow-y-auto p-6 transition-[background] duration-500"
+          className="flex-1 overflow-y-auto p-6 transition-[background] duration-500 page-flip-perspective"
           style={{ background: mainBackground }}
         >
-          {/* Bandeau d'aide contextuel (première visite seulement) */}
-          {routeHelp && (
-            <HelpBanner
-              id={routeHelp.id}
-              title={routeHelp.title}
-              description={routeHelp.description}
-              tip={routeHelp.tip}
-            />
-          )}
-          <Outlet />
+          {/* Wrapper qui se "tourne" comme une page de livre à chaque navigation */}
+          <div key={location.pathname} className="page-flip">
+            {/* Bandeau d'aide contextuel (première visite seulement) */}
+            {routeHelp && (
+              <HelpBanner
+                id={routeHelp.id}
+                title={routeHelp.title}
+                description={routeHelp.description}
+                tip={routeHelp.tip}
+              />
+            )}
+
+            {/* Titre de la rubrique avec emoji qui rebondit */}
+            {location.pathname !== "/" && (
+              <h1 className="mb-5 flex items-center gap-3 text-2xl font-bold text-foreground">
+                <span className="emoji-bounce text-[34px] leading-none drop-shadow-sm">
+                  {activeNav.emoji}
+                </span>
+                {activeNav.label}
+              </h1>
+            )}
+
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
