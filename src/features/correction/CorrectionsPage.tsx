@@ -63,6 +63,19 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function labelForContentType(t: string): string {
+  switch (t) {
+    case "course": return "Cours";
+    case "exercise_individual": return "Ex. individuel";
+    case "exercise_small_group": return "Ex. petit groupe";
+    case "exercise_collective": return "Ex. collectif";
+    case "pedagogical_game": return "Jeu péda";
+    case "role_play": return "Mise en situation";
+    case "trainer_sheet": return "Fiche formateur";
+    default: return t;
+  }
+}
+
 // ─── Composant principal ────────────────────────────────────────────────────
 
 export function CorrectionsPage() {
@@ -181,14 +194,16 @@ export function CorrectionsPage() {
 
   async function loadContents() {
     const rows = (await db.getContents(selectedFormationId)) as unknown as GeneratedContent[];
-    // Filter to exercise types only
-    const exercises = rows.filter((c) =>
+    // On garde les contenus susceptibles d'être corrigés : exercices, mises en situation,
+    // jeux pédagogiques, fiches formateur, et cours (Claude inclut souvent des exercices dedans).
+    const corrigeables = rows.filter((c) =>
       c.content_type.startsWith("exercise") ||
       c.content_type === "role_play" ||
       c.content_type === "pedagogical_game" ||
-      c.content_type === "trainer_sheet",
+      c.content_type === "trainer_sheet" ||
+      c.content_type === "course",
     );
-    setContents(exercises);
+    setContents(corrigeables);
     setSelectedContentId("");
   }
 
@@ -877,28 +892,30 @@ function NewCorrectionTab({
         </div>
       </div>
 
-      {/* Etape 2 : Exercice */}
+      {/* Etape 2 : Contenu de reference */}
       <div className="rounded-xl border bg-card p-6 space-y-4">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Badge variant="outline" className="text-xs">2</Badge>
-          Exercice (optionnel)
+          Exercice ou cours (optionnel)
         </div>
 
         <div className="space-y-1.5">
-          <Label>Contenu / exercice de reference</Label>
+          <Label>Contenu de référence</Label>
           <Select
             value={selectedContentId}
             onChange={(e) => onContentChange(e.target.value)}
             disabled={!selectedFormationId}
           >
-            <option value="">-- Aucun exercice selectionne --</option>
+            <option value="">-- Aucun contenu sélectionné --</option>
             {contents.map((c) => (
-              <option key={c.id} value={c.id}>{c.title}</option>
+              <option key={c.id} value={c.id}>
+                [{labelForContentType(c.content_type)}] {c.title}
+              </option>
             ))}
           </Select>
           {contents.length === 0 && selectedFormationId && (
             <p className="text-xs text-muted-foreground">
-              Aucun exercice genere pour cette formation.
+              Aucun contenu généré pour cette formation.
             </p>
           )}
         </div>
