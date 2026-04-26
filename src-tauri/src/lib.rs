@@ -27,6 +27,12 @@ pub fn run() {
             sql: include_str!("../migrations/003_deroulement.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "group_corrections",
+            sql: include_str!("../migrations/004_group_corrections.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

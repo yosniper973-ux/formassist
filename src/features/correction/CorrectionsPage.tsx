@@ -39,6 +39,15 @@ interface CorrectionWithDetails extends Correction {
   content_title?: string;
 }
 
+interface HistoryItem {
+  // Soit une correction individuelle, soit une correction de groupe
+  kind: "single" | "group";
+  // Pour single : la ligne. Pour group : la première ligne du groupe (représentative).
+  rep: CorrectionWithDetails;
+  // Tous les apprenants concernés (1 pour single, N pour group)
+  members: CorrectionWithDetails[];
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function fileToBase64(file: File): Promise<string> {
@@ -68,7 +77,7 @@ export function CorrectionsPage() {
 
   const [selectedFormationId, setSelectedFormationId] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
-  const [selectedLearnerId, setSelectedLearnerId] = useState("");
+  const [selectedLearnerIds, setSelectedLearnerIds] = useState<string[]>([]);
   const [selectedContentId, setSelectedContentId] = useState("");
 
   // Submission
@@ -91,8 +100,8 @@ export function CorrectionsPage() {
   const [saving, setSaving] = useState(false);
   const [savedCorrectionId, setSavedCorrectionId] = useState<string | null>(null);
 
-  // History
-  const [history, setHistory] = useState<CorrectionWithDetails[]>([]);
+  // History (groupé par group_correction_id si présent)
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Errors
@@ -121,7 +130,7 @@ export function CorrectionsPage() {
       loadLearners();
     } else {
       setLearners([]);
-      setSelectedLearnerId("");
+      setSelectedLearnerIds([]);
     }
   }, [selectedGroupId]);
 
@@ -161,13 +170,13 @@ export function CorrectionsPage() {
     setGroups(rows);
     setSelectedGroupId("");
     setLearners([]);
-    setSelectedLearnerId("");
+    setSelectedLearnerIds([]);
   }
 
   async function loadLearners() {
     const rows = (await db.getLearners(selectedGroupId)) as unknown as Learner[];
     setLearners(rows);
-    setSelectedLearnerId("");
+    setSelectedLearnerIds([]);
   }
 
   async function loadContents() {
@@ -193,9 +202,28 @@ export function CorrectionsPage() {
          LEFT JOIN learners l ON c.learner_id = l.id
          LEFT JOIN generated_contents gc ON c.content_id = gc.id
          ORDER BY c.created_at DESC
-         LIMIT 50`,
+         LIMIT 200`,
       );
-      setHistory(rows);
+      // Regrouper par group_correction_id
+      const groups = new Map<string, CorrectionWithDetails[]>();
+      const items: HistoryItem[] = [];
+      for (const r of rows) {
+        if (r.group_correction_id) {
+          const arr = groups.get(r.group_correction_id) ?? [];
+          arr.push(r);
+          groups.set(r.group_correction_id, arr);
+        } else {
+          items.push({ kind: "single", rep: r, members: [r] });
+        }
+      }
+      for (const members of groups.values()) {
+        members.sort((a, b) => `${a.learner_last_name ?? ""}${a.learner_first_name ?? ""}`
+          .localeCompare(`${b.learner_last_name ?? ""}${b.learner_first_name ?? ""}`));
+        items.push({ kind: "group", rep: members[0]!, members });
+      }
+      // Tri global par date desc (rep.created_at)
+      items.sort((a, b) => (a.rep.created_at < b.rep.created_at ? 1 : -1));
+      setHistory(items.slice(0, 100));
     } catch {
       setError("Impossible de charger l'historique.");
     } finally {
@@ -206,7 +234,7 @@ export function CorrectionsPage() {
   // ─── AI Correction ─────────────────────────────────────────────────────
 
   async function handleCorrect() {
-    if (!selectedLearnerId) return;
+    if (selectedLearnerIds.length === 0) return;
     if (!submissionFile && !submissionText.trim()) return;
 
     setError("");
@@ -216,17 +244,22 @@ export function CorrectionsPage() {
 
     try {
       const selectedContent = contents.find((c) => c.id === selectedContentId);
-      const selectedLearner = learners.find((l) => l.id === selectedLearnerId);
+      const selectedLearners = learners.filter((l) => selectedLearnerIds.includes(l.id));
+      const isGroup = selectedLearners.length > 1;
 
       const exerciseContext = selectedContent
         ? `## Exercice : ${selectedContent.title}\n\n${selectedContent.content_markdown}`
         : "Aucun exercice de reference fourni.";
 
-      const learnerContext = selectedLearner
-        ? `Apprenant : ${selectedLearner.first_name} ${selectedLearner.last_name}${
-            selectedLearner.specific_needs ? ` (besoins specifiques : ${selectedLearner.specific_needs})` : ""
-          }`
-        : "";
+      const learnerContext = isGroup
+        ? `Travail réalisé en groupe par les apprenants suivants :\n${selectedLearners
+            .map((l) => `- ${l.first_name} ${l.last_name}${l.specific_needs ? ` (besoins spécifiques : ${l.specific_needs})` : ""}`)
+            .join("\n")}\n\nNote unique de groupe — la même note s'appliquera à chacun.`
+        : selectedLearners[0]
+          ? `Apprenant : ${selectedLearners[0].first_name} ${selectedLearners[0].last_name}${
+              selectedLearners[0].specific_needs ? ` (besoins specifiques : ${selectedLearners[0].specific_needs})` : ""
+            }`
+          : "";
 
       const instructions = `---
 
@@ -349,7 +382,7 @@ ${instructions}`;
   // ─── Validate & Save ───────────────────────────────────────────────────
 
   async function handleValidate() {
-    if (!correctionResult || !selectedLearnerId) return;
+    if (!correctionResult || selectedLearnerIds.length === 0) return;
 
     setSaving(true);
     setError("");
@@ -362,33 +395,42 @@ ${instructions}`;
         return;
       }
 
-      const id = db.generateId();
       const now = new Date().toISOString().replace("T", " ").substring(0, 19);
-
       const storedSubmission = submissionFile
         ? `[Fichier importé : ${submissionFile.name}]`
         : submissionText.trim();
+      const isGroup = selectedLearnerIds.length > 1;
+      const groupCorrectionId = isGroup ? db.generateId() : null;
 
-      await db.execute(
-        `INSERT INTO corrections (id, learner_id, content_id, submission_text, grade, max_grade, feedback_markdown, criteria_grid, model_used, validated, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        [
-          id,
-          selectedLearnerId,
-          selectedContentId || null,
-          storedSubmission,
-          finalGrade,
-          correctionResult.maxGrade,
-          correctionResult.feedback,
-          JSON.stringify(correctionResult.criteriaGrid),
-          correctionResult.model,
-          now,
-          now,
-        ],
-      );
+      // Une ligne par apprenant — chacun garde sa progression individuelle.
+      // Les lignes d'un groupe partagent le même group_correction_id.
+      const firstId = db.generateId();
+      let i = 0;
+      for (const learnerId of selectedLearnerIds) {
+        const id = i === 0 ? firstId : db.generateId();
+        await db.execute(
+          `INSERT INTO corrections (id, learner_id, content_id, submission_text, grade, max_grade, feedback_markdown, criteria_grid, model_used, validated, group_correction_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+          [
+            id,
+            learnerId,
+            selectedContentId || null,
+            storedSubmission,
+            finalGrade,
+            correctionResult.maxGrade,
+            correctionResult.feedback,
+            JSON.stringify(correctionResult.criteriaGrid),
+            correctionResult.model,
+            groupCorrectionId,
+            now,
+            now,
+          ],
+        );
+        i++;
+      }
 
       setValidated(true);
-      setSavedCorrectionId(id);
+      setSavedCorrectionId(firstId);
     } catch {
       setError("Erreur lors de l'enregistrement.");
     } finally {
@@ -406,6 +448,7 @@ ${instructions}`;
     setAdjustedGrade("");
     setError("");
     setSavedCorrectionId(null);
+    setSelectedLearnerIds([]);
   }
 
   // ─── Grade color helper ────────────────────────────────────────────────
@@ -429,7 +472,7 @@ ${instructions}`;
   // ─── Rendu ─────────────────────────────────────────────────────────────
 
   const canCorrect = Boolean(
-    selectedLearnerId &&
+    selectedLearnerIds.length > 0 &&
       (submissionText.trim().length > 0 || submissionFile) &&
       !correcting &&
       !correctionResult
@@ -531,7 +574,7 @@ ${instructions}`;
           contents={contents}
           selectedFormationId={selectedFormationId}
           selectedGroupId={selectedGroupId}
-          selectedLearnerId={selectedLearnerId}
+          selectedLearnerIds={selectedLearnerIds}
           selectedContentId={selectedContentId}
           submissionText={submissionText}
           submissionFile={submissionFile}
@@ -543,7 +586,7 @@ ${instructions}`;
           canCorrect={canCorrect}
           onFormationChange={(id) => { setSelectedFormationId(id); setError(""); }}
           onGroupChange={(id) => { setSelectedGroupId(id); setError(""); }}
-          onLearnerChange={(id) => { setSelectedLearnerId(id); setError(""); }}
+          onLearnersChange={(ids) => { setSelectedLearnerIds(ids); setError(""); }}
           onContentChange={(id) => { setSelectedContentId(id); setError(""); }}
           onSubmissionChange={setSubmissionText}
           onFileSelect={handleFileSelect}
@@ -576,7 +619,7 @@ function NewCorrectionTab({
   contents,
   selectedFormationId,
   selectedGroupId,
-  selectedLearnerId,
+  selectedLearnerIds,
   selectedContentId,
   submissionText,
   submissionFile,
@@ -588,7 +631,7 @@ function NewCorrectionTab({
   canCorrect,
   onFormationChange,
   onGroupChange,
-  onLearnerChange,
+  onLearnersChange,
   onContentChange,
   onSubmissionChange,
   onFileSelect,
@@ -606,7 +649,7 @@ function NewCorrectionTab({
   contents: GeneratedContent[];
   selectedFormationId: string;
   selectedGroupId: string;
-  selectedLearnerId: string;
+  selectedLearnerIds: string[];
   selectedContentId: string;
   submissionText: string;
   submissionFile: File | null;
@@ -624,7 +667,7 @@ function NewCorrectionTab({
   canCorrect: boolean;
   onFormationChange: (id: string) => void;
   onGroupChange: (id: string) => void;
-  onLearnerChange: (id: string) => void;
+  onLearnersChange: (ids: string[]) => void;
   onContentChange: (id: string) => void;
   onSubmissionChange: (text: string) => void;
   onFileSelect: (file: File | null) => void;
@@ -636,11 +679,29 @@ function NewCorrectionTab({
   gradeColor: (grade: number, max: number) => string;
   gradeBg: (grade: number, max: number) => string;
 }) {
+  const isGroupCorrection = selectedLearnerIds.length > 1;
+  const selectedLearners = learners.filter((l) => selectedLearnerIds.includes(l.id));
+
+  function toggleLearner(id: string) {
+    if (selectedLearnerIds.includes(id)) {
+      onLearnersChange(selectedLearnerIds.filter((x) => x !== id));
+    } else {
+      onLearnersChange([...selectedLearnerIds, id]);
+    }
+  }
+  function toggleAll() {
+    if (selectedLearnerIds.length === learners.length) {
+      onLearnersChange([]);
+    } else {
+      onLearnersChange(learners.map((l) => l.id));
+    }
+  }
   const [emailSent, setEmailSent] = useState(false);
 
   async function handleSendEmailDirect() {
-    const learner = learners.find((l) => l.id === selectedLearnerId);
-    if (!learner?.email) return;
+    // Email rapide : seulement pour correction individuelle
+    const learner = selectedLearners[0];
+    if (selectedLearnerIds.length !== 1 || !learner?.email) return;
 
     const contentTitle = contents.find((c) => c.id === selectedContentId)?.title;
     const subject = `Correction : ${contentTitle ?? "ton exercice"}`;
@@ -669,34 +730,45 @@ function NewCorrectionTab({
   }
 
   if (validated) {
-    const learner = learners.find((l) => l.id === selectedLearnerId);
-    const hasEmail = Boolean(learner?.email);
+    const isGroup = selectedLearnerIds.length > 1;
+    const soloLearner = !isGroup ? selectedLearners[0] : undefined;
+    const hasEmail = Boolean(soloLearner?.email);
 
     return (
       <div className="flex flex-col items-center gap-4 py-16">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
           <Check className="h-8 w-8 text-green-600" />
         </div>
-        <h2 className="text-xl font-semibold">Correction enregistrée</h2>
-        <p className="text-muted-foreground">
-          La note de {adjustedGrade}/20 a été sauvegardée.
+        <h2 className="text-xl font-semibold">
+          {isGroup ? "Correction de groupe enregistrée" : "Correction enregistrée"}
+        </h2>
+        <p className="text-muted-foreground text-center">
+          La note de {adjustedGrade}/20 a été sauvegardée
+          {isGroup ? ` pour ${selectedLearnerIds.length} apprenants.` : "."}
         </p>
+        {isGroup && (
+          <p className="text-xs text-muted-foreground text-center max-w-md">
+            Chaque apprenant garde la note dans sa progression individuelle. Tu peux envoyer un email depuis l'historique pour chacun.
+          </p>
+        )}
         <div className="flex gap-3">
-          <Button
-            variant="outline"
-            onClick={handleSendEmailDirect}
-            disabled={!hasEmail || emailSent}
-            title={!hasEmail ? "Aucun email enregistré pour cet apprenant" : undefined}
-          >
-            {emailSent ? <Check className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
-            {emailSent ? "Email ouvert" : "Envoyer par email"}
-          </Button>
+          {!isGroup && (
+            <Button
+              variant="outline"
+              onClick={handleSendEmailDirect}
+              disabled={!hasEmail || emailSent}
+              title={!hasEmail ? "Aucun email enregistré pour cet apprenant" : undefined}
+            >
+              {emailSent ? <Check className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+              {emailSent ? "Email ouvert" : "Envoyer par email"}
+            </Button>
+          )}
           <Button onClick={onNewCorrection}>
             <FileCheck className="h-4 w-4" />
             Nouvelle correction
           </Button>
         </div>
-        {!hasEmail && (
+        {!isGroup && !hasEmail && (
           <p className="text-xs text-muted-foreground">
             Aucun email enregistré pour cet apprenant.
           </p>
@@ -709,12 +781,19 @@ function NewCorrectionTab({
     <div className="space-y-6">
       {/* Etape 1 : Selection */}
       <div className="rounded-xl border bg-card p-6 space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Badge variant="outline" className="text-xs">1</Badge>
-          Selection de l'apprenant
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Badge variant="outline" className="text-xs">1</Badge>
+            Sélection des apprenants
+          </div>
+          {isGroupCorrection && (
+            <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">
+              Correction de groupe — {selectedLearnerIds.length} apprenants
+            </Badge>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Formation</Label>
             <Select
@@ -741,22 +820,60 @@ function NewCorrectionTab({
               ))}
             </Select>
           </div>
+        </div>
 
-          <div className="space-y-1.5">
-            <Label>Apprenant</Label>
-            <Select
-              value={selectedLearnerId}
-              onChange={(e) => onLearnerChange(e.target.value)}
-              disabled={!selectedGroupId}
-            >
-              <option value="">-- Choisis un apprenant --</option>
-              {learners.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.first_name} {l.last_name}
-                </option>
-              ))}
-            </Select>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label>
+              Apprenants
+              {selectedLearnerIds.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ({selectedLearnerIds.length} sélectionné{selectedLearnerIds.length > 1 ? "s" : ""})
+                </span>
+              )}
+            </Label>
+            {learners.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="text-xs text-primary hover:underline"
+              >
+                {selectedLearnerIds.length === learners.length ? "Tout désélectionner" : "Tout sélectionner"}
+              </button>
+            )}
           </div>
+          {!selectedGroupId ? (
+            <p className="text-xs text-muted-foreground">Choisis d'abord un groupe.</p>
+          ) : learners.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Aucun apprenant dans ce groupe.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3 max-h-64 overflow-y-auto rounded-md border bg-muted/20 p-2">
+              {learners.map((l) => {
+                const checked = selectedLearnerIds.includes(l.id);
+                return (
+                  <label
+                    key={l.id}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                      checked ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-background"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-input"
+                      checked={checked}
+                      onChange={() => toggleLearner(l.id)}
+                    />
+                    <span className="truncate">{l.first_name} {l.last_name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          {isGroupCorrection && (
+            <p className="text-xs text-muted-foreground">
+              La même note sera attribuée à chacun et comptera dans la progression individuelle des {selectedLearnerIds.length} apprenants.
+            </p>
+          )}
         </div>
       </div>
 
@@ -996,12 +1113,12 @@ function HistoryTab({
   gradeColor,
   onDeleted,
 }: {
-  history: CorrectionWithDetails[];
+  history: HistoryItem[];
   loading: boolean;
   gradeColor: (grade: number, max: number) => string;
   onDeleted: () => void;
 }) {
-  const [toDelete, setToDelete] = useState<CorrectionWithDetails | null>(null);
+  const [toDelete, setToDelete] = useState<HistoryItem | null>(null);
   const [openDetailId, setOpenDetailId] = useState<string | null>(null);
 
   if (loading) {
@@ -1021,71 +1138,96 @@ function HistoryTab({
     );
   }
 
+  function formatMembers(item: HistoryItem): string {
+    return item.members
+      .map((m) => `${m.learner_first_name ?? ""} ${m.learner_last_name ?? ""}`.trim())
+      .filter(Boolean)
+      .join(", ");
+  }
+
   return (
     <div className="space-y-3">
-      {history.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          onClick={() => setOpenDetailId(c.id)}
-          className="flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40"
-        >
-          {/* Initiales */}
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-            {(c.learner_first_name?.[0] ?? "?")}{(c.learner_last_name?.[0] ?? "?")}
-          </div>
-
-          {/* Info */}
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">
-              {c.learner_first_name ?? "Inconnu"} {c.learner_last_name ?? ""}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {c.content_title ?? "Sans exercice"} — {new Date(c.created_at).toLocaleDateString("fr-FR", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </p>
-          </div>
-
-          {/* Note */}
-          {c.grade != null && (
-            <div className="text-right">
-              <span className={`text-lg font-bold ${gradeColor(c.grade, c.max_grade)}`}>
-                {c.grade}
-              </span>
-              <span className="text-sm text-muted-foreground">/{c.max_grade}</span>
-            </div>
-          )}
-
-          {/* Statut */}
-          {c.validated ? (
-            <Badge className="bg-green-100 text-green-700 hover:bg-green-100 shrink-0">
-              Validee
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="shrink-0">
-              Brouillon
-            </Badge>
-          )}
-
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => { e.stopPropagation(); setToDelete(c); }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setToDelete(c); } }}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
-            aria-label="Supprimer la correction"
+      {history.map((item) => {
+        const c = item.rep;
+        const isGroup = item.kind === "group";
+        const memberCount = item.members.length;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => setOpenDetailId(c.id)}
+            className="flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40"
           >
-            <Trash2 className="h-4 w-4" />
-          </span>
+            {/* Initiales / icône groupe */}
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+              isGroup ? "bg-purple-100 text-purple-700" : "bg-muted text-muted-foreground"
+            }`}>
+              {isGroup
+                ? `+${memberCount}`
+                : `${(c.learner_first_name?.[0] ?? "?")}${(c.learner_last_name?.[0] ?? "?")}`}
+            </div>
 
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        </button>
-      ))}
+            {/* Info */}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium truncate">
+                  {isGroup
+                    ? formatMembers(item)
+                    : `${c.learner_first_name ?? "Inconnu"} ${c.learner_last_name ?? ""}`}
+                </p>
+                {isGroup && (
+                  <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100 shrink-0">
+                    Groupe
+                  </Badge>
+                )}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {c.content_title ?? "Sans exercice"} — {new Date(c.created_at).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            </div>
+
+            {/* Note */}
+            {c.grade != null && (
+              <div className="text-right">
+                <span className={`text-lg font-bold ${gradeColor(c.grade, c.max_grade)}`}>
+                  {c.grade}
+                </span>
+                <span className="text-sm text-muted-foreground">/{c.max_grade}</span>
+              </div>
+            )}
+
+            {/* Statut */}
+            {c.validated ? (
+              <Badge className="bg-green-100 text-green-700 hover:bg-green-100 shrink-0">
+                Validee
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="shrink-0">
+                Brouillon
+              </Badge>
+            )}
+
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); setToDelete(item); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setToDelete(item); } }}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+              aria-label="Supprimer la correction"
+            >
+              <Trash2 className="h-4 w-4" />
+            </span>
+
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        );
+      })}
 
       {openDetailId && (
         <CorrectionDetailDialog
@@ -1096,12 +1238,21 @@ function HistoryTab({
 
       <ConfirmDialog
         open={toDelete !== null}
-        title={`Supprimer cette correction ?`}
-        message={`Correction de ${toDelete?.learner_first_name ?? ""} ${toDelete?.learner_last_name ?? ""}.\n\nCette action est irréversible.`}
+        title={toDelete?.kind === "group" ? "Supprimer la correction de groupe ?" : "Supprimer cette correction ?"}
+        message={
+          toDelete?.kind === "group"
+            ? `Cette correction concerne ${toDelete.members.length} apprenants : ${toDelete.members
+                .map((m) => `${m.learner_first_name ?? ""} ${m.learner_last_name ?? ""}`.trim())
+                .filter(Boolean)
+                .join(", ")}.\n\nLa note sera retirée de la progression de chacun. Cette action est irréversible.`
+            : `Correction de ${toDelete?.rep.learner_first_name ?? ""} ${toDelete?.rep.learner_last_name ?? ""}.\n\nCette action est irréversible.`
+        }
         confirmLabel="Supprimer définitivement"
         onConfirm={async () => {
           if (!toDelete) return;
-          await db.deleteCorrection(toDelete.id);
+          for (const m of toDelete.members) {
+            await db.deleteCorrection(m.id);
+          }
           setToDelete(null);
           onDeleted();
         }}

@@ -13,6 +13,7 @@ export interface Correction {
   validated: boolean;
   sent_at: string | null;
   corrected_file_path: string | null;
+  group_correction_id: string | null;
   created_at: string;
   updated_at: string;
 }
