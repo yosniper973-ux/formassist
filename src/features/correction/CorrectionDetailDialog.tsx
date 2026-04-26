@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { X, Mail, Download, Loader2, Check, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
+import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
@@ -160,15 +161,23 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
     return lines.join("\n");
   }
 
+  function exportFilename(): string {
+    if (!data) return "correction";
+    const isGroup = (data.groupMembers?.length ?? 0) > 1;
+    if (isGroup) {
+      return `Correction_groupe_${data.groupMembers!.length}_apprenants`;
+    }
+    return data.learner
+      ? `Correction_${data.learner.first_name}_${data.learner.last_name}`
+      : "Correction_apprenant";
+  }
+
   async function handleExportWord() {
     if (!data) return;
     try {
       const md = buildMarkdown();
       const blob = await markdownToDocx(md);
-      const learnerName = data.learner
-        ? `${data.learner.first_name}_${data.learner.last_name}`
-        : "apprenant";
-      const savedPath = await downloadDocx(blob, `Correction_${learnerName}`);
+      const savedPath = await downloadDocx(blob, exportFilename());
       if (savedPath) {
         setToast(`Enregistré : ${savedPath.split(/[\\/]/).pop()}`);
         setTimeout(() => setToast(null), 5000);
@@ -176,6 +185,23 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
     } catch (err) {
       console.error(err);
       setToast("Erreur lors de l'export Word");
+      setTimeout(() => setToast(null), 5000);
+    }
+  }
+
+  async function handleExportPdf() {
+    if (!data) return;
+    try {
+      const md = buildMarkdown();
+      const blob = await markdownToPdf(md);
+      const savedPath = await downloadPdf(blob, exportFilename());
+      if (savedPath) {
+        setToast(`Enregistré : ${savedPath.split(/[\\/]/).pop()}`);
+        setTimeout(() => setToast(null), 5000);
+      }
+    } catch (err) {
+      console.error(err);
+      setToast("Erreur lors de l'export PDF");
       setTimeout(() => setToast(null), 5000);
     }
   }
@@ -439,6 +465,9 @@ Bon courage pour la suite.`;
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={handleExportWord}>
                   <Download className="h-3.5 w-3.5" /> Word
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleExportPdf}>
+                  <Download className="h-3.5 w-3.5" /> PDF
                 </Button>
                 {(!data.groupMembers || data.groupMembers.length <= 1) && (
                   <Button
