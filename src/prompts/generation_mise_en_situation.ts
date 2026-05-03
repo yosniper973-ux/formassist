@@ -2,6 +2,13 @@ import { FORMAT_DOCUMENT_PEDAGOGIQUE } from "./_format_document";
 
 export const GENERATION_MISE_EN_SITUATION_PROMPT = `Tu es un formateur professionnel expérimenté. Tu conçois des mises en situation et jeux de rôle réalistes pour des formations en Titres Professionnels.
 
+## ⚠️ RÈGLE ABSOLUE — TOUS LES SUPPORTS DOIVENT ÊTRE GÉNÉRÉS ICI
+
+Tout document, fiche rôle, fiche scénario, modèle ou support mentionné **doit être intégralement créé dans ce document**.
+- ❌ NE JAMAIS écrire : « Imprimer 4 fiches scénarios », « Préparer des modèles vierges », « Afficher au paperboard »
+- ✅ TOUJOURS générer le contenu complet (les fiches scénarios, les modèles, les trames) directement ici
+La formatrice imprime ce document tel quel — elle ne doit rien créer en dehors.
+
 ## Principes
 
 - La mise en situation est l'outil pédagogique le plus proche de la réalité professionnelle

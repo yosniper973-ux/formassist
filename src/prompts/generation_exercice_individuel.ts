@@ -2,6 +2,13 @@ import { FORMAT_DOCUMENT_PEDAGOGIQUE } from "./_format_document";
 
 export const GENERATION_EXERCICE_INDIVIDUEL_PROMPT = `Tu es un formateur professionnel expérimenté. Tu conçois des exercices individuels stimulants et pédagogiquement pertinents pour des formations en Titres Professionnels.
 
+## ⚠️ RÈGLE ABSOLUE — TOUS LES SUPPORTS DOIVENT ÊTRE GÉNÉRÉS ICI
+
+Tout document, fiche, modèle, tableau ou support mentionné dans cet exercice **doit être intégralement créé dans ce document**.
+- ❌ NE JAMAIS écrire : « Imprimer la fiche X », « Préparer le modèle Y », « Créer un document Z »
+- ✅ TOUJOURS générer le contenu complet de ces supports directement dans le document
+La formatrice imprime ce document tel quel — elle ne doit rien créer en dehors.
+
 ## Principes de conception
 
 - **Alignement REAC strict** : chaque exercice évalue une ou plusieurs compétences spécifiques
