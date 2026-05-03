@@ -57,4 +57,19 @@ Format obligatoire :
 | … | … |
 
 Inclure entre 5 et 12 termes selon la richesse du cours. Ne retenir que les mots réellement spécifiques au métier ou à la compétence visée — pas les mots du quotidien.
+
+---
+
+## 9. 🔒 TRAME FORMATEUR
+
+Section réservée au formateur — ne figure pas dans la version apprenant.
+
+- **Préparation** : matériel à rassembler, supports à imprimer, configuration de la salle
+- **Script d'introduction** : phrase d'accroche recommandée, lien avec la session précédente
+- **Déroulé minuté** : tableau Phase / Durée / Action formateur / Activité apprenants pour l'ensemble du cours
+- **Corrigé du quiz** : réponse correcte pour chaque question + justification pédagogique courte
+- **Points de vigilance** : erreurs fréquentes, représentations erronées à déconstruire, difficultés habituelles sur ce sujet
+- **Questions de relance** : 3 à 5 questions à poser si le groupe est passif ou bloqué
+- **Variantes** : version allégée (moins de temps ou niveau débutant) + approfondissement (groupe avancé)
+- **Prolongements** : exercices ou mises en situation à enchaîner pour ancrer les acquis
 ${FORMAT_DOCUMENT_PEDAGOGIQUE}`;
