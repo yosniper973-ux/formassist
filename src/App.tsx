@@ -26,6 +26,7 @@ export function App() {
       try {
         // Lancer les migrations SQLite au premier lancement
         await db.runMigrations();
+        db.backfillSlotCompetences().catch(() => {/* silencieux */});
 
         const onboardingDone = await db.getConfig("onboarding_complete");
         const passwordHash = await db.getConfig("password_hash");

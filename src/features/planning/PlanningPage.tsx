@@ -848,6 +848,7 @@ export function PlanningPage() {
           prefillDate={prefillDate}
           formations={formations}
           groups={groups}
+          competencesByFormation={competencesByFormation}
           onClose={() => setShowSlotForm(false)}
           onSaved={() => {
             setShowSlotForm(false);
@@ -1220,6 +1221,7 @@ function SlotFormDialog({
   prefillDate,
   formations,
   groups,
+  competencesByFormation,
   onClose,
   onSaved,
 }: {
@@ -1227,6 +1229,7 @@ function SlotFormDialog({
   prefillDate: string;
   formations: Formation[];
   groups: Group[];
+  competencesByFormation: Map<string, CompetenceRow[]>;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1384,6 +1387,16 @@ function SlotFormDialog({
       for (const id of originalSheetIds) {
         if (!selectedSheetIds.has(id)) await db.unlinkSheetFromSlot(id, slotId);
       }
+
+      // Mettre à jour slot_competences à partir des codes détectés dans le titre
+      const codes = extractCompetenceCodes(title);
+      const formationComps = competencesByFormation.get(formationId) ?? [];
+      const resolvedIds: string[] = [];
+      for (const code of codes) {
+        const match = formationComps.find((c) => normalizeCode(c.code) === code);
+        if (match) resolvedIds.push(match.id);
+      }
+      await db.setSlotCompetences(slotId, resolvedIds);
 
       onSaved();
     } catch (err) {
