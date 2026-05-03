@@ -20,6 +20,7 @@ import {
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
+import { DownloadToast } from "@/components/ui/download-toast";
 import { db } from "@/lib/db";
 import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -211,6 +212,7 @@ export function FichesPedagoPage() {
   // Add to planning
   const [showAddToPlanning, setShowAddToPlanning] = useState(false);
   const [planningToast, setPlanningToast] = useState<string | null>(null);
+  const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
 
   // -------------------------------------------------------------------------
   // Chargement des donnees
@@ -767,8 +769,7 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
                   const blob = await markdownToDocx(md);
                   const savedPath = await downloadDocx(blob, selectedSheet.title || "fiche-pedago");
                   if (savedPath) {
-                    setPlanningToast(`Fiche exportée : ${savedPath.split(/[\\/]/).pop()}`);
-                    setTimeout(() => setPlanningToast(null), 4000);
+                    setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
                   }
                 } catch (err) {
                   console.error("Export Word fiche:", err);
@@ -788,8 +789,7 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
                   const blob = await markdownToPdf(md);
                   const savedPath = await downloadPdf(blob, selectedSheet.title || "fiche-pedago");
                   if (savedPath) {
-                    setPlanningToast(`Fiche exportée : ${savedPath.split(/[\\/]/).pop()}`);
-                    setTimeout(() => setPlanningToast(null), 4000);
+                    setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
                   }
                 } catch (err) {
                   console.error("Export PDF fiche:", err);
@@ -844,6 +844,14 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
             </div>
             <p className="text-sm font-medium text-green-900">{planningToast}</p>
           </div>
+        )}
+
+        {downloadToast && (
+          <DownloadToast
+            path={downloadToast.path}
+            name={downloadToast.name}
+            onClose={() => setDownloadToast(null)}
+          />
         )}
 
         <ConfirmDialog

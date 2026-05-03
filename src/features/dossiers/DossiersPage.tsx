@@ -26,6 +26,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DownloadToast } from "@/components/ui/download-toast";
 import type { Formation, Group, Learner } from "@/types";
 import type { ClaudeContentBlock } from "@/types/api";
 
@@ -113,6 +114,7 @@ export function DossiersPage() {
 
   const [error, setError] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
 
   // ─── Loading ───────────────────────────────────────────────
 
@@ -386,7 +388,10 @@ export function DossiersPage() {
       const learner = learners.find((l) => l.id === selectedLearnerId);
       const name = learner ? `${learner.first_name}_${learner.last_name}` : "apprenant";
       const blob = await markdownToDocx(feedback);
-      await downloadDocx(blob, `Analyse_${dossierType?.toUpperCase() ?? "DP"}_${name}`);
+      const savedPath = await downloadDocx(blob, `Analyse_${dossierType?.toUpperCase() ?? "DP"}_${name}`);
+      if (savedPath) {
+        setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
+      }
     } catch (err) {
       console.error(err);
       showToast("Erreur lors de l'export Word");
@@ -493,6 +498,14 @@ export function DossiersPage() {
         <div className="fixed bottom-6 right-6 z-[60] rounded-lg bg-foreground px-4 py-2 text-sm text-background shadow-lg">
           {toast}
         </div>
+      )}
+
+      {downloadToast && (
+        <DownloadToast
+          path={downloadToast.path}
+          name={downloadToast.name}
+          onClose={() => setDownloadToast(null)}
+        />
       )}
     </div>
   );
@@ -845,6 +858,7 @@ function HistoryTab({
 function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () => void }) {
   const [sending, setSending] = useState(false);
   const [exportToast, setExportToast] = useState<string | null>(null);
+  const [dlToast, setDlToast] = useState<{ path: string; name: string } | null>(null);
   const [sent, setSent] = useState(Boolean(row.sent_at));
 
   async function handleSendEmail() {
@@ -867,7 +881,10 @@ function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () =>
     try {
       const blob = await markdownToDocx(row.feedback_markdown);
       const name = `${row.learner_first_name ?? ""}_${row.learner_last_name ?? ""}`;
-      await downloadDocx(blob, `Analyse_${row.dossier_type.toUpperCase()}_${name}`);
+      const savedPath = await downloadDocx(blob, `Analyse_${row.dossier_type.toUpperCase()}_${name}`);
+      if (savedPath) {
+        setDlToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
+      }
     } catch {
       setExportToast("Erreur lors de l'export Word");
       setTimeout(() => setExportToast(null), 4000);
@@ -936,6 +953,14 @@ function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () =>
         <div className="fixed bottom-6 right-6 z-[60] rounded-lg bg-foreground px-4 py-2 text-sm text-background shadow-lg">
           {exportToast}
         </div>
+      )}
+
+      {dlToast && (
+        <DownloadToast
+          path={dlToast.path}
+          name={dlToast.name}
+          onClose={() => setDlToast(null)}
+        />
       )}
     </div>
   );

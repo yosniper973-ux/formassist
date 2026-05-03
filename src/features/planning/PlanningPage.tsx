@@ -1649,6 +1649,7 @@ function ImportDialog({
   const [csvText, setCsvText] = useState("");
   const [format, setFormat] = useState<"csv" | "pdf" | "ics">("pdf");
   const [preview, setPreview] = useState<Array<{ date: string; start: string; end: string; title: string }>>([]);
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
 
@@ -1705,6 +1706,7 @@ function ImportDialog({
     }
 
     setPreview(rows);
+    setSelectedRows(new Set(rows.map((_, i) => i)));
   }
 
   async function analyzePdf() {
@@ -1741,6 +1743,9 @@ function ImportDialog({
           text:
             `Ce planning contient plusieurs formateurs. Tu dois EXTRAIRE UNIQUEMENT les créneaux attribués à « ${name} » ` +
             `(colonne Intervenant ou équivalente). Ignore complètement les autres formateurs.\n\n` +
+            `RÈGLE ABSOLUE : une ligne du tableau = un créneau JSON. Ne JAMAIS inventer un créneau absent du document. ` +
+            `Si une journée n'a qu'une matinée dans le PDF, retourne UNIQUEMENT ce créneau matin, sans ajouter d'après-midi. ` +
+            `Ne complète pas, ne déduis pas, ne te bases pas sur un pattern d'autres jours.\n\n` +
             `Pour chaque créneau retenu, retourne : date (YYYY-MM-DD), start_time (HH:MM), end_time (HH:MM), ` +
             `duration_hours (nombre), planning_type ("imposed"), title (= module), modality ("presential"), ` +
             `assigned_trainer (= « ${name} »).\n\n` +
@@ -1801,6 +1806,7 @@ function ImportDialog({
       }
 
       setPreview(slots);
+      setSelectedRows(new Set(slots.map((_, i) => i)));
     } catch (err) {
       setError(`Erreur analyse : ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -1812,7 +1818,9 @@ function ImportDialog({
     if (!formationId || preview.length === 0) return;
     setImporting(true);
     try {
-      for (const row of preview) {
+      for (let i = 0; i < preview.length; i++) {
+        if (!selectedRows.has(i)) continue;
+        const row = preview[i]!;
         const duration = (timeToMinutes(row.end) - timeToMinutes(row.start)) / 60;
         await db.createSlot({
           formation_id: formationId,
@@ -1976,11 +1984,30 @@ function ImportDialog({
           {/* Prévisualisation */}
           {preview.length > 0 && (
             <div>
-              <p className="text-sm font-medium mb-2">{preview.length} créneau{preview.length !== 1 ? "x" : ""} détecté{preview.length !== 1 ? "s" : ""} :</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium">
+                  {selectedRows.size} / {preview.length} créneau{preview.length !== 1 ? "x" : ""} sélectionné{selectedRows.size !== 1 ? "s" : ""} :
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => setSelectedRows(new Set(preview.map((_, i) => i)))}
+                  >
+                    Tout cocher
+                  </button>
+                  <button
+                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={() => setSelectedRows(new Set())}
+                  >
+                    Tout décocher
+                  </button>
+                </div>
+              </div>
               <div className="max-h-[200px] overflow-y-auto border border-border rounded-md">
                 <table className="w-full text-xs">
                   <thead className="bg-muted sticky top-0">
                     <tr>
+                      <th className="px-2 py-1 w-8"></th>
                       <th className="text-left px-2 py-1">Date</th>
                       <th className="text-left px-2 py-1">Début</th>
                       <th className="text-left px-2 py-1">Fin</th>
@@ -1989,7 +2016,26 @@ function ImportDialog({
                   </thead>
                   <tbody>
                     {preview.map((row, i) => (
-                      <tr key={i} className="border-t border-border">
+                      <tr
+                        key={i}
+                        className={`border-t border-border cursor-pointer hover:bg-muted/50 ${!selectedRows.has(i) ? "opacity-40" : ""}`}
+                        onClick={() =>
+                          setSelectedRows((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(i)) next.delete(i);
+                            else next.add(i);
+                            return next;
+                          })
+                        }
+                      >
+                        <td className="px-2 py-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(i)}
+                            onChange={() => {}}
+                            className="rounded"
+                          />
+                        </td>
                         <td className="px-2 py-1">{row.date}</td>
                         <td className="px-2 py-1">{row.start}</td>
                         <td className="px-2 py-1">{row.end}</td>
@@ -2008,8 +2054,8 @@ function ImportDialog({
           <Button variant="outline" onClick={onClose}>
             Annuler
           </Button>
-          <Button onClick={handleImport} disabled={preview.length === 0 || importing || !formationId}>
-            {importing ? "Import en cours..." : `Importer ${preview.length} créneau${preview.length !== 1 ? "x" : ""}`}
+          <Button onClick={handleImport} disabled={selectedRows.size === 0 || importing || !formationId}>
+            {importing ? "Import en cours..." : `Importer ${selectedRows.size} créneau${selectedRows.size !== 1 ? "x" : ""}`}
           </Button>
         </div>
       </div>

@@ -63,3 +63,25 @@ export function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength - 1) + "…";
 }
+
+/** Retourne true si le markdown contient une section TRAME FORMATEUR */
+export function hasFormateurSection(markdown: string): boolean {
+  return /🔒\s*TRAME\s*FORMATEUR/.test(markdown);
+}
+
+/**
+ * Supprime la section TRAME FORMATEUR du markdown pour produire
+ * la version apprenant (sans corrigé ni conseils d'animation).
+ * Coupe au séparateur --- qui précède le titre, ou au titre lui-même.
+ */
+export function stripFormateur(markdown: string): string {
+  // Cherche le --- séparateur juste avant la section TRAME FORMATEUR
+  const sepIdx = markdown.search(/\n---\s*\n(?=[\s\S]*🔒\s*TRAME\s*FORMATEUR)/);
+  if (sepIdx !== -1) return markdown.slice(0, sepIdx).trimEnd();
+
+  // Fallback : coupe directement au titre ## N. 🔒 TRAME FORMATEUR
+  const hdIdx = markdown.search(/\n##\s+\d+[^\n]*🔒\s*TRAME\s*FORMATEUR/);
+  if (hdIdx !== -1) return markdown.slice(0, hdIdx).trimEnd();
+
+  return markdown;
+}

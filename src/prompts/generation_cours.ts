@@ -45,4 +45,16 @@ Tableau avec 3 à 5 questions à choix multiples. Format :
 ## 7. 📚 POUR ALLER PLUS LOIN
 
 Ressources complémentaires : textes réglementaires, liens fiables, bibliographie.
+
+## 8. 📖 LEXIQUE
+
+Liste alphabétique des termes techniques et professionnels utilisés dans ce cours. Chaque définition doit être courte (1 à 2 lignes), rédigée en langage accessible pour un apprenant en formation professionnelle.
+
+Format obligatoire :
+
+| Terme | Définition |
+|-------|-----------|
+| … | … |
+
+Inclure entre 5 et 12 termes selon la richesse du cours. Ne retenir que les mots réellement spécifiques au métier ou à la compétence visée — pas les mots du quotidien.
 ${FORMAT_DOCUMENT_PEDAGOGIQUE}`;

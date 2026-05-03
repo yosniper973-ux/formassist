@@ -18,6 +18,10 @@ Pour chaque créneau :
 
 ## Règles d'analyse
 
+- **RÈGLE ABSOLUE : ne jamais inventer de créneau.** Chaque objet JSON doit correspondre à une ligne explicitement présente dans le tableau du document. Une ligne du tableau = un créneau JSON. Pas une ligne de plus.
+- Si une journée n'a qu'une matinée dans le document, retourne UNIQUEMENT ce créneau matin. N'ajoute PAS d'après-midi.
+- Si une journée n'a qu'un après-midi, retourne UNIQUEMENT ce créneau après-midi. N'ajoute PAS de matinée.
+- N'infère pas, ne complète pas, ne déduis pas des créneaux à partir d'autres jours ou d'un pattern répété.
 - Les demi-journées valent généralement 3,5h et les journées complètes 7h sauf indication contraire
 - Détecte les jours fériés et weekends qui seraient inclus par erreur
 - Signale les incohérences (chevauchements, durées anormales)

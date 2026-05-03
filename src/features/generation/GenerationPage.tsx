@@ -22,7 +22,6 @@ import {
   AlertTriangle,
   Trash2,
   Download,
-  X,
   CalendarPlus,
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
@@ -30,7 +29,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
 import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { hasFormateurSection, stripFormateur } from "@/lib/utils";
+import { DownloadToast } from "@/components/ui/download-toast";
 import { db } from "@/lib/db";
 import { request as claudeRequest, estimateCost } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
@@ -223,7 +223,6 @@ export function GenerationPage() {
   const [copied, setCopied] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
 
   // Editing
   const [editing, setEditing] = useState(false);
@@ -1173,8 +1172,6 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                           if (savedPath) {
                             const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
                             setDownloadToast({ path: savedPath, name });
-                            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-                            toastTimerRef.current = window.setTimeout(() => setDownloadToast(null), 8000);
                           }
                         } catch (err) {
                           console.error("Export Word:", err);
@@ -1195,8 +1192,6 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                           if (savedPath) {
                             const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
                             setDownloadToast({ path: savedPath, name });
-                            if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-                            toastTimerRef.current = window.setTimeout(() => setDownloadToast(null), 8000);
                           }
                         } catch (err) {
                           console.error("Export PDF:", err);
@@ -1207,6 +1202,56 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                       <Download className="h-3.5 w-3.5" />
                       PDF
                     </Button>
+                    {hasFormateurSection(generatedContent) && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                          onClick={async () => {
+                            try {
+                              const apprenant = stripFormateur(generatedContent);
+                              const blob = await markdownToDocx(apprenant);
+                              const baseName = (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_");
+                              const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
+                              if (savedPath) {
+                                const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
+                                setDownloadToast({ path: savedPath, name });
+                              }
+                            } catch (err) {
+                              console.error("Export Word apprenant:", err);
+                              setError(err instanceof Error ? err.message : "Erreur export Word");
+                            }
+                          }}
+                        >
+                          <Users className="h-3.5 w-3.5" />
+                          Word · Apprenant
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                          onClick={async () => {
+                            try {
+                              const apprenant = stripFormateur(generatedContent);
+                              const blob = await markdownToPdf(apprenant);
+                              const baseName = (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_");
+                              const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
+                              if (savedPath) {
+                                const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
+                                setDownloadToast({ path: savedPath, name });
+                              }
+                            } catch (err) {
+                              console.error("Export PDF apprenant:", err);
+                              setError(err instanceof Error ? err.message : "Erreur export PDF");
+                            }
+                          }}
+                        >
+                          <Users className="h-3.5 w-3.5" />
+                          PDF · Apprenant
+                        </Button>
+                      </>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1351,8 +1396,6 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                         onDownloaded={(path) => {
                           const name = path.split(/[\\/]/).pop() ?? path;
                           setDownloadToast({ path, name });
-                          if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-                          toastTimerRef.current = window.setTimeout(() => setDownloadToast(null), 8000);
                         }}
                         onLinked={() => {
                           setPlanningToast("Créneau créé et contenu lié au planning.");
@@ -1369,48 +1412,11 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
       )}
 
       {downloadToast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 shadow-lg animate-in slide-in-from-bottom-4 max-w-md">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
-            <Check className="h-4 w-4 text-green-700" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-green-900">Document téléchargé</p>
-            <p className="truncate text-xs text-green-800/80" title={downloadToast.path}>
-              {downloadToast.name}
-            </p>
-            <div className="mt-2 flex gap-2">
-              <button
-                onClick={async () => {
-                  try { await shellOpen(downloadToast.path); } catch (e) { console.error(e); }
-                }}
-                className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700"
-              >
-                Ouvrir
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const dir = downloadToast.path.replace(/[\\/][^\\/]*$/, "");
-                    await shellOpen(dir);
-                  } catch (e) { console.error(e); }
-                }}
-                className="rounded-md border border-green-300 bg-white px-2.5 py-1 text-xs font-medium text-green-800 hover:bg-green-100"
-              >
-                Dossier
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-              setDownloadToast(null);
-            }}
-            className="shrink-0 rounded p-1 text-green-700 hover:bg-green-100"
-            aria-label="Fermer"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <DownloadToast
+          path={downloadToast.path}
+          name={downloadToast.name}
+          onClose={() => setDownloadToast(null)}
+        />
       )}
 
       <AddToPlanningDialog
@@ -1552,6 +1558,50 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: Genera
               <Download className="h-3.5 w-3.5" />
               PDF
             </Button>
+            {hasFormateurSection(item.content_markdown) && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                  onClick={async () => {
+                    try {
+                      const apprenant = stripFormateur(item.content_markdown);
+                      const blob = await markdownToDocx(apprenant);
+                      const baseName = (item.title || "document").replace(/[\\/:*?"<>|]/g, "_");
+                      const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
+                      if (savedPath) onDownloaded?.(savedPath);
+                    } catch (err) {
+                      console.error("Export Word apprenant:", err);
+                      alert(err instanceof Error ? err.message : "Erreur export Word");
+                    }
+                  }}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  Word · Apprenant
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                  onClick={async () => {
+                    try {
+                      const apprenant = stripFormateur(item.content_markdown);
+                      const blob = await markdownToPdf(apprenant);
+                      const baseName = (item.title || "document").replace(/[\\/:*?"<>|]/g, "_");
+                      const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
+                      if (savedPath) onDownloaded?.(savedPath);
+                    } catch (err) {
+                      console.error("Export PDF apprenant:", err);
+                      alert(err instanceof Error ? err.message : "Erreur export PDF");
+                    }
+                  }}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  PDF · Apprenant
+                </Button>
+              </>
+            )}
             {!item.slot_id && (
               <Button
                 variant="outline"
