@@ -568,11 +568,12 @@ function CsvImportDialog({
     for (let i = startIdx; i < lines.length; i++) {
       const cols = lines[i]!.split(sep).map((c) => c.trim().replace(/^"|"$/g, ""));
       if (cols.length >= 2) {
-        parsed.push({
-          firstName: cols[0] ?? "",
-          lastName: cols[1] ?? "",
-          email: cols[2] ?? "",
-        });
+        const firstName = cols[0] ?? "";
+        const lastName = cols[1] ?? "";
+        const email = cols[2] ?? "";
+        if (!firstName || !lastName) continue;
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+        parsed.push({ firstName, lastName, email });
       }
     }
 

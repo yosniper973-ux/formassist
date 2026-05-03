@@ -1,4 +1,12 @@
 import { useState } from "react";
+
+async function hashAnswer(answer: string): Promise<string> {
+  const encoded = new TextEncoder().encode(answer);
+  const buf = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 import { Eye, EyeOff, Lock, ShieldCheck, ShieldAlert, Sparkles } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
@@ -94,8 +102,8 @@ export function SetupPassword({ onComplete }: SetupPasswordProps) {
 
       if (securityMode === "moderate" && recoveryQuestion && recoveryAnswer) {
         await db.setConfig("recovery_question", recoveryQuestion);
-        // On stocke le hash de la réponse, jamais en clair
-        await db.setConfig("recovery_answer_hash", recoveryAnswer.toLowerCase().trim());
+        const answerHash = await hashAnswer(recoveryAnswer.toLowerCase().trim());
+        await db.setConfig("recovery_answer_hash", answerHash);
       }
 
       // Rechiffrer la clé API stockée en clair pendant l'onboarding

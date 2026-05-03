@@ -219,53 +219,60 @@ async function saveParsedReac(
     }>;
   }>,
 ): Promise<void> {
-  // Clear existing REAC data for this formation
-  const existingCcps = await query<{ id: string }>(
-    "SELECT id FROM ccps WHERE formation_id = ?",
-    [formationId],
-  );
-  for (const ccp of existingCcps) {
-    const comps = await query<{ id: string }>(
-      "SELECT id FROM competences WHERE ccp_id = ?",
-      [ccp.id],
+  await execute("BEGIN");
+  try {
+    // Clear existing REAC data for this formation
+    const existingCcps = await query<{ id: string }>(
+      "SELECT id FROM ccps WHERE formation_id = ?",
+      [formationId],
     );
-    for (const comp of comps) {
-      await execute("DELETE FROM evaluation_criteria WHERE competence_id = ?", [comp.id]);
+    for (const ccp of existingCcps) {
+      const comps = await query<{ id: string }>(
+        "SELECT id FROM competences WHERE ccp_id = ?",
+        [ccp.id],
+      );
+      for (const comp of comps) {
+        await execute("DELETE FROM evaluation_criteria WHERE competence_id = ?", [comp.id]);
+      }
+      await execute("DELETE FROM competences WHERE ccp_id = ?", [ccp.id]);
     }
-    await execute("DELETE FROM competences WHERE ccp_id = ?", [ccp.id]);
-  }
-  await execute("DELETE FROM ccps WHERE formation_id = ?", [formationId]);
+    await execute("DELETE FROM ccps WHERE formation_id = ?", [formationId]);
 
-  // Insert new data
-  for (let i = 0; i < ccps.length; i++) {
-    const ccp = ccps[i]!;
-    const ccpId = generateId();
-    await execute(
-      "INSERT INTO ccps (id, formation_id, code, title, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      [ccpId, formationId, ccp.code, ccp.title, i, now()],
-    );
-
-    for (let j = 0; j < ccp.competences.length; j++) {
-      const comp = ccp.competences[j]!;
-      const compId = generateId();
+    // Insert new data
+    for (let i = 0; i < ccps.length; i++) {
+      const ccp = ccps[i]!;
+      const ccpId = generateId();
       await execute(
-        "INSERT INTO competences (id, ccp_id, code, title, description, sort_order, in_scope, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-        [compId, ccpId, comp.code, comp.title, comp.description ?? null, j, now()],
+        "INSERT INTO ccps (id, formation_id, code, title, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [ccpId, formationId, ccp.code, ccp.title, i, now()],
       );
 
-      for (let k = 0; k < comp.criteria.length; k++) {
+      for (let j = 0; j < ccp.competences.length; j++) {
+        const comp = ccp.competences[j]!;
+        const compId = generateId();
         await execute(
-          "INSERT INTO evaluation_criteria (id, competence_id, description, sort_order) VALUES (?, ?, ?, ?)",
-          [generateId(), compId, comp.criteria[k], k],
+          "INSERT INTO competences (id, ccp_id, code, title, description, sort_order, in_scope, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+          [compId, ccpId, comp.code, comp.title, comp.description ?? null, j, now()],
         );
+
+        for (let k = 0; k < comp.criteria.length; k++) {
+          await execute(
+            "INSERT INTO evaluation_criteria (id, competence_id, description, sort_order) VALUES (?, ?, ?, ?)",
+            [generateId(), compId, comp.criteria[k], k],
+          );
+        }
       }
     }
-  }
 
-  await execute("UPDATE formations SET reac_parsed = 1, updated_at = ? WHERE id = ?", [
-    now(),
-    formationId,
-  ]);
+    await execute("UPDATE formations SET reac_parsed = 1, updated_at = ? WHERE id = ?", [
+      now(),
+      formationId,
+    ]);
+    await execute("COMMIT");
+  } catch (err) {
+    await execute("ROLLBACK").catch(() => {});
+    throw err;
+  }
 }
 
 async function copyReacToFormation(
@@ -810,7 +817,7 @@ async function saveDossierCorrection(data: {
   return id;
 }
 
-async function getDossierCorrections(formationId?: string): Promise<Row[]> {
+async function getDossierCorrections(formationId?: string, centreId?: string): Promise<Row[]> {
   if (formationId) {
     return query(
       `SELECT dc.*, l.first_name as learner_first_name, l.last_name as learner_last_name,
@@ -821,6 +828,19 @@ async function getDossierCorrections(formationId?: string): Promise<Row[]> {
        WHERE dc.formation_id = ?
        ORDER BY dc.created_at DESC`,
       [formationId],
+    );
+  }
+  if (centreId) {
+    return query(
+      `SELECT dc.*, l.first_name as learner_first_name, l.last_name as learner_last_name,
+              f.title as formation_title
+       FROM dossier_corrections dc
+       LEFT JOIN learners l ON dc.learner_id = l.id
+       LEFT JOIN formations f ON dc.formation_id = f.id
+       WHERE f.centre_id = ?
+       ORDER BY dc.created_at DESC
+       LIMIT 100`,
+      [centreId],
     );
   }
   return query(

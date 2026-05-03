@@ -63,14 +63,14 @@ pub async fn send_email(config: &SmtpConfig, payload: &EmailPayload) -> Result<(
             std::fs::read(&path).map_err(|e| format!("Impossible de lire {filename} : {e}"))?;
 
         let content_type = if filename.ends_with(".pdf") {
-            ContentType::parse("application/pdf").unwrap()
+            ContentType::parse("application/pdf").expect("hardcoded MIME type")
         } else if filename.ends_with(".docx") {
             ContentType::parse(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
-            .unwrap()
+            .expect("hardcoded MIME type")
         } else {
-            ContentType::parse("application/octet-stream").unwrap()
+            ContentType::parse("application/octet-stream").expect("hardcoded MIME type")
         };
 
         let attachment = Attachment::new(filename).body(file_bytes, content_type);

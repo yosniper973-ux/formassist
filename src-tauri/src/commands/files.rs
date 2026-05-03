@@ -99,7 +99,10 @@ pub fn restore_backup(app: AppHandle, backup_path: String) -> Result<(), String>
     let safety_backup = base
         .join("backups")
         .join(format!("formassist_pre_restore_{timestamp}.db"));
-    std::fs::create_dir_all(safety_backup.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(
+        safety_backup.parent().ok_or_else(|| "Chemin de sauvegarde invalide".to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
 
     if db_path.exists() {
         std::fs::copy(&db_path, &safety_backup)

@@ -42,15 +42,17 @@ export function LearnerDetailDialog({ learner, onClose }: Props) {
     }
   }
 
-  const gradedCorrections = corrections.filter((c) => c.grade != null);
+  const gradedCorrections = corrections.filter(
+    (c) => c.grade != null && c.max_grade != null && c.max_grade > 0,
+  );
   const average = gradedCorrections.length > 0
-    ? gradedCorrections.reduce((sum, c) => sum + (c.grade! / c.max_grade) * 20, 0) / gradedCorrections.length
+    ? gradedCorrections.reduce((sum, c) => sum + (c.grade! / c.max_grade!) * 20, 0) / gradedCorrections.length
     : null;
 
   const chartData = gradedCorrections.map((c, i) => ({
     index: i + 1,
     date: new Date(c.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
-    note: Math.round((c.grade! / c.max_grade) * 20 * 10) / 10,
+    note: Math.round((c.grade! / c.max_grade!) * 20 * 10) / 10,
     title: c.content_title ?? "Sans exercice",
   }));
 
@@ -63,8 +65,8 @@ export function LearnerDetailDialog({ learner, onClose }: Props) {
   };
 
   const trend = gradedCorrections.length >= 2
-    ? (gradedCorrections[gradedCorrections.length - 1]!.grade! / gradedCorrections[gradedCorrections.length - 1]!.max_grade) * 20
-      - (gradedCorrections[0]!.grade! / gradedCorrections[0]!.max_grade) * 20
+    ? (gradedCorrections[gradedCorrections.length - 1]!.grade! / gradedCorrections[gradedCorrections.length - 1]!.max_grade!) * 20
+      - (gradedCorrections[0]!.grade! / gradedCorrections[0]!.max_grade!) * 20
     : null;
 
   return (

@@ -1,4 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+
+async function hashAnswer(answer: string): Promise<string> {
+  const encoded = new TextEncoder().encode(answer);
+  const buf = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 import { Eye, EyeOff, Lock, Sparkles, AlertTriangle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
@@ -242,7 +250,15 @@ function RecoveryDialog({
 
   async function checkAnswer() {
     const storedAnswer = await db.getConfig("recovery_answer_hash");
-    return storedAnswer === answer.toLowerCase().trim();
+    if (!storedAnswer) return false;
+    const normalized = answer.toLowerCase().trim();
+    // Rétrocompatibilité : si la valeur stockée n'est pas un hash SHA-256 (64 hex),
+    // c'est une ancienne réponse en clair — comparaison directe.
+    if (!/^[a-f0-9]{64}$/.test(storedAnswer)) {
+      return storedAnswer === normalized;
+    }
+    const inputHash = await hashAnswer(normalized);
+    return storedAnswer === inputHash;
   }
 
   async function handleVerify(e: React.FormEvent) {

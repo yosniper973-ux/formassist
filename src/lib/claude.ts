@@ -109,7 +109,8 @@ export async function checkBudget(estimatedCost: number): Promise<{
   budget: number;
 }> {
   const budgetStr = await db.getConfig("budget_monthly");
-  const budget = budgetStr ? parseFloat(budgetStr) : 25;
+  const parsedBudget = budgetStr ? parseFloat(budgetStr) : NaN;
+  const budget = Number.isFinite(parsedBudget) && parsedBudget > 0 ? parsedBudget : 25;
 
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
@@ -254,10 +255,12 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
       // response.json() de tauri-plugin-http peut silencieusement échouer
       // sur certaines versions → on parse manuellement via .text()
       const responseText = await response.text();
-      const data = JSON.parse(responseText) as {
-        content?: Array<{ type: string; text?: string }>;
-        usage?: { input_tokens?: number; output_tokens?: number };
-      };
+      let data: { content?: Array<{ type: string; text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
+      try {
+        data = JSON.parse(responseText) as typeof data;
+      } catch {
+        throw new Error("Réponse API illisible (JSON invalide). Réessaie.");
+      }
       const content = data.content?.[0]?.text ?? "";
       const inputTokens = Number(data.usage?.input_tokens ?? 0);
       const outputTokens = Number(data.usage?.output_tokens ?? 0);
