@@ -41,63 +41,52 @@ jobs:
       - name: Download WebView2 Standalone Installer (offline, ~160 Mo)
         shell: pwsh
         run: |
-          # Stratégie : essayer plusieurs sources pour récupérer le standalone installer.
-          # 1. winget download (runner windows-latest)
-          # 2. Fallback : choco install qui télécharge l'installateur dans son cache
-          # 3. Fallback : URL directe connue
-
           $ok = $false
 
-          # --- Tentative 1 : winget ---
+          # --- Tentative 1 : URL fwlink stable Microsoft (méthode la plus fiable) ---
           try {
-            Write-Host "Tentative 1 : winget download"
-            winget download --id Microsoft.EdgeWebView2Runtime `
-              --accept-source-agreements --accept-package-agreements `
-              --disable-interactivity -d "." 2>&1 | Out-Host
-
-            $found = Get-ChildItem -Filter "*WebView2*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) {
-              Move-Item $found.FullName "WebView2Installer.exe" -Force
+            Write-Host "Tentative 1 : URL fwlink Microsoft"
+            Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124701" `
+              -OutFile "WebView2Installer.exe" -MaximumRedirection 10
+            if ((Get-Item "WebView2Installer.exe").Length -gt 1MB) {
               $ok = $true
-              Write-Host "✅ winget a réussi"
+              Write-Host "✅ fwlink a réussi"
             }
           } catch {
-            Write-Host "⚠️ winget échec : $_"
+            Write-Host "⚠️ fwlink échec : $_"
           }
 
-          # --- Tentative 2 : chocolatey ---
+          # --- Tentative 2 : winget ---
           if (-not $ok) {
             try {
-              Write-Host "Tentative 2 : chocolatey install (télécharge dans cache)"
-              choco install microsoft-edge-webview2-runtime -y --no-progress --ignore-checksums 2>&1 | Out-Host
-              # Chocolatey télécharge l'installateur dans son cache avant de l'exécuter
-              $cached = Get-ChildItem -Path "$env:TEMP" -Recurse -Filter "*WebView2*Installer*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-              if (-not $cached) {
-                $cached = Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\microsoft-edge-webview2-runtime" -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-              }
-              if ($cached) {
-                Copy-Item $cached.FullName "WebView2Installer.exe" -Force
+              Write-Host "Tentative 2 : winget download"
+              winget download --id Microsoft.EdgeWebView2Runtime `
+                --accept-source-agreements --accept-package-agreements `
+                --disable-interactivity -d "." 2>&1 | Out-Host
+              $found = Get-ChildItem -Filter "*WebView2*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) {
+                Move-Item $found.FullName "WebView2Installer.exe" -Force
                 $ok = $true
-                Write-Host "✅ chocolatey a réussi"
+                Write-Host "✅ winget a réussi"
               }
             } catch {
-              Write-Host "⚠️ chocolatey échec : $_"
+              Write-Host "⚠️ winget échec : $_"
             }
           }
 
-          # --- Tentative 3 : scraping page Microsoft ---
+          # --- Tentative 3 : URL de livraison SF (CDN Microsoft) ---
           if (-not $ok) {
             try {
-              Write-Host "Tentative 3 : scraping page Microsoft"
+              Write-Host "Tentative 3 : CDN Microsoft sf.dl.delivery"
               $page = Invoke-WebRequest -Uri "https://developer.microsoft.com/en-us/microsoft-edge/webview2/" -UseBasicParsing
               $match = [regex]::Match($page.Content, 'https://[^"'']*MicrosoftEdgeWebView2RuntimeInstallerX64\.exe')
               if ($match.Success) {
-                Write-Host "URL trouvée : $($match.Value)"
                 Invoke-WebRequest -Uri $match.Value -OutFile "WebView2Installer.exe"
                 $ok = $true
+                Write-Host "✅ CDN a réussi"
               }
             } catch {
-              Write-Host "⚠️ scraping échec : $_"
+              Write-Host "⚠️ CDN échec : $_"
             }
           }
 
