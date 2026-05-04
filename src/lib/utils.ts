@@ -64,25 +64,33 @@ export function truncate(text: string, maxLength: number): string {
   return text.substring(0, maxLength - 1) + "…";
 }
 
-/** Retourne true si le markdown contient une section TRAME FORMATEUR */
+/**
+ * Détecte la section réservée au formateur.
+ * On accepte toute variation : le marqueur officiel est l'emoji cadenas 🔒
+ * dans un titre de niveau 2 (##). Sinon, on accepte aussi les titres contenant
+ * "TRAME FORMATEUR", "CORRIGÉ", "RÉPONSES" ou "ANIMATION FORMATEUR" sans emoji.
+ */
+const FORMATEUR_HEADING_REGEX =
+  /\n##\s+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|R[ÉE]PONSES?|ANIMATION\s*FORMATEUR)/i;
+
+/** Retourne true si le markdown contient une section formateur. */
 export function hasFormateurSection(markdown: string): boolean {
-  return /🔒\s*TRAME\s*FORMATEUR/.test(markdown);
+  return FORMATEUR_HEADING_REGEX.test(markdown);
 }
 
 /**
- * Supprime la section TRAME FORMATEUR du markdown pour produire
- * la version apprenant (sans corrigé ni conseils d'animation).
- * Coupe au séparateur --- qui précède le titre, ou au titre lui-même.
+ * Supprime la section formateur du markdown pour produire la version apprenant
+ * (sans corrigé ni conseils d'animation). Coupe au séparateur --- qui précède
+ * le titre, ou au titre lui-même.
  */
 export function stripFormateur(markdown: string): string {
-  // Trouve le titre ## N. 🔒 TRAME FORMATEUR et supprime tout ce qui suit
-  const trameMatch = markdown.match(/\n##\s+[^\n]*🔒\s*TRAME\s*FORMATEUR/);
+  const trameMatch = markdown.match(FORMATEUR_HEADING_REGEX);
   if (!trameMatch || trameMatch.index === undefined) return markdown;
 
   let content = markdown.slice(0, trameMatch.index);
 
   // Supprime uniquement le --- séparateur s'il est en toute fin du contenu étudiant
-  // (celui placé juste avant TRAME FORMATEUR, pas les --- internes au document)
+  // (celui placé juste avant la section formateur, pas les --- internes au document)
   content = content.replace(/\n+---\s*$/, "");
 
   return content.trimEnd();
