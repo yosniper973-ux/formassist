@@ -1,0 +1,18 @@
+{
+  "bundle": {
+    "targets": ["nsis", "msi"],
+    "resources": {
+      "../WebView2Installer.exe": "WebView2Installer.exe"
+    },
+    "windows": {
+      "nsis": {
+        "languages": ["French"],
+        "displayLanguageSelector": false,
+        "installMode": "currentUser"
+      },
+      "wix": {
+        "language": "fr-FR"
+      }
+    }
+  }
+}
