@@ -75,13 +75,15 @@ export function hasFormateurSection(markdown: string): boolean {
  * Coupe au séparateur --- qui précède le titre, ou au titre lui-même.
  */
 export function stripFormateur(markdown: string): string {
-  // Cherche le --- séparateur juste avant la section TRAME FORMATEUR
-  const sepIdx = markdown.search(/\n---\s*\n(?=[\s\S]*🔒\s*TRAME\s*FORMATEUR)/);
-  if (sepIdx !== -1) return markdown.slice(0, sepIdx).trimEnd();
+  // Trouve la position du titre ## N. 🔒 TRAME FORMATEUR
+  const trameMatch = markdown.match(/\n##\s+[^\n]*🔒\s*TRAME\s*FORMATEUR/);
+  if (!trameMatch || trameMatch.index === undefined) return markdown;
 
-  // Fallback : coupe directement au titre ## N. 🔒 TRAME FORMATEUR
-  const hdIdx = markdown.search(/\n##\s+\d+[^\n]*🔒\s*TRAME\s*FORMATEUR/);
-  if (hdIdx !== -1) return markdown.slice(0, hdIdx).trimEnd();
+  const beforeTrame = markdown.slice(0, trameMatch.index);
 
-  return markdown;
+  // Cherche le DERNIER --- avant TRAME FORMATEUR (pas le premier)
+  const lastSepIdx = beforeTrame.lastIndexOf("\n---");
+  if (lastSepIdx !== -1) return beforeTrame.slice(0, lastSepIdx).trimEnd();
+
+  return beforeTrame.trimEnd();
 }
