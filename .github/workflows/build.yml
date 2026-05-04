@@ -160,6 +160,9 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Ajouter la cible Intel pour Universal Binary
+        run: rustup target add x86_64-apple-darwin
+
       - name: Generate FormAssist icons
         env:
           PYTHONIOENCODING: utf-8
@@ -170,13 +173,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Tauri app
+      - name: Build Tauri app (Universal Binary)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          args: --target universal-apple-darwin
           tagName: v__VERSION__
           releaseName: "FormAssist v__VERSION__"
           releaseBody: |
@@ -196,5 +200,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: formassist-macos-dmg
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: warn
