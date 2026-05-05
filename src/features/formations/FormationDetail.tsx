@@ -120,24 +120,27 @@ export function FormationDetail({ formation, onBack }: Props) {
       let messageContent: string | ClaudeContentBlock[];
 
       if (isPdf) {
-        // Anthropic lit les PDFs nativement via base64
-        const buffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        const chunks: string[] = [];
-        for (let i = 0; i < bytes.byteLength; i += 8192) {
-          chunks.push(String.fromCharCode(...bytes.subarray(i, i + 8192)));
+        // Extraction locale via pdf.js (compatible Mac et Windows, pas de limite de taille)
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/build/pdf.worker.min.mjs",
+          import.meta.url,
+        ).toString();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pages: string[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          pages.push(
+            content.items.map((item) => ("str" in item ? item.str : "")).join(" "),
+          );
         }
-        const base64 = btoa(chunks.join(""));
-        messageContent = [
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64 },
-          },
-          {
-            type: "text",
-            text: `Voici le REAC (Référentiel Emploi Activités Compétences) pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète : tous les CCP, toutes les compétences (CP) de chaque CCP, tous les critères d'évaluation, et les activités-types. Ne saute aucune compétence, même si le document est dense.`,
-          },
-        ];
+        const rawText = pages.join("\n\n");
+        if (!rawText.trim()) {
+          throw new Error("Impossible d'extraire le texte de ce PDF. Essaie un PDF non scanné ou exporte depuis Word.");
+        }
+        messageContent = `Voici le contenu brut extrait du REAC (Référentiel Emploi Activités Compétences) pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète : tous les CCP, toutes les compétences (CP) de chaque CCP, tous les critères d'évaluation, et les activités-types. Ne saute aucune compétence, même si le document est dense.\n\n---\n\n${rawText}`;
       } else if (file.name.toLowerCase().endsWith(".docx")) {
         const mammoth = await import("mammoth");
         const arrayBuffer = await file.arrayBuffer();
@@ -156,14 +159,15 @@ export function FormationDetail({ formation, onBack }: Props) {
         messages: [{ role: "user", content: messageContent }],
       });
 
-      // Extraire le JSON de la réponse
-      const jsonMatch = result.content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      // Extraire le JSON — préférer le bloc ```json```, fallback sur regex greedy
+      const codeBlock = result.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      const rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
+      if (!rawJson) {
         setParseError("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
         return;
       }
 
-      const parsed = JSON.parse(jsonMatch[0]) as {
+      let parsed: {
         ccps: Array<{
           code: string;
           title: string;
@@ -177,6 +181,12 @@ export function FormationDetail({ formation, onBack }: Props) {
         activity_types?: Array<{ title: string; description?: string }>;
         warnings?: string[];
       };
+      try {
+        parsed = JSON.parse(rawJson) as typeof parsed;
+      } catch {
+        setParseError("Claude n'a pas renvoyé un JSON valide. Réessaie.");
+        return;
+      }
 
       // Sauvegarder en base
       await db.saveParsedReac(formation.id, parsed.ccps);
