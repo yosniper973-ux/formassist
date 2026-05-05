@@ -1,6 +1,6 @@
 [package]
 name = "formassist"
-version = "0.2.50"
+version = "0.2.51"
 description = "FormAssist — Assistant pédagogique pour formatrice indépendante"
 authors = ["FormAssist"]
 edition = "2021"
@@ -20,6 +20,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-http = "2"
+tauri-plugin-biometry = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 argon2 = "0.5"
