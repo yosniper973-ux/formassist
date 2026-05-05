@@ -6,10 +6,9 @@ let dbInstance: Database | null = null;
 async function getDb(): Promise<Database> {
   if (!dbInstance) {
     dbInstance = await Database.load("sqlite:formassist.db");
-    // WAL mode : lectures et écritures simultanées sans blocage.
-    // busy_timeout : attend jusqu'à 10s si la DB est occupée au lieu d'échouer.
     await dbInstance.execute("PRAGMA journal_mode = WAL");
-    await dbInstance.execute("PRAGMA busy_timeout = 10000");
+    await dbInstance.execute("PRAGMA busy_timeout = 30000");
+    await dbInstance.execute("PRAGMA synchronous = NORMAL");
   }
   return dbInstance;
 }
@@ -25,9 +24,13 @@ async function query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]>
   return d.select<T[]>(sql, params);
 }
 
+// Toutes les écritures passent par cette queue pour éviter les accès concurrents à SQLite.
+let _writeQueue: Promise<void> = Promise.resolve();
+
 async function execute(sql: string, params: unknown[] = []): Promise<void> {
-  const d = await getDb();
-  await d.execute(sql, params);
+  const op = _writeQueue.then(() => getDb().then(d => d.execute(sql, params)));
+  _writeQueue = op.then(() => {}, () => {});
+  return op;
 }
 
 function generateId(): string {
@@ -223,72 +226,11 @@ async function saveParsedReac(
     }>;
   }>,
 ): Promise<void> {
-  // Retry si la DB est temporairement verrouillée (SQLITE_BUSY code 5)
-  const MAX_ATTEMPTS = 8;
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) {
-      await new Promise(r => setTimeout(r, 250 * attempt));
-      // Nettoyer une éventuelle transaction orpheline du tentative précédente
-      await execute("ROLLBACK").catch(() => {});
-    }
-    try {
-      await _saveParsedReacOnce(formationId, ccps);
-      return;
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : typeof err === "string"
-            ? err
-            : (err as Record<string, unknown>)?.message as string | undefined
-              ?? JSON.stringify(err);
-      if (
-        msg.includes("locked") || msg.includes("code: 5") || msg.includes("BUSY") ||
-        msg.includes("cannot start a transaction") || msg.includes("code: 1")
-      ) {
-        lastErr = err;
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastErr;
-}
-
-async function _saveParsedReacOnce(
-  formationId: string,
-  ccps: Array<{
-    code: string;
-    title: string;
-    competences: Array<{
-      code: string;
-      title: string;
-      description?: string;
-      criteria: string[];
-    }>;
-  }>,
-): Promise<void> {
   await execute("BEGIN");
   try {
-    // Clear existing REAC data for this formation
-    const existingCcps = await query<{ id: string }>(
-      "SELECT id FROM ccps WHERE formation_id = ?",
-      [formationId],
-    );
-    for (const ccp of existingCcps) {
-      const comps = await query<{ id: string }>(
-        "SELECT id FROM competences WHERE ccp_id = ?",
-        [ccp.id],
-      );
-      for (const comp of comps) {
-        await execute("DELETE FROM evaluation_criteria WHERE competence_id = ?", [comp.id]);
-      }
-      await execute("DELETE FROM competences WHERE ccp_id = ?", [ccp.id]);
-    }
+    // ON DELETE CASCADE supprime automatiquement competences et evaluation_criteria
     await execute("DELETE FROM ccps WHERE formation_id = ?", [formationId]);
 
-    // Insert new data
     for (let i = 0; i < ccps.length; i++) {
       const ccp = ccps[i]!;
       const ccpId = generateId();
