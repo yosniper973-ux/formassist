@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { db } from "@/lib/db";
+import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation } from "@/types";
 import type { ContentType } from "@/types/content";
@@ -77,6 +78,7 @@ export function ImportContentDialog({ onClose, onImported }: Props) {
       }
 
       if (file.type === "application/pdf" || name.endsWith(".pdf")) {
+        // Étape 1 : extraction locale gratuite via pdf.js
         const arrayBuffer = await file.arrayBuffer();
         const pdfjsLib = await import("pdfjs-dist");
         pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -93,8 +95,21 @@ export function ImportContentDialog({ onClose, onImported }: Props) {
             .join(" ");
           pages.push(pageText);
         }
-        const fullText = pages.join("\n\n");
-        setExtractedText(fullText);
+        const rawText = pages.join("\n\n");
+
+        // Étape 2 : Claude structure le texte brut en markdown exploitable
+        const result = await claudeRequest({
+          task: "reformulation",
+          systemPromptOverride:
+            "Tu es un expert en ingénierie pédagogique. On te donne le texte brut extrait d'un PDF (REAC, cours, exercice ou référentiel). Restructure-le en markdown propre et lisible : titres hiérarchisés, listes, tableaux si pertinent. Conserve l'intégralité du contenu sans rien inventer ni résumer. Ne commente pas, ne reformule pas — structure uniquement.",
+          messages: [
+            {
+              role: "user",
+              content: `Voici le texte brut extrait du fichier "${file.name}". Structure-le en markdown :\n\n${rawText}`,
+            },
+          ],
+        });
+        setExtractedText(result.content);
         if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));
         setFileLoading(false);
         return;
