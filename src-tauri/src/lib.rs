@@ -33,6 +33,12 @@ pub fn run() {
             sql: include_str!("../migrations/004_group_corrections.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "import_source",
+            sql: include_str!("../migrations/005_import_source.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
