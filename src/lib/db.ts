@@ -232,7 +232,13 @@ async function saveParsedReac(
       await _saveParsedReacOnce(formationId, ccps);
       return;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : (err as Record<string, unknown>)?.message as string | undefined
+              ?? JSON.stringify(err);
       if (msg.includes("locked") || msg.includes("code: 5") || msg.includes("BUSY")) {
         lastErr = err;
         continue;
