@@ -31,6 +31,8 @@ export interface GeneratedContent {
   version: number;
   parent_id: string | null;
   file_path: string | null;
+  source: "ia" | "import";
+  original_filename: string | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;

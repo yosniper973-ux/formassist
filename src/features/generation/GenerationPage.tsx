@@ -23,8 +23,10 @@ import {
   Trash2,
   Download,
   CalendarPlus,
+  Upload,
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
+import { ImportContentDialog } from "./ImportContentDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
@@ -219,6 +221,7 @@ export function GenerationPage() {
   const [saved, setSaved] = useState(false);
   const [savedContentId, setSavedContentId] = useState<string | null>(null);
   const [showAddToPlanning, setShowAddToPlanning] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [planningToast, setPlanningToast] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -1352,18 +1355,28 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                     {history.length} contenu(s) généré(s)
                   </p>
                 </div>
-                <Select
-                  value={historyFilter}
-                  onChange={(e) => setHistoryFilter(e.target.value)}
-                  className="w-48"
-                >
-                  <option value="">Tous les types</option>
-                  {CONTENT_TYPES.map((ct) => (
-                    <option key={ct.value} value={ct.value}>
-                      {ct.label}
-                    </option>
-                  ))}
-                </Select>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowImport(true)}
+                  >
+                    <Upload className="h-4 w-4" />
+                    Importer
+                  </Button>
+                  <Select
+                    value={historyFilter}
+                    onChange={(e) => setHistoryFilter(e.target.value)}
+                    className="w-48"
+                  >
+                    <option value="">Tous les types</option>
+                    {CONTENT_TYPES.map((ct) => (
+                      <option key={ct.value} value={ct.value}>
+                        {ct.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               </div>
 
               {loadingHistory ? (
@@ -1438,6 +1451,16 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
         }}
       />
 
+      {showImport && (
+        <ImportContentDialog
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            setShowImport(false);
+            loadHistory();
+          }}
+        />
+      )}
+
       {planningToast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4 shadow-lg animate-in slide-in-from-bottom-4">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
@@ -1499,6 +1522,12 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: Genera
                     <Clock className="h-3 w-3" />
                     {item.estimated_duration} min
                   </span>
+                )}
+                {item.source === "import" && (
+                  <Badge variant="outline" className="text-xs text-amber-600 border-amber-400/40 bg-amber-50">
+                    <Upload className="h-3 w-3" />
+                    Importé
+                  </Badge>
                 )}
                 {item.slot_id && (
                   <Badge variant="outline" className="text-xs text-primary border-primary/40">
