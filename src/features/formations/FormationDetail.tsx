@@ -120,17 +120,18 @@ export function FormationDetail({ formation, onBack }: Props) {
       let messageContent: string | ClaudeContentBlock[];
 
       if (isPdf) {
-        // FileReader.readAsDataURL : API native, fiable sur macOS WebKit et Windows WebView2.
-        // pdf.js en mode inline échoue sur macOS WebKit ("undefined is not a function").
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            resolve(dataUrl.split(",")[1] ?? "");
-          };
-          reader.onerror = () => reject(new Error("Impossible de lire le fichier PDF."));
-          reader.readAsDataURL(file);
-        });
+        // file.arrayBuffer() + btoa : plus fiable que FileReader.readAsDataURL sur macOS WebKit.
+        // FileReader peut retourner un résultat vide ou mal formé sur certaines versions WebKit.
+        const arrayBuffer = await file.arrayBuffer();
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error("Le fichier PDF semble vide ou illisible. Essaie de l'ouvrir d'abord dans Aperçu.");
+        }
+        const bytes = new Uint8Array(arrayBuffer);
+        const chunks: string[] = [];
+        for (let i = 0; i < bytes.length; i += 8192) {
+          chunks.push(String.fromCharCode(...bytes.subarray(i, i + 8192)));
+        }
+        const base64 = btoa(chunks.join(""));
         messageContent = [
           {
             type: "document",
