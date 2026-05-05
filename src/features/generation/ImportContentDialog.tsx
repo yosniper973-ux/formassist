@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { db } from "@/lib/db";
-import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation } from "@/types";
 import type { ContentType } from "@/types/content";
@@ -77,40 +76,25 @@ export function ImportContentDialog({ onClose, onImported }: Props) {
         return;
       }
 
-      if (file.type === "application/pdf") {
-        // Envoyer le PDF à Claude pour extraction du texte
+      if (file.type === "application/pdf" || name.endsWith(".pdf")) {
         const arrayBuffer = await file.arrayBuffer();
-        const base64 = btoa(
-          new Uint8Array(arrayBuffer).reduce(
-            (data, byte) => data + String.fromCharCode(byte),
-            ""
-          )
-        );
-        const result = await claudeRequest({
-          task: "reformulation",
-          systemPromptOverride:
-            "Tu es un assistant qui extrait le texte d'un document PDF. Retourne uniquement le texte brut du document, sans commentaire ni reformulation.",
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "document",
-                  source: {
-                    type: "base64",
-                    media_type: "application/pdf",
-                    data: base64,
-                  },
-                },
-                {
-                  type: "text",
-                  text: "Extrais intégralement le texte de ce document. Conserve la structure (titres, listes, tableaux en markdown). Ne reformule rien.",
-                },
-              ],
-            },
-          ],
-        });
-        setExtractedText(result.content);
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/build/pdf.worker.min.mjs",
+          import.meta.url
+        ).toString();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pages: string[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items
+            .map((item) => ("str" in item ? item.str : ""))
+            .join(" ");
+          pages.push(pageText);
+        }
+        const fullText = pages.join("\n\n");
+        setExtractedText(fullText);
         if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));
         setFileLoading(false);
         return;
