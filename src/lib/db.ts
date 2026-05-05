@@ -223,6 +223,39 @@ async function saveParsedReac(
     }>;
   }>,
 ): Promise<void> {
+  // Retry si la DB est temporairement verrouillée (SQLITE_BUSY code 5)
+  const MAX_ATTEMPTS = 8;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 250 * attempt));
+    try {
+      await _saveParsedReacOnce(formationId, ccps);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("locked") || msg.includes("code: 5") || msg.includes("BUSY")) {
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+async function _saveParsedReacOnce(
+  formationId: string,
+  ccps: Array<{
+    code: string;
+    title: string;
+    competences: Array<{
+      code: string;
+      title: string;
+      description?: string;
+      criteria: string[];
+    }>;
+  }>,
+): Promise<void> {
   await execute("BEGIN");
   try {
     // Clear existing REAC data for this formation
