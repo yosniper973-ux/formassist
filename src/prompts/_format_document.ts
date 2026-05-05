@@ -56,8 +56,9 @@ Utilise systématiquement ces encadrés pour structurer visuellement le contenu 
 - \`> [!success]\` — bonnes pratiques, conseils positifs (fond vert clair)
 - \`> [!warning]\` — points de vigilance, pièges à éviter (fond orange clair)
 - \`> [!danger]\` — erreurs graves, risques (fond rouge clair)
-- \`> [!note]\` — remarque pédagogique pour le formateur (fond gris clair)
 - \`> [!tip]\` — astuce, conseil pratique (fond violet clair)
+
+⚠️ N'utilise PAS \`> [!note]\` dans la partie apprenant. Les remarques destinées uniquement au formateur vont dans la section \`## 🔒 TRAME FORMATEUR\`.
 
 Exemple :
 

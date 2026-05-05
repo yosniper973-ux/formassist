@@ -66,12 +66,13 @@ export function truncate(text: string, maxLength: number): string {
 
 /**
  * Détecte la section réservée au formateur.
- * On accepte toute variation : le marqueur officiel est l'emoji cadenas 🔒
- * dans un titre de niveau 2 (##). Sinon, on accepte aussi les titres contenant
- * "TRAME FORMATEUR", "CORRIGÉ", "RÉPONSES" ou "ANIMATION FORMATEUR" sans emoji.
+ * Accepte tous les niveaux de titre (##, ###…), avec ou sans numéro de section,
+ * avec ou sans emoji. Variantes couvertes :
+ *   🔒 · TRAME FORMATEUR · CORRIGÉ(S) · RÉPONSE(S) · ANIMATION FORMATEUR
+ *   NOTES FORMATEUR · GUIDE D'ANIMATION · GUIDE FORMATEUR · CONSEILS FORMATEUR
  */
 const FORMATEUR_HEADING_REGEX =
-  /\n##\s+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|R[ÉE]PONSES?|ANIMATION\s*FORMATEUR)/i;
+  /(?:^|\n)[ \t]*#{2,}[ \t]+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|R[ÉE]PONSES?\s*(?:AUX\s*\w+)?|ANIMATION\s*FORMATEUR|NOTES?\s*FORMATEUR|GUIDE\s*(?:D['']ANIMATION|FORMATEUR)|CONSEILS?\s*FORMATEUR)/i;
 
 /** Retourne true si le markdown contient une section formateur. */
 export function hasFormateurSection(markdown: string): boolean {
@@ -79,18 +80,23 @@ export function hasFormateurSection(markdown: string): boolean {
 }
 
 /**
- * Supprime la section formateur du markdown pour produire la version apprenant
- * (sans corrigé ni conseils d'animation). Coupe au séparateur --- qui précède
- * le titre, ou au titre lui-même.
+ * Supprime la section formateur du markdown pour produire la version apprenant.
+ * Coupe à la première occurrence d'un titre formateur (## ou ###), en supprimant
+ * aussi le séparateur --- éventuel qui précède immédiatement ce titre.
  */
 export function stripFormateur(markdown: string): string {
   const trameMatch = markdown.match(FORMATEUR_HEADING_REGEX);
   if (!trameMatch || trameMatch.index === undefined) return markdown;
 
-  let content = markdown.slice(0, trameMatch.index);
+  // Si le match commence par \n, on coupe avant ce \n pour ne pas laisser
+  // de ligne vide orpheline en fin de document.
+  const cutIndex = trameMatch[0].startsWith("\n")
+    ? trameMatch.index
+    : trameMatch.index;
 
-  // Supprime uniquement le --- séparateur s'il est en toute fin du contenu étudiant
-  // (celui placé juste avant la section formateur, pas les --- internes au document)
+  let content = markdown.slice(0, cutIndex);
+
+  // Supprime le séparateur --- placé juste avant la section formateur
   content = content.replace(/\n+---\s*$/, "");
 
   return content.trimEnd();

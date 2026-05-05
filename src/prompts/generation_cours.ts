@@ -36,11 +36,11 @@ Encadré \`> [!tip] À retenir\` avec 3 à 6 points-clés formulés en phrases c
 
 ## 6. QUIZ DE VALIDATION
 
-Tableau avec 3 à 5 questions à choix multiples. Format :
+Tableau avec 3 à 5 questions à choix multiples destiné aux apprenants. **Ne mets PAS les réponses correctes ici** — elles figurent uniquement dans la TRAME FORMATEUR (section 9). Format :
 
-| N° | Question | Réponse attendue |
-|:--:|----------|------------------|
-| 1 | … | … |
+| N° | Question | A | B | C |
+|:--:|----------|---|---|---|
+| 1 | … | … | … | … |
 
 ## 7. 📚 POUR ALLER PLUS LOIN
 
