@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { checkStatus, authenticate } from "@choochmeque/tauri-plugin-biometry-api";
 
 async function hashAnswer(answer: string): Promise<string> {
   const encoded = new TextEncoder().encode(answer);
@@ -8,7 +7,7 @@ async function hashAnswer(answer: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
-import { Eye, EyeOff, Lock, Sparkles, AlertTriangle, Fingerprint } from "lucide-react";
+import { Eye, EyeOff, Lock, Sparkles, AlertTriangle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
@@ -34,9 +33,6 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [showRecovery, setShowRecovery] = useState(false);
   const [securityMode, setSecurityMode] = useState<"max" | "moderate">("max");
-  const [biometryAvailable, setBiometryAvailable] = useState(false);
-  const [biometryLabel, setBiometryLabel] = useState("Déverrouiller avec la biométrie");
-  const [biometryLoading, setBiometryLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -47,19 +43,6 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
     db.getConfig("password_security_mode").then((mode) => {
       if (mode === "moderate") setSecurityMode("moderate");
     });
-
-    // Vérifier la disponibilité de la biométrie
-    checkStatus()
-      .then((status) => {
-        if (status.isAvailable) {
-          setBiometryAvailable(true);
-          // 1=Touch ID, 2=Face ID, 4=Windows Hello
-          if (status.biometryType === 1) setBiometryLabel("Déverrouiller avec Touch ID");
-          else if (status.biometryType === 2) setBiometryLabel("Déverrouiller avec Face ID");
-          else if (status.biometryType === 4) setBiometryLabel("Déverrouiller avec Windows Hello");
-        }
-      })
-      .catch(() => {});
 
     // Récupérer le verrouillage temporaire stocké
     db.getConfig("lockout_until").then((val) => {
@@ -95,22 +78,6 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
   }, [lockedUntil]);
 
   const isLocked = lockedUntil !== null && lockedUntil > new Date();
-
-  async function handleBiometric() {
-    if (biometryLoading || isLocked) return;
-    setBiometryLoading(true);
-    try {
-      await authenticate("Déverrouillez FormAssist");
-      await db.setConfig("failed_attempts", "0");
-      await db.setConfig("lockout_until", "");
-      setAttempts(0);
-      onUnlocked();
-    } catch {
-      // L'utilisateur a annulé ou la biométrie a échoué — on laisse le formulaire mot de passe visible
-    } finally {
-      setBiometryLoading(false);
-    }
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -237,19 +204,6 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
                 <Button type="submit" className="w-full" disabled={!password || loading}>
                   {loading ? "Vérification…" : "Déverrouiller"}
                 </Button>
-
-                {biometryAvailable && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full gap-2"
-                    onClick={handleBiometric}
-                    disabled={biometryLoading || isLocked}
-                  >
-                    <Fingerprint className="h-4 w-4" />
-                    {biometryLoading ? "Authentification…" : biometryLabel}
-                  </Button>
-                )}
 
                 {securityMode === "moderate" && (
                   <button
