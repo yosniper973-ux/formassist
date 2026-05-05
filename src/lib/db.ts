@@ -30,7 +30,7 @@ let _writeQueue: Promise<void> = Promise.resolve();
 async function execute(sql: string, params: unknown[] = []): Promise<void> {
   const op = _writeQueue.then(() => getDb().then(d => d.execute(sql, params)));
   _writeQueue = op.then(() => {}, () => {});
-  return op;
+  await op;
 }
 
 function generateId(): string {
