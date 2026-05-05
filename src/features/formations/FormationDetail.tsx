@@ -210,11 +210,15 @@ export function FormationDetail({ formation, onBack }: Props) {
         setParseError(`Analyse terminée avec ${parsed.warnings.length} avertissement(s) : ${parsed.warnings.join(". ")}`);
       }
     } catch (err) {
-      setParseError(
+      const msg =
         err instanceof Error
           ? err.message
-          : "Erreur lors de l'analyse du REAC.",
-      );
+          : typeof err === "string"
+            ? err
+            : JSON.stringify(err) !== "{}"
+              ? JSON.stringify(err)
+              : String(err);
+      setParseError(`Erreur : ${msg}`);
       console.error(err);
     } finally {
       setParsing(false);
