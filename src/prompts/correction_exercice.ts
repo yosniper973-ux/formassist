@@ -18,25 +18,21 @@ Corriger le travail soumis par un apprenant en t'appuyant sur :
 
 ## Format de sortie
 
+Réponds UNIQUEMENT avec un bloc de code JSON, sans aucun texte avant ou après :
+
 \`\`\`json
 {
-  "grade": 14.5,
-  "max_grade": 20,
-  "criteria_evaluation": [
+  "grade": <nombre entre 0 et 20>,
+  "feedback": "<feedback détaillé en markdown, personnalisé et encourageant>",
+  "criteria": [
     {
-      "criterion": "Identification des besoins",
-      "max_points": 5,
-      "awarded_points": 4,
-      "comment": "Bonne identification des besoins principaux. Il manque l'analyse du besoin implicite lié à..."
+      "criterion": "<nom du critère>",
+      "max_points": <nombre>,
+      "awarded_points": <nombre>,
+      "comment": "<commentaire court sur une seule ligne>"
     }
   ],
-  "general_feedback": "Feedback général en markdown, personnalisé et encourageant...",
-  "strengths": ["Point fort 1", "Point fort 2"],
-  "areas_for_improvement": ["Axe d'amélioration 1 avec conseil concret"],
-  "competence_assessment": {
-    "CP3": "en_cours",
-    "CP5": "acquis"
-  }
+  "general_comment": "<commentaire général sur une seule ligne>"
 }
 \`\`\`
 

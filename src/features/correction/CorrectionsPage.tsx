@@ -278,23 +278,7 @@ export function CorrectionsPage() {
 
       const instructions = `---
 
-Corrige cette copie. Réponds UNIQUEMENT avec un bloc de code JSON, sans aucun texte avant ou après. Utilise cette structure exacte :
-
-\`\`\`json
-{
-  "grade": <number entre 0 et 20>,
-  "feedback": "<feedback detaille — échappe les guillemets avec \\\" et les retours à la ligne avec \\n>",
-  "criteria": [
-    {
-      "criterion": "<nom du critere>",
-      "max_points": <number>,
-      "awarded_points": <number>,
-      "comment": "<commentaire court sur une seule ligne>"
-    }
-  ],
-  "general_comment": "<commentaire general sur une seule ligne>"
-}
-\`\`\``;
+Corrige cette copie en respectant le format JSON défini dans tes instructions.`;
 
       let messageContent: string | ClaudeContentBlock[];
 
@@ -350,9 +334,12 @@ ${instructions}`;
 
       addApiCost(response.costEuros);
 
-      // Parse the JSON response — prefer ```json ... ``` code block, fallback to greedy regex
-      const codeBlock = response.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      const rawJson = codeBlock ? codeBlock[1] : response.content.match(/\{[\s\S]*\}/)?.[0];
+      // Parse the JSON response — 3 tentatives : bloc ```json```, regex greedy, réponse brute
+      const codeBlock = response.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/s);
+      const rawJson =
+        codeBlock?.[1] ??
+        response.content.match(/\{[\s\S]*\}/)?.[0] ??
+        (response.content.trim().startsWith("{") ? response.content.trim() : undefined);
       if (!rawJson) {
         throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
       }
