@@ -227,7 +227,11 @@ async function saveParsedReac(
   const MAX_ATTEMPTS = 8;
   let lastErr: unknown;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, 250 * attempt));
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, 250 * attempt));
+      // Nettoyer une éventuelle transaction orpheline du tentative précédente
+      await execute("ROLLBACK").catch(() => {});
+    }
     try {
       await _saveParsedReacOnce(formationId, ccps);
       return;
@@ -239,7 +243,10 @@ async function saveParsedReac(
             ? err
             : (err as Record<string, unknown>)?.message as string | undefined
               ?? JSON.stringify(err);
-      if (msg.includes("locked") || msg.includes("code: 5") || msg.includes("BUSY")) {
+      if (
+        msg.includes("locked") || msg.includes("code: 5") || msg.includes("BUSY") ||
+        msg.includes("cannot start a transaction") || msg.includes("code: 1")
+      ) {
         lastErr = err;
         continue;
       }
