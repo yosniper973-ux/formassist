@@ -6,6 +6,10 @@ let dbInstance: Database | null = null;
 async function getDb(): Promise<Database> {
   if (!dbInstance) {
     dbInstance = await Database.load("sqlite:formassist.db");
+    // WAL mode : lectures et écritures simultanées sans blocage.
+    // busy_timeout : attend jusqu'à 10s si la DB est occupée au lieu d'échouer.
+    await dbInstance.execute("PRAGMA journal_mode = WAL");
+    await dbInstance.execute("PRAGMA busy_timeout = 10000");
   }
   return dbInstance;
 }
