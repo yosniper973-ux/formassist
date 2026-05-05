@@ -120,26 +120,27 @@ export function FormationDetail({ formation, onBack }: Props) {
       let messageContent: string | ClaudeContentBlock[];
 
       if (isPdf) {
-        // Extraction locale via pdf.js (compatible Mac et Windows, pas de limite de taille)
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfjsLib = await import("pdfjs-dist");
-        // Désactiver le worker externe : le protocole tauri:// bloque son chargement
-        // sur macOS WebKit. Mode inline (thread principal), compatible Mac + Windows.
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const pages: string[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          pages.push(
-            content.items.map((item) => ("str" in item ? item.str : "")).join(" "),
-          );
-        }
-        const rawText = pages.join("\n\n");
-        if (!rawText.trim()) {
-          throw new Error("Impossible d'extraire le texte de ce PDF. Essaie un PDF non scanné ou exporte depuis Word.");
-        }
-        messageContent = `Voici le contenu brut extrait du REAC (Référentiel Emploi Activités Compétences) pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète : tous les CCP, toutes les compétences (CP) de chaque CCP, tous les critères d'évaluation, et les activités-types. Ne saute aucune compétence, même si le document est dense.\n\n---\n\n${rawText}`;
+        // FileReader.readAsDataURL : API native, fiable sur macOS WebKit et Windows WebView2.
+        // pdf.js en mode inline échoue sur macOS WebKit ("undefined is not a function").
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            resolve(dataUrl.split(",")[1] ?? "");
+          };
+          reader.onerror = () => reject(new Error("Impossible de lire le fichier PDF."));
+          reader.readAsDataURL(file);
+        });
+        messageContent = [
+          {
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: base64 },
+          },
+          {
+            type: "text",
+            text: `Voici le REAC (Référentiel Emploi Activités Compétences) pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète : tous les CCP, toutes les compétences (CP) de chaque CCP, tous les critères d'évaluation, et les activités-types. Ne saute aucune compétence, même si le document est dense.`,
+          },
+        ];
       } else if (file.name.toLowerCase().endsWith(".docx")) {
         const mammoth = await import("mammoth");
         const arrayBuffer = await file.arrayBuffer();

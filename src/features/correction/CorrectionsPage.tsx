@@ -263,8 +263,8 @@ export function CorrectionsPage() {
       const isGroup = selectedLearners.length > 1;
 
       const exerciseContext = selectedContent
-        ? `## Exercice : ${selectedContent.title}\n\n${selectedContent.content_markdown}`
-        : "Aucun exercice de reference fourni.";
+        ? `<exercice_reference titre="${selectedContent.title}">\n${selectedContent.content_markdown}\n</exercice_reference>`
+        : "Aucun exercice de référence fourni.";
 
       const learnerContext = isGroup
         ? `Travail réalisé en groupe par les apprenants suivants :\n${selectedLearners
@@ -320,9 +320,9 @@ La copie de l'apprenant est fournie en pièce jointe ci-dessous.`;
 
 ${exerciseContext}
 
-## Copie de l'apprenant
-
+<copie_apprenant>
 ${submissionText.trim()}
+</copie_apprenant>
 
 ${instructions}`;
       }
