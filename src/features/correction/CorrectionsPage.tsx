@@ -278,20 +278,23 @@ export function CorrectionsPage() {
 
       const instructions = `---
 
-Corrige cette copie. Reponds en JSON avec cette structure exacte :
+Corrige cette copie. Réponds UNIQUEMENT avec un bloc de code JSON, sans aucun texte avant ou après. Utilise cette structure exacte :
+
+\`\`\`json
 {
   "grade": <number entre 0 et 20>,
-  "feedback": "<feedback detaille en markdown>",
+  "feedback": "<feedback detaille — échappe les guillemets avec \\\" et les retours à la ligne avec \\n>",
   "criteria": [
     {
       "criterion": "<nom du critere>",
       "max_points": <number>,
       "awarded_points": <number>,
-      "comment": "<commentaire>"
+      "comment": "<commentaire court sur une seule ligne>"
     }
   ],
-  "general_comment": "<commentaire general>"
-}`;
+  "general_comment": "<commentaire general sur une seule ligne>"
+}
+\`\`\``;
 
       let messageContent: string | ClaudeContentBlock[];
 
@@ -347,13 +350,14 @@ ${instructions}`;
 
       addApiCost(response.costEuros);
 
-      // Parse the JSON response
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("La reponse de Claude ne contient pas de JSON valide.");
+      // Parse the JSON response — prefer ```json ... ``` code block, fallback to greedy regex
+      const codeBlock = response.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      const rawJson = codeBlock ? codeBlock[1] : response.content.match(/\{[\s\S]*\}/)?.[0];
+      if (!rawJson) {
+        throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
       }
 
-      const parsed = JSON.parse(jsonMatch[0]) as {
+      let parsed: {
         grade: number;
         feedback: string;
         criteria: Array<{
@@ -364,6 +368,11 @@ ${instructions}`;
         }>;
         general_comment: string;
       };
+      try {
+        parsed = JSON.parse(rawJson) as typeof parsed;
+      } catch {
+        throw new Error("Claude n'a pas renvoyé un JSON valide. Réessaie — cela arrive parfois avec des exercices très longs.");
+      }
 
       const grid: CriteriaGrid = {
         criteria: parsed.criteria.map((c) => ({
