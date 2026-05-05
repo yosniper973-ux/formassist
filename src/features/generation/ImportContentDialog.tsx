@@ -81,10 +81,7 @@ export function ImportContentDialog({ onClose, onImported }: Props) {
         // Étape 1 : extraction locale gratuite via pdf.js
         const arrayBuffer = await file.arrayBuffer();
         const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url
-        ).toString();
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pages: string[] = [];
         for (let i = 1; i <= pdf.numPages; i++) {

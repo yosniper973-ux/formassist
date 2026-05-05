@@ -123,10 +123,9 @@ export function FormationDetail({ formation, onBack }: Props) {
         // Extraction locale via pdf.js (compatible Mac et Windows, pas de limite de taille)
         const arrayBuffer = await file.arrayBuffer();
         const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url,
-        ).toString();
+        // Désactiver le worker externe : le protocole tauri:// bloque son chargement
+        // sur macOS WebKit. Mode inline (thread principal), compatible Mac + Windows.
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pages: string[] = [];
         for (let i = 1; i <= pdf.numPages; i++) {
