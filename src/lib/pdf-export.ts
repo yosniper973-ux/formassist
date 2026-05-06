@@ -442,10 +442,10 @@ function buildTable(
 
   return React.createElement(
     View,
-    { key, style: styles.table, wrap: false },
+    { key, style: styles.table },
     React.createElement(
       View,
-      { style: styles.tableRow },
+      { style: styles.tableRow, wrap: false },
       ...headers.map((h, ci) =>
         React.createElement(
           Text,
@@ -457,7 +457,7 @@ function buildTable(
     ...rows.map((row, ri) =>
       React.createElement(
         View,
-        { key: ri, style: styles.tableRow },
+        { key: ri, style: styles.tableRow, wrap: false },
         ...row.map((cell, ci) =>
           React.createElement(
             Text,

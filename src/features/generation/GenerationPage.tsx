@@ -1309,7 +1309,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                     className="min-h-[500px] font-mono text-sm"
                   />
                 ) : (
-                  <div ref={previewRef} className="max-h-[600px] overflow-y-auto rounded-lg border bg-card p-5">
+                  <div ref={previewRef} className="rounded-lg border bg-card p-5">
                     <RichMarkdown content={generatedContent} />
                   </div>
                 )}
