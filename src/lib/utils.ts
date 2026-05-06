@@ -72,7 +72,7 @@ export function truncate(text: string, maxLength: number): string {
  *   NOTES FORMATEUR · GUIDE D'ANIMATION · GUIDE FORMATEUR · CONSEILS FORMATEUR
  */
 const FORMATEUR_HEADING_REGEX =
-  /(?:^|\n)[ \t]*#{2,}[ \t]+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|R[ÉE]PONSES?\s*(?:AUX\s*\w+)?|ANIMATION\s*FORMATEUR|NOTES?\s*FORMATEUR|GUIDE\s*(?:D['']ANIMATION|FORMATEUR)|CONSEILS?\s*FORMATEUR)/i;
+  /(?:^|\n)[ \t]*#{2,}[ \t]+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|CORRECTIONS?|R[ÉE]PONSES?\s*(?:AUX\s*\w+)?|SOLUTIONS?|CL[EÉ]S?\s*(?:DE\s*)?R[ÉE]PONSE|ANIMATION\s*FORMATEUR|NOTES?\s*FORMATEUR|GUIDE\s*(?:D['']ANIMATION|FORMATEUR)|CONSEILS?\s*FORMATEUR)/i;
 
 /** Retourne true si le markdown contient une section formateur. */
 export function hasFormateurSection(markdown: string): boolean {

@@ -1165,96 +1165,90 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                       )}
                       {copied ? "Copié" : "Copier"}
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          const blob = await markdownToDocx(generatedContent);
-                          const savedPath = await downloadDocx(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
-                          if (savedPath) {
-                            const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
-                            setDownloadToast({ path: savedPath, name });
-                          }
-                        } catch (err) {
-                          console.error("Export Word:", err);
-                          setError(err instanceof Error ? err.message : "Erreur export Word");
-                        }
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Word
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          const blob = await markdownToPdf(generatedContent);
-                          const savedPath = await downloadPdf(blob, (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_"));
-                          if (savedPath) {
-                            const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
-                            setDownloadToast({ path: savedPath, name });
-                          }
-                        } catch (err) {
-                          console.error("Export PDF:", err);
-                          setError(err instanceof Error ? err.message : "Erreur export PDF");
-                        }
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      PDF
-                    </Button>
-                    {hasFormateurSection(generatedContent) && (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                          onClick={async () => {
-                            try {
-                              const apprenant = stripFormateur(generatedContent);
-                              const blob = await markdownToDocx(apprenant);
-                              const baseName = (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_");
-                              const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
-                              if (savedPath) {
-                                const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
-                                setDownloadToast({ path: savedPath, name });
+                    {(() => {
+                      const isQcm = selectedType?.value === "trainer_sheet";
+                      const hasFormateur = hasFormateurSection(generatedContent);
+                      const dualVersion = isQcm || hasFormateur;
+                      const baseName = (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_");
+                      return (
+                        <>
+                          {/* Version formateur (document complet) */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              try {
+                                const blob = await markdownToDocx(generatedContent);
+                                const savedPath = await downloadDocx(blob, baseName);
+                                if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : "Erreur export Word");
                               }
-                            } catch (err) {
-                              console.error("Export Word apprenant:", err);
-                              setError(err instanceof Error ? err.message : "Erreur export Word");
-                            }
-                          }}
-                        >
-                          <Users className="h-3.5 w-3.5" />
-                          Word · Apprenant
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                          onClick={async () => {
-                            try {
-                              const apprenant = stripFormateur(generatedContent);
-                              const blob = await markdownToPdf(apprenant);
-                              const baseName = (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_");
-                              const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
-                              if (savedPath) {
-                                const name = savedPath.split(/[\\/]/).pop() ?? savedPath;
-                                setDownloadToast({ path: savedPath, name });
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            {dualVersion ? "Word · Formateur" : "Word"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              try {
+                                const blob = await markdownToPdf(generatedContent);
+                                const savedPath = await downloadPdf(blob, baseName);
+                                if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : "Erreur export PDF");
                               }
-                            } catch (err) {
-                              console.error("Export PDF apprenant:", err);
-                              setError(err instanceof Error ? err.message : "Erreur export PDF");
-                            }
-                          }}
-                        >
-                          <Users className="h-3.5 w-3.5" />
-                          PDF · Apprenant
-                        </Button>
-                      </>
-                    )}
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            {dualVersion ? "PDF · Formateur" : "PDF"}
+                          </Button>
+                          {/* Version apprenant (sans corrigé) — QCM ou tout document avec section formateur */}
+                          {dualVersion && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                                onClick={async () => {
+                                  try {
+                                    const apprenant = hasFormateur ? stripFormateur(generatedContent) : generatedContent;
+                                    const blob = await markdownToDocx(apprenant);
+                                    const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
+                                    if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
+                                  } catch (err) {
+                                    setError(err instanceof Error ? err.message : "Erreur export Word");
+                                  }
+                                }}
+                              >
+                                <Users className="h-3.5 w-3.5" />
+                                Word · Apprenant
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                                onClick={async () => {
+                                  try {
+                                    const apprenant = hasFormateur ? stripFormateur(generatedContent) : generatedContent;
+                                    const blob = await markdownToPdf(apprenant);
+                                    const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
+                                    if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
+                                  } catch (err) {
+                                    setError(err instanceof Error ? err.message : "Erreur export PDF");
+                                  }
+                                }}
+                              >
+                                <Users className="h-3.5 w-3.5" />
+                                PDF · Apprenant
+                              </Button>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1553,84 +1547,88 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: Genera
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
               {copied ? "Copié" : "Copier"}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  const blob = await markdownToDocx(item.content_markdown);
-                  const savedPath = await downloadDocx(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
-                  if (savedPath) onDownloaded?.(savedPath);
-                } catch (err) {
-                  console.error("Export Word:", err);
-                  alert(err instanceof Error ? err.message : "Erreur export Word");
-                }
-              }}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Word
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  const blob = await markdownToPdf(item.content_markdown);
-                  const savedPath = await downloadPdf(blob, (item.title || "document").replace(/[\\/:*?"<>|]/g, "_"));
-                  if (savedPath) onDownloaded?.(savedPath);
-                } catch (err) {
-                  console.error("Export PDF:", err);
-                  alert(err instanceof Error ? err.message : "Erreur export PDF");
-                }
-              }}
-            >
-              <Download className="h-3.5 w-3.5" />
-              PDF
-            </Button>
-            {hasFormateurSection(item.content_markdown) && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                  onClick={async () => {
-                    try {
-                      const apprenant = stripFormateur(item.content_markdown);
-                      const blob = await markdownToDocx(apprenant);
-                      const baseName = (item.title || "document").replace(/[\\/:*?"<>|]/g, "_");
-                      const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
-                      if (savedPath) onDownloaded?.(savedPath);
-                    } catch (err) {
-                      console.error("Export Word apprenant:", err);
-                      alert(err instanceof Error ? err.message : "Erreur export Word");
-                    }
-                  }}
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  Word · Apprenant
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                  onClick={async () => {
-                    try {
-                      const apprenant = stripFormateur(item.content_markdown);
-                      const blob = await markdownToPdf(apprenant);
-                      const baseName = (item.title || "document").replace(/[\\/:*?"<>|]/g, "_");
-                      const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
-                      if (savedPath) onDownloaded?.(savedPath);
-                    } catch (err) {
-                      console.error("Export PDF apprenant:", err);
-                      alert(err instanceof Error ? err.message : "Erreur export PDF");
-                    }
-                  }}
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  PDF · Apprenant
-                </Button>
-              </>
-            )}
+            {(() => {
+              const isQcm = item.content_type === "trainer_sheet";
+              const hasFormateur = hasFormateurSection(item.content_markdown);
+              const dualVersion = isQcm || hasFormateur;
+              const baseName = (item.title || "document").replace(/[\\/:*?"<>|]/g, "_");
+              return (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const blob = await markdownToDocx(item.content_markdown);
+                        const savedPath = await downloadDocx(blob, baseName);
+                        if (savedPath) onDownloaded?.(savedPath);
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "Erreur export Word");
+                      }
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {dualVersion ? "Word · Formateur" : "Word"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const blob = await markdownToPdf(item.content_markdown);
+                        const savedPath = await downloadPdf(blob, baseName);
+                        if (savedPath) onDownloaded?.(savedPath);
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "Erreur export PDF");
+                      }
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {dualVersion ? "PDF · Formateur" : "PDF"}
+                  </Button>
+                  {dualVersion && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                        onClick={async () => {
+                          try {
+                            const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : item.content_markdown;
+                            const blob = await markdownToDocx(apprenant);
+                            const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
+                            if (savedPath) onDownloaded?.(savedPath);
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : "Erreur export Word");
+                          }
+                        }}
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                        Word · Apprenant
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                        onClick={async () => {
+                          try {
+                            const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : item.content_markdown;
+                            const blob = await markdownToPdf(apprenant);
+                            const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
+                            if (savedPath) onDownloaded?.(savedPath);
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : "Erreur export PDF");
+                          }
+                        }}
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                        PDF · Apprenant
+                      </Button>
+                    </>
+                  )}
+                </>
+              );
+            })()}
             {!item.slot_id && (
               <Button
                 variant="outline"
