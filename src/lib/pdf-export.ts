@@ -21,11 +21,19 @@ const BLUE = "#2471A3";
 const LIGHT_BLUE = "#EAF2F8";
 const GRAY_BORDER = "#B0BEC5";
 
-// Helvetica est intégré à react-pdf — rendu garanti partout, lookalike Arial.
-const FONT = "Helvetica";
-const FONT_BOLD = "Helvetica-Bold";
-const FONT_ITALIC = "Helvetica-Oblique";
-const FONT_BOLD_ITALIC = "Helvetica-BoldOblique";
+// NotoSans : police Unicode complète — supporte →, ≠, ☐, flèches, etc.
+// Fichiers TTF bundlés dans public/fonts/ pour fonctionnement hors-ligne.
+Font.register({
+  family: "NotoSans",
+  fonts: [
+    { src: "/fonts/NotoSans-Regular.ttf" },
+    { src: "/fonts/NotoSans-Bold.ttf", fontWeight: "bold" },
+    { src: "/fonts/NotoSans-Italic.ttf", fontStyle: "italic" },
+    { src: "/fonts/NotoSans-BoldItalic.ttf", fontWeight: "bold", fontStyle: "italic" },
+  ],
+});
+
+const FONT = "NotoSans";
 const FONT_MONO = "Courier";
 
 const styles = StyleSheet.create({
@@ -42,14 +50,16 @@ const styles = StyleSheet.create({
     backgroundColor: NAVY,
     color: "#FFFFFF",
     fontSize: 16,
-    fontFamily: FONT_BOLD,
+    fontFamily: FONT,
+    fontWeight: "bold",
     padding: 10,
     marginBottom: 12,
     marginTop: 8,
   },
   h2: {
     fontSize: 13,
-    fontFamily: FONT_BOLD,
+    fontFamily: FONT,
+    fontWeight: "bold",
     color: NAVY,
     textTransform: "uppercase",
     borderBottomWidth: 1.5,
@@ -60,7 +70,8 @@ const styles = StyleSheet.create({
   },
   h3: {
     fontSize: 12,
-    fontFamily: FONT_BOLD,
+    fontFamily: FONT,
+    fontWeight: "bold",
     color: BLUE,
     marginTop: 10,
     marginBottom: 4,
@@ -76,7 +87,8 @@ const styles = StyleSheet.create({
   },
   bullet: {
     width: 12,
-    fontFamily: FONT_BOLD,
+    fontFamily: FONT,
+    fontWeight: "bold",
     color: NAVY,
   },
   listText: { flex: 1 },
@@ -95,7 +107,8 @@ const styles = StyleSheet.create({
   tableHeaderCell: {
     backgroundColor: NAVY,
     color: "#FFFFFF",
-    fontFamily: FONT_BOLD,
+    fontFamily: FONT,
+    fontWeight: "bold",
     padding: 5,
     fontSize: 10,
     flex: 1,
@@ -121,7 +134,8 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   calloutTitle: {
-    fontFamily: FONT_BOLD,
+    fontFamily: FONT,
+    fontWeight: "bold",
     marginBottom: 3,
   },
 });
@@ -183,7 +197,7 @@ function inlineRuns(text: string, baseColor?: string): React.ReactNode[] {
       parts.push(
         React.createElement(
           Text,
-          { key: key++, style: { fontFamily: FONT_BOLD_ITALIC, color: baseColor } },
+          { key: key++, style: { fontFamily: FONT, fontWeight: "bold", fontStyle: "italic", color: baseColor } },
           m[5],
         ),
       );
@@ -191,7 +205,7 @@ function inlineRuns(text: string, baseColor?: string): React.ReactNode[] {
       parts.push(
         React.createElement(
           Text,
-          { key: key++, style: { fontFamily: FONT_BOLD, color: baseColor } },
+          { key: key++, style: { fontFamily: FONT, fontWeight: "bold", color: baseColor } },
           m[6],
         ),
       );
@@ -199,7 +213,7 @@ function inlineRuns(text: string, baseColor?: string): React.ReactNode[] {
       parts.push(
         React.createElement(
           Text,
-          { key: key++, style: { fontFamily: FONT_ITALIC, color: baseColor } },
+          { key: key++, style: { fontFamily: FONT, fontStyle: "italic", color: baseColor } },
           m[7],
         ),
       );
