@@ -32,14 +32,6 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Generate FormAssist icons
-        shell: pwsh
-        env:
-          PYTHONIOENCODING: utf-8
-        run: |
-          python -m pip install --quiet Pillow
-          python scripts/generate_icon.py
-
       - name: Download WebView2 Standalone Installer (offline, ~160 Mo)
         shell: pwsh
         run: |
@@ -163,13 +155,6 @@ jobs:
 
       - name: Ajouter la cible Intel pour Universal Binary
         run: rustup target add x86_64-apple-darwin
-
-      - name: Generate FormAssist icons
-        env:
-          PYTHONIOENCODING: utf-8
-        run: |
-          python3 -m pip install --quiet --break-system-packages Pillow
-          python3 scripts/generate_icon.py
 
       - name: Install frontend dependencies
         run: npm ci

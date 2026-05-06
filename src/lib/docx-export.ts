@@ -142,7 +142,15 @@ export async function markdownToDocx(markdown: string): Promise<Blob> {
         },
       ],
     },
-    sections: [{ properties: {}, children }],
+    sections: [{
+      properties: {
+        page: {
+          size: { width: A4_PAGE_WIDTH, height: 16838 },
+          margin: { top: MARGIN_DXA, right: MARGIN_DXA, bottom: MARGIN_DXA, left: MARGIN_DXA },
+        },
+      },
+      children,
+    }],
   });
 
   const blob = await Packer.toBlob(doc);
@@ -155,6 +163,14 @@ export async function markdownToDocx(markdown: string): Promise<Blob> {
 
 const NAVY = "1A3C5E";
 const BLUE = "2471A3";
+
+const A4_PAGE_WIDTH = 11906;
+const MARGIN_DXA = 1418;
+const CONTENT_WIDTH = A4_PAGE_WIDTH - MARGIN_DXA * 2;
+
+// Fix rendu tableaux : Mac (Pages/LibreOffice) requiert des largeurs absolues DXA.
+// Windows Word gère bien les pourcentages — on ne touche pas au comportement Windows.
+const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 
 type Run = TextRun | ExternalHyperlink;
 
@@ -267,12 +283,23 @@ function toAlign(cell: string): "left" | "center" | "right" {
 }
 
 function buildTable(headers: string[], rows: string[][], aligns: ("left" | "center" | "right")[]): Table {
+  const colCount = Math.max(headers.length, 1);
+  const colW = Math.floor(CONTENT_WIDTH / colCount);
+  const colWidths = Array.from({ length: colCount }, (_, i) =>
+    i === colCount - 1 ? CONTENT_WIDTH - colW * (colCount - 1) : colW,
+  );
+
+  const cellWidth = (i: number) => isMac
+    ? { size: colWidths[i]!, type: WidthType.DXA }
+    : { size: Math.floor(100 / colCount), type: WidthType.PERCENTAGE };
+
   const headerRow = new TableRow({
     tableHeader: true,
     children: headers.map((h, i) =>
       new TableCell({
+        width: cellWidth(i),
         shading: { type: ShadingType.CLEAR, color: "auto", fill: NAVY },
-        margins: { top: 80, bottom: 80, left: 100, right: 100 },
+        margins: { top: 80, bottom: 80, left: 120, right: 120 },
         children: [
           new Paragraph({
             alignment: alignmentOf(aligns[i] ?? "left"),
@@ -287,8 +314,9 @@ function buildTable(headers: string[], rows: string[][], aligns: ("left" | "cent
     new TableRow({
       children: row.map((cell, ci) =>
         new TableCell({
+          width: cellWidth(ci),
           shading: { type: ShadingType.CLEAR, color: "auto", fill: ri % 2 === 0 ? "FFFFFF" : "EAF2F8" },
-          margins: { top: 60, bottom: 60, left: 100, right: 100 },
+          margins: { top: 60, bottom: 60, left: 120, right: 120 },
           children: [
             new Paragraph({
               alignment: alignmentOf(aligns[ci] ?? "left"),
@@ -301,7 +329,10 @@ function buildTable(headers: string[], rows: string[][], aligns: ("left" | "cent
   );
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: isMac
+      ? { size: CONTENT_WIDTH, type: WidthType.DXA }
+      : { size: 100, type: WidthType.PERCENTAGE },
+    ...(isMac ? { columnWidths: colWidths } : {}),
     rows: [headerRow, ...bodyRows],
   });
 }
@@ -334,11 +365,17 @@ function calloutTable(kind: string, title: string, lines: string[]): Table {
     );
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: isMac
+      ? { size: CONTENT_WIDTH, type: WidthType.DXA }
+      : { size: 100, type: WidthType.PERCENTAGE },
+    ...(isMac ? { columnWidths: [CONTENT_WIDTH] } : {}),
     rows: [
       new TableRow({
         children: [
           new TableCell({
+            width: isMac
+              ? { size: CONTENT_WIDTH, type: WidthType.DXA }
+              : { size: 100, type: WidthType.PERCENTAGE },
             shading: { type: ShadingType.CLEAR, color: "auto", fill: s.bg },
             margins: { top: 120, bottom: 120, left: 160, right: 160 },
             borders: {
