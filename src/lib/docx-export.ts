@@ -96,8 +96,10 @@ export async function markdownToDocx(markdown: string): Promise<Blob> {
 
     // Ordered list
     if (/^\s*\d+\.\s+/.test(line)) {
+      let n = 0;
       while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i]!)) {
-        children.push(numberedParagraph(lines[i]!.replace(/^\s*\d+\.\s+/, "")));
+        n++;
+        children.push(numberedParagraph(lines[i]!.replace(/^\s*\d+\.\s+/, ""), n));
         i++;
       }
       continue;
@@ -257,6 +259,18 @@ function bodyParagraph(text: string): Paragraph {
 }
 
 function bulletParagraph(text: string): Paragraph {
+  if (isMac) {
+    // Sur Mac, ListParagraph + numPr décale tout le texte hors de la page.
+    // On place le bullet manuellement avec une indentation explicite.
+    return new Paragraph({
+      indent: { left: 400, hanging: 200 },
+      spacing: { before: 40, after: 40, line: 280 },
+      children: [
+        new TextRun({ text: "•  ", font: "Arial", bold: true, color: NAVY }),
+        ...runs(text),
+      ],
+    });
+  }
   return new Paragraph({
     numbering: { reference: "bullets", level: 0 },
     spacing: { before: 40, after: 40, line: 280 },
@@ -264,7 +278,17 @@ function bulletParagraph(text: string): Paragraph {
   });
 }
 
-function numberedParagraph(text: string): Paragraph {
+function numberedParagraph(text: string, n = 1): Paragraph {
+  if (isMac) {
+    return new Paragraph({
+      indent: { left: 400, hanging: 200 },
+      spacing: { before: 40, after: 40, line: 280 },
+      children: [
+        new TextRun({ text: `${n}.  `, font: "Arial" }),
+        ...runs(text),
+      ],
+    });
+  }
   return new Paragraph({
     numbering: { reference: "decimals", level: 0 },
     spacing: { before: 40, after: 40, line: 280 },
