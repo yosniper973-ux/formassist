@@ -1166,9 +1166,8 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                       {copied ? "Copié" : "Copier"}
                     </Button>
                     {(() => {
-                      const isQcm = selectedType?.value === "trainer_sheet";
                       const hasFormateur = hasFormateurSection(generatedContent);
-                      const dualVersion = isQcm || hasFormateur;
+                      const dualVersion = true;
                       const baseName = (generatedTitle || "document").replace(/[\\/:*?"<>|]/g, "_");
                       return (
                         <>
@@ -1548,9 +1547,8 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: Genera
               {copied ? "Copié" : "Copier"}
             </Button>
             {(() => {
-              const isQcm = item.content_type === "trainer_sheet";
               const hasFormateur = hasFormateurSection(item.content_markdown);
-              const dualVersion = isQcm || hasFormateur;
+              const dualVersion = true;
               const baseName = (item.title || "document").replace(/[\\/:*?"<>|]/g, "_");
               return (
                 <>
