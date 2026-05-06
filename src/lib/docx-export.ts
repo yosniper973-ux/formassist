@@ -63,6 +63,15 @@ export async function markdownToDocx(markdown: string): Promise<Blob> {
 
     // Callout
     const callout = line.match(/^>\s*\[!(\w+)\]\s*(.*)$/i);
+    if (!callout && line.startsWith(">")) {
+      if (isMac) {
+        children.push(blockquoteParagraph(line.replace(/^>\s?/, "")));
+      } else {
+        children.push(bodyParagraph(line));
+      }
+      i++;
+      continue;
+    }
     if (callout) {
       const kind = callout[1]!.toLowerCase();
       const title = (callout[2] ?? "").trim();
@@ -188,25 +197,26 @@ function hyperlinkRun(label: string, url: string): ExternalHyperlink {
   });
 }
 
-function runs(text: string): Run[] {
+function runs(text: string, color?: string): Run[] {
   const parts: Run[] = [];
   // 1) [texte](url)  2) URL nue  3) ***x***  4) **x**  5) *x*  6) `x`
   const regex =
     /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>]+)|\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*([^*]+?)\*|`([^`]+?)`)/g;
   let last = 0;
   let m: RegExpExecArray | null;
+  const c = color ? { color } : {};
   while ((m = regex.exec(text)) !== null) {
-    if (m.index > last) parts.push(new TextRun({ text: text.slice(last, m.index), font: "Arial" }));
+    if (m.index > last) parts.push(new TextRun({ text: text.slice(last, m.index), font: "Arial", ...c }));
     if (m[3]) parts.push(hyperlinkRun(m[2]!, m[3]!));
     else if (m[4]) parts.push(hyperlinkRun(m[4]!, m[4]!));
-    else if (m[5]) parts.push(new TextRun({ text: m[5]!, bold: true, italics: true, font: "Arial" }));
-    else if (m[6]) parts.push(new TextRun({ text: m[6]!, bold: true, font: "Arial" }));
-    else if (m[7]) parts.push(new TextRun({ text: m[7]!, italics: true, font: "Arial" }));
-    else if (m[8]) parts.push(new TextRun({ text: m[8]!, font: "Consolas" }));
+    else if (m[5]) parts.push(new TextRun({ text: m[5]!, bold: true, italics: true, font: "Arial", ...c }));
+    else if (m[6]) parts.push(new TextRun({ text: m[6]!, bold: true, font: "Arial", ...c }));
+    else if (m[7]) parts.push(new TextRun({ text: m[7]!, italics: true, font: "Arial", ...c }));
+    else if (m[8]) parts.push(new TextRun({ text: m[8]!, font: "Consolas", ...c }));
     last = m.index + m[0].length;
   }
-  if (last < text.length) parts.push(new TextRun({ text: text.slice(last), font: "Arial" }));
-  return parts.length === 0 ? [new TextRun({ text, font: "Arial" })] : parts;
+  if (last < text.length) parts.push(new TextRun({ text: text.slice(last), font: "Arial", ...c }));
+  return parts.length === 0 ? [new TextRun({ text, font: "Arial", ...c })] : parts;
 }
 
 function h1Paragraph(text: string): Paragraph {
@@ -258,6 +268,15 @@ function numberedParagraph(text: string): Paragraph {
   return new Paragraph({
     numbering: { reference: "decimals", level: 0 },
     spacing: { before: 40, after: 40, line: 280 },
+    children: runs(text),
+  });
+}
+
+function blockquoteParagraph(text: string): Paragraph {
+  return new Paragraph({
+    indent: { left: 400, hanging: 0 },
+    spacing: { before: 40, after: 40, line: 280 },
+    border: { left: { style: BorderStyle.SINGLE, size: 16, color: BLUE } },
     children: runs(text),
   });
 }
@@ -360,7 +379,9 @@ function calloutTable(kind: string, title: string, lines: string[]): Table {
     .map((ln) =>
       new Paragraph({
         spacing: { before: 30, after: 30, line: 280 },
-        children: [new TextRun({ text: ln, color: s.fg, font: "Arial", size: 22 })],
+        children: isMac
+          ? runs(ln, s.fg)
+          : [new TextRun({ text: ln, color: s.fg, font: "Arial", size: 22 })],
       }),
     );
 
