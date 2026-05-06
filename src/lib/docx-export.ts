@@ -177,9 +177,9 @@ const A4_PAGE_WIDTH = 11906;
 const MARGIN_DXA = 1418;
 const CONTENT_WIDTH = A4_PAGE_WIDTH - MARGIN_DXA * 2;
 
-// Fix rendu tableaux : Mac (Pages/LibreOffice) requiert des largeurs absolues DXA.
-// Windows Word gère bien les pourcentages — on ne touche pas au comportement Windows.
-const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+// Fix rendu Mac : navigator.platform est déprécié et peut être vide sur macOS récent.
+// On utilise userAgent ("Macintosh") qui est toujours fiable. Windows contient "Windows NT".
+const isMac = typeof navigator !== "undefined" && /Macintosh|Mac OS X/i.test(navigator.userAgent);
 
 type Run = TextRun | ExternalHyperlink;
 
