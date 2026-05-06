@@ -412,11 +412,34 @@ function buildBlocks(markdown: string): React.ReactNode[] {
   return blocks;
 }
 
+function proportionalColWidths(headers: string[], rows: string[][], colCount: number): string[] {
+  const weights: number[] = Array(colCount).fill(0);
+  for (let ci = 0; ci < colCount; ci++) {
+    let max = Math.max(headers[ci]?.length ?? 1, 3);
+    const sample = Math.min(rows.length, 8);
+    for (let ri = 0; ri < sample; ri++) {
+      const len = rows[ri]?.[ci]?.replace(/\*\*/g, "").replace(/\*/g, "").length ?? 0;
+      if (len > max) max = len;
+    }
+    weights[ci] = Math.sqrt(max);
+  }
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  const norm = weights.map(w => w / total);
+  const pcts = norm.map(r => Math.round(r * 100));
+  // Fix rounding drift so percentages sum to exactly 100
+  const diff = 100 - pcts.reduce((a, b) => a + b, 0);
+  pcts[pcts.length - 1] = (pcts[pcts.length - 1] ?? 0) + diff;
+  return pcts.map(p => `${p}%`);
+}
+
 function buildTable(
   headers: string[],
   rows: string[][],
   key: number,
 ): React.ReactNode {
+  const colCount = Math.max(headers.length, 1);
+  const colWidths = proportionalColWidths(headers, rows, colCount);
+
   return React.createElement(
     View,
     { key, style: styles.table, wrap: false },
@@ -426,7 +449,7 @@ function buildTable(
       ...headers.map((h, ci) =>
         React.createElement(
           Text,
-          { key: ci, style: styles.tableHeaderCell },
+          { key: ci, style: { ...styles.tableHeaderCell, flex: 0, flexBasis: colWidths[ci] } },
           h,
         ),
       ),
@@ -442,6 +465,8 @@ function buildTable(
               key: ci,
               style: {
                 ...styles.tableCell,
+                flex: 0,
+                flexBasis: colWidths[ci],
                 backgroundColor: ri % 2 === 0 ? "#FFFFFF" : LIGHT_BLUE,
               },
             },

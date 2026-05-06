@@ -325,16 +325,34 @@ function toAlign(cell: string): "left" | "center" | "right" {
   return "left";
 }
 
+function proportionalColWidths(headers: string[], rows: string[][], colCount: number): number[] {
+  const weights: number[] = Array(colCount).fill(0);
+  for (let ci = 0; ci < colCount; ci++) {
+    let max = Math.max(headers[ci]?.length ?? 1, 3);
+    const sample = Math.min(rows.length, 8);
+    for (let ri = 0; ri < sample; ri++) {
+      const len = rows[ri]?.[ci]?.replace(/\*\*/g, "").replace(/\*/g, "").length ?? 0;
+      if (len > max) max = len;
+    }
+    weights[ci] = Math.sqrt(max); // sqrt compresses extremes, évite colonne unique trop dominante
+  }
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  const norm = weights.map(w => w / total);
+  const result = norm.map(r => Math.round(CONTENT_WIDTH * r));
+  result[colCount - 1] = CONTENT_WIDTH - result.slice(0, -1).reduce((a, b) => a + b, 0);
+  return result;
+}
+
 function buildTable(headers: string[], rows: string[][], aligns: ("left" | "center" | "right")[]): Table {
   const colCount = Math.max(headers.length, 1);
-  const colW = Math.floor(CONTENT_WIDTH / colCount);
-  const colWidths = Array.from({ length: colCount }, (_, i) =>
-    i === colCount - 1 ? CONTENT_WIDTH - colW * (colCount - 1) : colW,
-  );
+  const colWidths = proportionalColWidths(headers, rows, colCount);
 
   const cellWidth = (i: number) => isMac
     ? { size: colWidths[i]!, type: WidthType.DXA }
     : { size: Math.floor(100 / colCount), type: WidthType.PERCENTAGE };
+
+  const CELL_BORDER = { style: BorderStyle.SINGLE, size: 4, color: "B0BEC5" };
+  const HEADER_BORDER = { style: BorderStyle.SINGLE, size: 4, color: NAVY };
 
   const headerRow = new TableRow({
     tableHeader: true,
@@ -343,6 +361,7 @@ function buildTable(headers: string[], rows: string[][], aligns: ("left" | "cent
         width: cellWidth(i),
         shading: { type: ShadingType.CLEAR, color: "auto", fill: NAVY },
         margins: { top: 80, bottom: 80, left: 120, right: 120 },
+        borders: { top: HEADER_BORDER, bottom: HEADER_BORDER, left: HEADER_BORDER, right: HEADER_BORDER },
         children: [
           new Paragraph({
             alignment: alignmentOf(aligns[i] ?? "left"),
@@ -360,6 +379,7 @@ function buildTable(headers: string[], rows: string[][], aligns: ("left" | "cent
           width: cellWidth(ci),
           shading: { type: ShadingType.CLEAR, color: "auto", fill: ri % 2 === 0 ? "FFFFFF" : "EAF2F8" },
           margins: { top: 60, bottom: 60, left: 120, right: 120 },
+          borders: { top: CELL_BORDER, bottom: CELL_BORDER, left: CELL_BORDER, right: CELL_BORDER },
           children: [
             new Paragraph({
               alignment: alignmentOf(aligns[ci] ?? "left"),
