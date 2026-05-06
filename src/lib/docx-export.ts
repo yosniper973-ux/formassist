@@ -3,7 +3,6 @@ import {
   Packer,
   Paragraph,
   TextRun,
-  HeadingLevel,
   AlignmentType,
   Table,
   TableRow,
@@ -221,12 +220,22 @@ function runs(text: string, color?: string): Run[] {
   return parts.length === 0 ? [new TextRun({ text, font: "Arial", ...c })] : parts;
 }
 
+// Réinitialisation explicite de toutes les bordures — empêche la cascade
+// du border.bottom de h2/hr vers les paragraphes suivants dans Pages/Word Mac.
+const NO_BORDER = {
+  top:    { style: BorderStyle.NONE, size: 0, color: "auto" },
+  bottom: { style: BorderStyle.NONE, size: 0, color: "auto" },
+  left:   { style: BorderStyle.NONE, size: 0, color: "auto" },
+  right:  { style: BorderStyle.NONE, size: 0, color: "auto" },
+};
+
 function h1Paragraph(text: string): Paragraph {
   return new Paragraph({
-    heading: HeadingLevel.HEADING_1,
+    // Pas de heading: pour éviter les styles thème Word/Pages Mac
     alignment: AlignmentType.LEFT,
     shading: { type: ShadingType.CLEAR, color: "auto", fill: NAVY },
     spacing: { before: 200, after: 240 },
+    border: NO_BORDER,
     children: [
       new TextRun({ text, bold: true, size: 32, color: "FFFFFF", font: "Arial" }),
     ],
@@ -235,9 +244,13 @@ function h1Paragraph(text: string): Paragraph {
 
 function h2Paragraph(text: string): Paragraph {
   return new Paragraph({
-    heading: HeadingLevel.HEADING_2,
     spacing: { before: 280, after: 120 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: BLUE } },
+    border: {
+      top:    { style: BorderStyle.NONE,   size: 0,  color: "auto" },
+      bottom: { style: BorderStyle.SINGLE, size: 12, color: BLUE   },
+      left:   { style: BorderStyle.NONE,   size: 0,  color: "auto" },
+      right:  { style: BorderStyle.NONE,   size: 0,  color: "auto" },
+    },
     children: [
       new TextRun({ text: text.toUpperCase(), bold: true, size: 26, color: NAVY, font: "Arial" }),
     ],
@@ -246,8 +259,8 @@ function h2Paragraph(text: string): Paragraph {
 
 function h3Paragraph(text: string): Paragraph {
   return new Paragraph({
-    heading: HeadingLevel.HEADING_3,
     spacing: { before: 200, after: 80 },
+    border: NO_BORDER,
     children: [
       new TextRun({ text, bold: true, size: 23, color: BLUE, font: "Arial" }),
     ],
@@ -255,16 +268,19 @@ function h3Paragraph(text: string): Paragraph {
 }
 
 function bodyParagraph(text: string): Paragraph {
-  return new Paragraph({ spacing: { before: 80, after: 80, line: 300 }, children: runs(text) });
+  return new Paragraph({
+    spacing: { before: 80, after: 80, line: 300 },
+    border: NO_BORDER,
+    children: runs(text),
+  });
 }
 
 function bulletParagraph(text: string): Paragraph {
   if (isMac) {
-    // Sur Mac, ListParagraph + numPr décale tout le texte hors de la page.
-    // On place le bullet manuellement avec une indentation explicite.
     return new Paragraph({
       indent: { left: 400, hanging: 200 },
       spacing: { before: 40, after: 40, line: 280 },
+      border: NO_BORDER,
       children: [
         new TextRun({ text: "•  ", font: "Arial", bold: true, color: NAVY }),
         ...runs(text),
@@ -283,6 +299,7 @@ function numberedParagraph(text: string, n = 1): Paragraph {
     return new Paragraph({
       indent: { left: 400, hanging: 200 },
       spacing: { before: 40, after: 40, line: 280 },
+      border: NO_BORDER,
       children: [
         new TextRun({ text: `${n}.  `, font: "Arial" }),
         ...runs(text),
@@ -300,7 +317,12 @@ function blockquoteParagraph(text: string): Paragraph {
   return new Paragraph({
     indent: { left: 400, hanging: 0 },
     spacing: { before: 40, after: 40, line: 280 },
-    border: { left: { style: BorderStyle.SINGLE, size: 16, color: BLUE } },
+    border: {
+      top:    { style: BorderStyle.NONE,   size: 0,  color: "auto" },
+      bottom: { style: BorderStyle.NONE,   size: 0,  color: "auto" },
+      left:   { style: BorderStyle.SINGLE, size: 16, color: BLUE   },
+      right:  { style: BorderStyle.NONE,   size: 0,  color: "auto" },
+    },
     children: runs(text),
   });
 }
@@ -308,7 +330,12 @@ function blockquoteParagraph(text: string): Paragraph {
 function hrParagraph(): Paragraph {
   return new Paragraph({
     spacing: { before: 120, after: 120 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "B0BEC5" } },
+    border: {
+      top:    { style: BorderStyle.NONE,   size: 0, color: "auto" },
+      bottom: { style: BorderStyle.SINGLE, size: 6, color: "B0BEC5" },
+      left:   { style: BorderStyle.NONE,   size: 0, color: "auto" },
+      right:  { style: BorderStyle.NONE,   size: 0, color: "auto" },
+    },
     children: [new TextRun({ text: "" })],
   });
 }
