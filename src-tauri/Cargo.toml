@@ -1,6 +1,6 @@
 [package]
 name = "formassist"
-version = "0.2.63"
+version = "0.2.64"
 description = "FormAssist — Assistant pédagogique pour formatrice indépendante"
 authors = ["FormAssist"]
 edition = "2021"
@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"

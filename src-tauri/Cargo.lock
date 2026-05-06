@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "formassist"
-version = "0.2.57-beta"
+version = "0.2.63"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1235,6 +1235,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sqlx",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

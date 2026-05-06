@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft,
   Upload,
@@ -189,8 +190,11 @@ export function FormationDetail({ formation, onBack }: Props) {
         return;
       }
 
-      // Sauvegarder en base
-      await db.saveParsedReac(formation.id, parsed.ccps);
+      // Sauvegarde via commande Rust (connexion directe avec busy_timeout = 30s)
+      await invoke("save_reac", {
+        formationId: formation.id,
+        ccps: parsed.ccps,
+      });
 
       // Sauvegarder les activités-types
       if (parsed.activity_types) {

@@ -80,6 +80,8 @@ pub fn run() {
             commands::restore_backup,
             commands::list_backups,
             commands::export_database,
+            // REAC
+            commands::save_reac,
         ])
         .run(tauri::generate_context!())
         .expect("Erreur lors du lancement de FormAssist");
