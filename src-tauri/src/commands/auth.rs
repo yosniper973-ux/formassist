@@ -212,23 +212,26 @@ mod biometric_windows {
         use windows::Security::Credentials::UI::{
             UserConsentVerifier, UserConsentVerifierAvailability,
         };
-        use windows::core::HSTRING;
-        // RequestVerificationForWindowAsync est la bonne API sur Windows desktop
-        // Pour vérifier la disponibilité on utilise CheckAvailabilityAsync
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build();
-        match rt {
-            Err(_) => false,
-            Ok(rt) => rt.block_on(async {
-                match UserConsentVerifier::CheckAvailabilityAsync() {
-                    Err(_) => false,
-                    Ok(op) => match op.await {
-                        Ok(avail) => avail == UserConsentVerifierAvailability::Available,
-                        Err(_) => false,
-                    },
+        let op = match UserConsentVerifier::CheckAvailabilityAsync() {
+            Ok(op) => op,
+            Err(_) => return false,
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            match op.Status() {
+                Ok(windows_future::AsyncStatus::Completed) => {
+                    return op.GetResults()
+                        .map(|r| r == UserConsentVerifierAvailability::Available)
+                        .unwrap_or(false);
                 }
-            }),
+                Ok(windows_future::AsyncStatus::Started) => {
+                    if std::time::Instant::now() >= deadline {
+                        return false;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                _ => return false,
+            }
         }
     }
 
@@ -238,16 +241,26 @@ mod biometric_windows {
         };
         use windows::core::HSTRING;
         let reason_h = HSTRING::from(reason);
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
+        let op = UserConsentVerifier::RequestVerificationAsync(&reason_h)
             .map_err(|e| e.to_string())?;
-        let result = rt.block_on(async {
-            UserConsentVerifier::RequestVerificationAsync(&reason_h)
-                .map_err(|e| e.to_string())?
-                .await
-                .map_err(|e| e.to_string())
-        })?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let result = loop {
+            match op.Status() {
+                Ok(windows_future::AsyncStatus::Completed) => {
+                    break op.GetResults().map_err(|e| e.to_string())?;
+                }
+                Ok(windows_future::AsyncStatus::Started) => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err("Délai d'attente dépassé.".to_string());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Ok(windows_future::AsyncStatus::Canceled) => {
+                    return Err("Authentification annulée.".to_string());
+                }
+                _ => return Err("Authentification Windows Hello échouée.".to_string()),
+            }
+        };
         match result {
             UserConsentVerificationResult::Verified => Ok(()),
             UserConsentVerificationResult::Canceled => {
