@@ -6,6 +6,9 @@ import {
   BookOpen,
   FileText,
   RefreshCw,
+  Building2,
+  Calendar,
+  Clock,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
@@ -48,6 +51,31 @@ interface DashboardData {
   progressDistribution: LearnerProgressBucket[];
 }
 
+interface CentreSummary {
+  id: string;
+  name: string;
+  formationsCount: number;
+  learnersCount: number;
+  progressPct: number;
+}
+
+interface UpcomingSlot {
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+  formation_title: string;
+  centre_name: string;
+}
+
+interface GlobalData {
+  centresCount: number;
+  totalFormations: number;
+  totalLearners: number;
+  contentsThisMonth: number;
+  centres: CentreSummary[];
+  upcomingSlots: UpcomingSlot[];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Labels contenus
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +114,103 @@ export function DashboardPedagoPage() {
     recentContents: [],
     progressDistribution: [],
   });
+  const [globalData, setGlobalData] = useState<GlobalData | null>(null);
 
+  // ─── Chargement données globales (tous les centres) ───
+  const loadGlobalData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const today = new Date().toISOString().split("T")[0]!;
+      const in7days = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]!;
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+        .toISOString().split("T")[0]!;
+
+      const [centresRows, formationsRows, learnersRows, contentsRows] = await Promise.all([
+        db.query<{ total: number }>(
+          `SELECT COUNT(*) as total FROM centres WHERE archived_at IS NULL`,
+          [],
+        ),
+        db.query<{ total: number }>(
+          `SELECT COUNT(*) as total FROM formations WHERE archived_at IS NULL`,
+          [],
+        ),
+        db.query<{ total: number }>(
+          `SELECT COUNT(*) as total FROM learners l
+           JOIN groups g ON l.group_id = g.id
+           JOIN formations f ON g.formation_id = f.id
+           WHERE f.archived_at IS NULL AND g.archived_at IS NULL AND l.archived_at IS NULL`,
+          [],
+        ),
+        db.query<{ total: number }>(
+          `SELECT COUNT(*) as total FROM generated_contents gc
+           JOIN formations f ON gc.formation_id = f.id
+           WHERE gc.archived_at IS NULL AND f.archived_at IS NULL
+             AND gc.created_at >= ?`,
+          [monthStart],
+        ),
+      ]);
+
+      // Résumé par centre
+      const centreRows = await db.query<{
+        id: string; name: string;
+        formations_count: number; learners_count: number;
+        slots_done: number; slots_total: number;
+      }>(
+        `SELECT
+           c.id, c.name,
+           COUNT(DISTINCT f.id) as formations_count,
+           COUNT(DISTINCT l.id) as learners_count,
+           COALESCE(SUM(CASE WHEN s.date < ? THEN 1 ELSE 0 END), 0) as slots_done,
+           COALESCE(COUNT(s.id), 0) as slots_total
+         FROM centres c
+         LEFT JOIN formations f ON f.centre_id = c.id AND f.archived_at IS NULL
+         LEFT JOIN groups g ON g.formation_id = f.id AND g.archived_at IS NULL
+         LEFT JOIN learners l ON l.group_id = g.id AND l.archived_at IS NULL
+         LEFT JOIN slots s ON s.formation_id = f.id
+         WHERE c.archived_at IS NULL
+         GROUP BY c.id, c.name
+         ORDER BY c.name`,
+        [today],
+      );
+
+      const centres: CentreSummary[] = centreRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        formationsCount: r.formations_count,
+        learnersCount: r.learners_count,
+        progressPct: r.slots_total > 0 ? Math.round((r.slots_done / r.slots_total) * 100) : 0,
+      }));
+
+      // Prochaines sessions (7 jours)
+      const upcomingSlots = await db.query<UpcomingSlot>(
+        `SELECT s.date, s.start_time, s.end_time, f.title as formation_title, c.name as centre_name
+         FROM slots s
+         JOIN formations f ON s.formation_id = f.id
+         JOIN centres c ON f.centre_id = c.id
+         WHERE s.date >= ? AND s.date <= ? AND f.archived_at IS NULL
+         ORDER BY s.date, s.start_time
+         LIMIT 10`,
+        [today, in7days],
+      );
+
+      setGlobalData({
+        centresCount: centresRows[0]?.total ?? 0,
+        totalFormations: formationsRows[0]?.total ?? 0,
+        totalLearners: learnersRows[0]?.total ?? 0,
+        contentsThisMonth: contentsRows[0]?.total ?? 0,
+        centres,
+        upcomingSlots,
+      });
+    } catch (err) {
+      console.error("Erreur chargement dashboard global :", err);
+      setError("Impossible de charger les données globales.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ─── Chargement données par centre ───
   const loadData = useCallback(async () => {
     if (!activeCentreId) {
       setLoading(false);
@@ -99,10 +223,8 @@ export function DashboardPedagoPage() {
     try {
       const formations = (await db.getFormations(activeCentreId)) as unknown as Formation[];
 
-      // Nombre de formations actives
       const activeFormations = formations.length;
 
-      // Total apprenants (via groups)
       const learnerRows = await db.query<{ total: number }>(
         `SELECT COUNT(*) as total FROM learners l
          JOIN groups g ON l.group_id = g.id
@@ -113,7 +235,6 @@ export function DashboardPedagoPage() {
       );
       const totalLearners = learnerRows[0]?.total ?? 0;
 
-      // Couverture compétences (% de compétences ayant au moins un slot lié)
       const coverageRows = await db.query<{ total_comp: number; covered_comp: number }>(
         `SELECT
            COUNT(DISTINCT comp.id) as total_comp,
@@ -129,7 +250,6 @@ export function DashboardPedagoPage() {
       const coveredComp = coverageRows[0]?.covered_comp ?? 0;
       const competenceCoverage = totalComp > 0 ? Math.round((coveredComp / totalComp) * 100) : 0;
 
-      // Progression par formation (slots passés vs total)
       const today = new Date().toISOString().split("T")[0]!;
       const formationProgress: FormationProgress[] = [];
 
@@ -150,7 +270,6 @@ export function DashboardPedagoPage() {
         });
       }
 
-      // Contenus récents (les 8 derniers)
       const recentContents = await db.query<RecentContent>(
         `SELECT gc.id, gc.title, gc.content_type, f.title as formation_title, gc.created_at
          FROM generated_contents gc
@@ -161,8 +280,6 @@ export function DashboardPedagoPage() {
         [activeCentreId],
       );
 
-      // Distribution de la progression des apprenants (par tranches)
-      // On calcule le % de slots passés par formation, puis on groupe les apprenants
       const bucketRows = await db.query<{ formation_id: string; learner_count: number; slots_done: number; slots_total: number }>(
         `SELECT
            f.id as formation_id,
@@ -208,8 +325,12 @@ export function DashboardPedagoPage() {
   }, [activeCentreId]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (!activeCentreId) {
+      loadGlobalData();
+    } else {
+      loadData();
+    }
+  }, [activeCentreId, loadData, loadGlobalData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,16 +346,6 @@ export function DashboardPedagoPage() {
       window.removeEventListener("user-profile-updated", load);
     };
   }, []);
-
-  // ─── Pas de centre sélectionné ───
-  if (!activeCentreId) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
-        <GraduationCap className="h-10 w-10 opacity-30" />
-        <p>Sélectionne un centre pour voir le tableau de bord pédagogique.</p>
-      </div>
-    );
-  }
 
   // ─── Chargement ───
   if (loading) {
@@ -254,6 +365,164 @@ export function DashboardPedagoPage() {
     );
   }
 
+  // ─── Vue globale (tous les centres) ───
+  if (!activeCentreId && globalData) {
+    return (
+      <div className="space-y-6">
+        {/* En-tête */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="flex items-center gap-3 text-2xl font-bold text-foreground">
+              <span className="emoji-bounce text-[34px] leading-none drop-shadow-sm" aria-hidden>👋</span>
+              {getGreetingPrefix()}
+              {firstName ? ` ${firstName}` : ""}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Vue d'ensemble — tous les centres
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={loadGlobalData}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Actualiser
+          </Button>
+        </div>
+
+        {/* KPIs globaux */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            icon={<Building2 className="h-5 w-5" />}
+            label="Centres actifs"
+            value={globalData.centresCount.toString()}
+            color="#8b5cf6"
+          />
+          <StatCard
+            icon={<GraduationCap className="h-5 w-5" />}
+            label="Formations actives"
+            value={globalData.totalFormations.toString()}
+            color="#6366f1"
+          />
+          <StatCard
+            icon={<Users className="h-5 w-5" />}
+            label="Apprenants inscrits"
+            value={globalData.totalLearners.toString()}
+            color="#06b6d4"
+          />
+          <StatCard
+            icon={<FileText className="h-5 w-5" />}
+            label="Contenus ce mois"
+            value={globalData.contentsThisMonth.toString()}
+            color="#10b981"
+          />
+        </div>
+
+        {/* Résumé par centre */}
+        {globalData.centres.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-lg font-semibold text-foreground">
+              Résumé par centre
+            </h2>
+            <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase text-muted-foreground">
+                    <th className="px-4 py-3">Centre</th>
+                    <th className="px-4 py-3 text-center">Formations</th>
+                    <th className="px-4 py-3 text-center">Apprenants</th>
+                    <th className="px-4 py-3">Progression</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalData.centres.map((c, i) => (
+                    <tr
+                      key={c.id}
+                      className={i % 2 === 0 ? "bg-card" : "bg-muted/20"}
+                    >
+                      <td className="px-4 py-3 font-medium text-foreground">{c.name}</td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge variant="secondary">{c.formationsCount}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="font-medium">{c.learnersCount}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-full max-w-[120px] overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${c.progressPct}%`,
+                                backgroundColor:
+                                  c.progressPct < 30 ? "#ef4444"
+                                  : c.progressPct < 70 ? "#eab308"
+                                  : "#22c55e",
+                              }}
+                            />
+                          </div>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {c.progressPct}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* Prochaines sessions */}
+        {globalData.upcomingSlots.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-lg font-semibold text-foreground">
+              Prochaines sessions (7 jours)
+            </h2>
+            <div className="space-y-2">
+              {globalData.upcomingSlots.map((s, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 shadow-sm"
+                >
+                  <div className="flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {s.formation_title}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {s.centre_name}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-medium text-foreground">
+                      {formatDate(s.date)}
+                    </p>
+                    {s.start_time && (
+                      <p className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {s.start_time}{s.end_time ? ` – ${s.end_time}` : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Aucune donnée */}
+        {globalData.centresCount === 0 && (
+          <div className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
+            <Building2 className="h-10 w-10 opacity-30" />
+            <p>Aucun centre configuré. Commence par en créer un !</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Vue par centre ───
   return (
     <div className="space-y-6">
       {/* En-tête */}
@@ -308,10 +577,7 @@ export function DashboardPedagoPage() {
                 ? Math.round((fp.slotsDone / fp.slotsPlanned) * 100)
                 : 0;
               return (
-                <div
-                  key={fp.id}
-                  className="rounded-xl border bg-card p-4 shadow-sm"
-                >
+                <div key={fp.id} className="rounded-xl border bg-card p-4 shadow-sm">
                   <div className="flex items-center justify-between">
                     <h3 className="truncate text-sm font-semibold text-foreground">
                       {fp.title}
@@ -323,7 +589,6 @@ export function DashboardPedagoPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {fp.slotsDone} / {fp.slotsPlanned} créneaux réalisés
                   </p>
-                  {/* Barre de progression */}
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full transition-all duration-500"
@@ -443,9 +708,7 @@ function BarChart({ buckets }: { buckets: LearnerProgressBucket[] }) {
         const heightPct = max > 0 ? (b.count / max) * 100 : 0;
         return (
           <div key={b.label} className="flex flex-1 flex-col items-center gap-1">
-            <span className="text-xs font-medium text-foreground">
-              {b.count}
-            </span>
+            <span className="text-xs font-medium text-foreground">{b.count}</span>
             <div
               className="w-full rounded-t-md transition-all duration-500"
               style={{
