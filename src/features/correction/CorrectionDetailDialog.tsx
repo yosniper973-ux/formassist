@@ -36,6 +36,12 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
     loadCorrection();
   }, [correctionId]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   async function loadCorrection() {
     setLoading(true);
     try {
@@ -345,8 +351,13 @@ Bon courage pour la suite.`;
                   )}
                 </div>
               </div>
-              <button onClick={onClose} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted" aria-label="Fermer">
-                <X className="h-5 w-5" />
+              <button
+                onClick={onClose}
+                className="ml-3 flex shrink-0 items-center gap-1.5 rounded-md border bg-muted px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+                aria-label="Fermer"
+              >
+                <X className="h-4 w-4" />
+                Fermer
               </button>
             </div>
 
