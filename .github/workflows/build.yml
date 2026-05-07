@@ -188,3 +188,64 @@ jobs:
           name: formassist-macos-dmg
           path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: warn
+
+  fix-latest-json:
+    # S'exécute après les deux builds pour reconstruire latest.json
+    # avec les bonnes signatures des .sig files réels (évite la désync
+    # quand Mac et Windows tournent en parallèle et s'écrasent mutuellement).
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Reconstruire latest.json depuis les .sig files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAG="v${VERSION}"
+          echo "Tag : $TAG"
+
+          # Télécharger latest.json et tous les .sig
+          gh release download "$TAG" --pattern "latest.json" --pattern "*.sig" -D /tmp/sigs/ --clobber
+
+          python3 << 'PYEOF'
+          import base64, json, glob, os
+
+          sig_dir = "/tmp/sigs"
+          with open(f"{sig_dir}/latest.json") as f:
+              latest = json.load(f)
+
+          def read_sig(path):
+              with open(path) as f:
+                  return f.read().strip()
+
+          mac_sig  = read_sig(f"{sig_dir}/FormAssist_universal.app.tar.gz.sig")
+          msi_sigs = glob.glob(f"{sig_dir}/*_fr-FR.msi.sig")
+          exe_sigs = glob.glob(f"{sig_dir}/*-setup.exe.sig")
+          msi_sig  = read_sig(msi_sigs[0]) if msi_sigs else None
+          nsis_sig = read_sig(exe_sigs[0]) if exe_sigs else None
+
+          for key in ['darwin-aarch64', 'darwin-x86_64', 'darwin-aarch64-app', 'darwin-x86_64-app']:
+              if key in latest['platforms']:
+                  latest['platforms'][key]['signature'] = mac_sig
+
+          if msi_sig:
+              for key in ['windows-x86_64', 'windows-x86_64-msi']:
+                  if key in latest['platforms']:
+                      latest['platforms'][key]['signature'] = msi_sig
+
+          if nsis_sig:
+              if 'windows-x86_64-nsis' in latest['platforms']:
+                  latest['platforms']['windows-x86_64-nsis']['signature'] = nsis_sig
+
+          out = f"{sig_dir}/latest.json"
+          with open(out, 'w') as f:
+              json.dump(latest, f, indent=2, ensure_ascii=False)
+
+          print("latest.json reconstruit avec succès.")
+          PYEOF
+
+          gh release upload "$TAG" /tmp/sigs/latest.json --clobber
+          echo "latest.json uploadé."
