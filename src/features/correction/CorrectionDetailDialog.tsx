@@ -48,7 +48,7 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
       [activeCentreId],
     ).then((rows) => {
       const r = rows[0];
-      setSenderEmail(r?.smtp_from_email ?? r?.email ?? "");
+      setSenderEmail(r?.smtp_from_email ?? "");
     }).catch(() => {});
   }, [activeCentreId]);
 
