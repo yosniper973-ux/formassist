@@ -527,7 +527,7 @@ function ChartCard({
         {data.map((d) => {
           const heightPct = (d.total / max) * 100;
           return (
-            <div key={d.month} className="flex flex-1 flex-col items-center gap-1">
+            <div key={d.label} className="flex flex-1 flex-col items-center gap-1">
               {d.total > 0 && (
                 <span className="text-[10px] font-medium text-foreground leading-none">
                   {fmt(d.total)}
