@@ -217,10 +217,10 @@ export function AppShell() {
           className="flex-1 overflow-y-auto p-6 transition-[background] duration-500"
           style={{ background: mainBackground }}
         >
-          {/* page-flip-perspective ici (pas sur main) — évite que position:fixed
-              des dialogs soit piégé par la perspective de main */}
-          <div className="page-flip-perspective">
           {/* Wrapper qui se "tourne" comme une page de livre à chaque navigation */}
+          {/* perspective() est intégré dans le transform de l'animation — */}
+          {/* aucun ancêtre ne porte la propriété perspective, donc position:fixed */}
+          {/* des dialogs est bien relatif au viewport */}
           <div key={location.pathname} className="page-flip">
             {/* Bandeau d'aide contextuel (première visite seulement) */}
             {routeHelp && (
@@ -243,7 +243,6 @@ export function AppShell() {
             )}
 
             <Outlet />
-          </div>
           </div>
         </main>
       </div>
