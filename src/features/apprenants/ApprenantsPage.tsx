@@ -9,6 +9,7 @@ import {
   Trash2,
   GraduationCap,
   BarChart3,
+  X,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
@@ -606,7 +607,10 @@ function CsvImportDialog({
       <div className="w-full max-w-lg rounded-xl bg-card shadow-xl max-h-[85vh] flex flex-col">
         <div className="border-b px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Importer des apprenants (CSV)</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
+          <button onClick={onClose} className="flex items-center gap-1.5 rounded-md border bg-muted px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent" aria-label="Fermer">
+            <X className="h-4 w-4" />
+            Fermer
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto space-y-4 p-6">
           <div className="space-y-1.5">

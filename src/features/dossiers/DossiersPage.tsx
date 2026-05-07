@@ -914,8 +914,9 @@ function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () =>
               )}
             </div>
           </div>
-          <button onClick={onClose} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
-            <X className="h-5 w-5" />
+          <button onClick={onClose} className="ml-3 flex shrink-0 items-center gap-1.5 rounded-md border bg-muted px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent" aria-label="Fermer">
+            <X className="h-4 w-4" />
+            Fermer
           </button>
         </div>
 
