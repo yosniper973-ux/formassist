@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Upload, FileText, ClipboardPaste, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,7 +159,7 @@ export function ImportContentDialog({ onClose, onImported }: Props) {
   const contentReady = method === "paste" ? pastedText.trim() : extractedText.trim();
   const canSave = !!formationId && !!title.trim() && !!contentReady && !fileLoading;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-background rounded-xl shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
         {/* Header */}
@@ -310,6 +311,7 @@ export function ImportContentDialog({ onClose, onImported }: Props) {
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

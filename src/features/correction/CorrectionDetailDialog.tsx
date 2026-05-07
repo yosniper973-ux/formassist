@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Mail, Download, Loader2, Check, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
@@ -303,7 +304,7 @@ Bon courage pour la suite.`;
     return "text-red-600";
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div
         className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl bg-card shadow-xl flex flex-col"
@@ -510,7 +511,8 @@ Bon courage pour la suite.`;
           {toast}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 

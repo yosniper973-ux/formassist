@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, GraduationCap, Copy } from "lucide-react";
 import { db } from "@/lib/db";
 import type { Formation, Centre } from "@/types";
@@ -111,7 +112,7 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-lg rounded-xl bg-card shadow-xl">
         {/* En-tête */}
@@ -235,6 +236,7 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

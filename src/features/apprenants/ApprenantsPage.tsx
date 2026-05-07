@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus,
   Users,
@@ -374,7 +375,7 @@ function GroupFormDialog({
     onSaved();
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-sm rounded-xl bg-card shadow-xl p-6">
         <h2 className="mb-4 text-lg font-semibold">
@@ -408,7 +409,8 @@ function GroupFormDialog({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -465,7 +467,7 @@ function LearnerFormDialog({
     onSaved();
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-lg rounded-xl bg-card shadow-xl max-h-[85vh] flex flex-col">
         <div className="border-b px-6 py-4">
@@ -533,7 +535,8 @@ function LearnerFormDialog({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -602,7 +605,7 @@ function CsvImportDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-lg rounded-xl bg-card shadow-xl max-h-[85vh] flex flex-col">
         <div className="border-b px-6 py-4 flex items-center justify-between">
@@ -664,6 +667,7 @@ function CsvImportDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

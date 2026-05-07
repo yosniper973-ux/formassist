@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   ArrowLeft,
@@ -838,7 +839,7 @@ function Shell({
   subtitle?: string;
   onBack?: () => void;
 }) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl bg-background shadow-xl">
         <div className="flex items-center justify-between border-b px-5 py-3">
@@ -873,7 +874,8 @@ function Shell({
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

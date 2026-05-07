@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, FileCheck, TrendingUp, Mail, Phone, ChevronRight, Loader2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { db } from "@/lib/db";
@@ -69,7 +70,7 @@ export function LearnerDetailDialog({ learner, onClose }: Props) {
       - (gradedCorrections[0]!.grade! / gradedCorrections[0]!.max_grade!) * 20
     : null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div
         className="w-full max-w-4xl max-h-[92vh] overflow-hidden rounded-xl bg-card shadow-xl flex flex-col"
@@ -232,7 +233,8 @@ export function LearnerDetailDialog({ learner, onClose }: Props) {
           onClose={() => setOpenCorrectionId(null)}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 

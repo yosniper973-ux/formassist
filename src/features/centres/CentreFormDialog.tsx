@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Building2,
@@ -227,7 +228,7 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
     ? form.deroulement_template_path.split(/[/\\]/).pop() ?? form.deroulement_template_path
     : "";
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="flex w-full max-w-2xl flex-col rounded-xl bg-card shadow-xl max-h-[90vh]">
         {/* En-tête */}
@@ -670,6 +671,7 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

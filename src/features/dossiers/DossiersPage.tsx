@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   FolderOpen,
   History,
@@ -891,7 +892,7 @@ function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () =>
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl bg-card shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -963,6 +964,7 @@ function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () =>
           onClose={() => setDlToast(null)}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

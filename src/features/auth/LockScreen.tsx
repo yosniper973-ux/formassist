@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 async function hashAnswer(answer: string): Promise<string> {
   const encoded = new TextEncoder().encode(answer);
@@ -370,7 +371,7 @@ function RecoveryDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <Card className="w-full max-w-sm">
         <CardHeader>
@@ -437,6 +438,7 @@ function RecoveryDialog({
           )}
         </CardContent>
       </Card>
-    </div>
+    </div>,
+    document.body
   );
 }

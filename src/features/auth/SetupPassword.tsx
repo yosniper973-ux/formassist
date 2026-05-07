@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 async function hashAnswer(answer: string): Promise<string> {
   const encoded = new TextEncoder().encode(answer);
@@ -375,7 +376,7 @@ function BiometricEnrollDialog({
   const isWindows = /Win/i.test(navigator.platform);
   const displayLabel = isWindows ? "Windows Hello" : "Touch ID";
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
@@ -403,6 +404,7 @@ function BiometricEnrollDialog({
           </button>
         </CardContent>
       </Card>
-    </div>
+    </div>,
+    document.body
   );
 }

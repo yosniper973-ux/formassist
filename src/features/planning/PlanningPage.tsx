@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus,
   ChevronLeft,
@@ -1406,7 +1407,7 @@ function SlotFormDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className="bg-card border border-border rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6"
@@ -1628,7 +1629,8 @@ function SlotFormDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1842,7 +1844,7 @@ function ImportDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className="bg-card border border-border rounded-xl shadow-xl w-full max-w-xl max-h-[80vh] overflow-y-auto p-6"
@@ -2059,7 +2061,8 @@ function ImportDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -2094,7 +2097,7 @@ function SlotInfoDialog({
     (code) => !competences.some((c) => normalizeCode(c.code) === code),
   );
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
@@ -2254,6 +2257,7 @@ function SlotInfoDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
