@@ -61,6 +61,12 @@ pub fn run() {
             commands::verify_password,
             commands::lock_app,
             commands::is_unlocked,
+            commands::save_key_to_keychain,
+            commands::load_key_from_keychain,
+            commands::delete_key_from_keychain,
+            commands::is_biometric_enrolled,
+            commands::is_biometric_available,
+            commands::authenticate_biometric,
             // Crypto
             commands::encrypt_value,
             commands::decrypt_value,

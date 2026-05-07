@@ -7,7 +7,7 @@ async function hashAnswer(answer: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
-import { Eye, EyeOff, Lock, Sparkles, AlertTriangle } from "lucide-react";
+import { Eye, EyeOff, Lock, Fingerprint, Sparkles, AlertTriangle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
@@ -33,12 +33,28 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [showRecovery, setShowRecovery] = useState(false);
   const [securityMode, setSecurityMode] = useState<"max" | "moderate">("max");
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    // Focus auto sur le champ
+  async function tryBiometric() {
+    setBiometricLoading(true);
+    try {
+      await invoke("authenticate_biometric", { reason: "Déverrouiller FormAssist" });
+      const loaded = await invoke<boolean>("load_key_from_keychain");
+      if (loaded) {
+        onUnlocked();
+        return;
+      }
+    } catch {
+      // Annulé ou échoué → formulaire mot de passe
+    } finally {
+      setBiometricLoading(false);
+    }
     inputRef.current?.focus();
+  }
 
+  useEffect(() => {
     // Charger le mode de sécurité configuré
     db.getConfig("password_security_mode").then((mode) => {
       if (mode === "moderate") setSecurityMode("moderate");
@@ -56,7 +72,28 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
     db.getConfig("failed_attempts").then((val) => {
       if (val) setAttempts(parseInt(val, 10));
     });
-  }, []);
+
+    // Déclenchement automatique de la biométrie si activée
+    async function initBiometric() {
+      try {
+        const enrolled = await invoke<boolean>("is_biometric_enrolled");
+        if (!enrolled) {
+          inputRef.current?.focus();
+          return;
+        }
+        const available = await invoke<boolean>("is_biometric_available");
+        if (available) {
+          setBiometricAvailable(true);
+          await tryBiometric();
+        } else {
+          inputRef.current?.focus();
+        }
+      } catch {
+        inputRef.current?.focus();
+      }
+    }
+    initBiometric();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Compte à rebours du verrouillage
   useEffect(() => {
@@ -156,7 +193,14 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
           </CardHeader>
 
           <CardContent>
-            {isLocked ? (
+            {biometricLoading ? (
+              <div className="flex flex-col items-center gap-4 py-4">
+                <Fingerprint className="h-12 w-12 animate-pulse text-primary" />
+                <p className="text-sm text-muted-foreground">
+                  Pose ton doigt sur le capteur…
+                </p>
+              </div>
+            ) : isLocked ? (
               <div className="space-y-4">
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
@@ -204,6 +248,17 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
                 <Button type="submit" className="w-full" disabled={!password || loading}>
                   {loading ? "Vérification…" : "Déverrouiller"}
                 </Button>
+
+                {biometricAvailable && (
+                  <button
+                    type="button"
+                    onClick={tryBiometric}
+                    className="flex w-full items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    <Fingerprint className="h-4 w-4" />
+                    Utiliser Touch ID / Windows Hello
+                  </button>
+                )}
 
                 {securityMode === "moderate" && (
                   <button

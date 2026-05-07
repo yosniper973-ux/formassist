@@ -7,7 +7,7 @@ async function hashAnswer(answer: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
-import { Eye, EyeOff, Lock, ShieldCheck, ShieldAlert, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Fingerprint, Lock, ShieldCheck, ShieldAlert, Sparkles } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
 import { encryptValue } from "@/lib/crypto";
@@ -67,6 +67,7 @@ export function SetupPassword({ onComplete }: SetupPasswordProps) {
   const [recoveryAnswer, setRecoveryAnswer] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [biometricStep, setBiometricStep] = useState<{ enrolling: boolean } | null>(null);
 
   const strength = evaluatePassword(password);
   const passwordsMatch = password === confirm && confirm.length > 0;
@@ -112,6 +113,17 @@ export function SetupPassword({ onComplete }: SetupPasswordProps) {
         const encryptedKey = await encryptValue(pendingApiKey);
         await db.setConfig("api_key", encryptedKey, true);
         await db.deleteConfig("api_key_pending");
+      }
+
+      // Proposer la biométrie si disponible
+      try {
+        const available = await invoke<boolean>("is_biometric_available");
+        if (available) {
+          setBiometricStep({ enrolling: false });
+          return; // onComplete sera appelé depuis le dialogue biométrique
+        }
+      } catch {
+        // Biométrie non supportée ou erreur → on continue normalement
       }
 
       onComplete();
@@ -328,6 +340,69 @@ export function SetupPassword({ onComplete }: SetupPasswordProps) {
           Tes données restent 100% sur ton ordinateur. Aucune transmission à l'extérieur.
         </p>
       </div>
+
+      {/* Dialogue d'activation de la biométrie */}
+      {biometricStep && (
+        <BiometricEnrollDialog
+          enrolling={biometricStep.enrolling}
+          onEnroll={async () => {
+            setBiometricStep({ enrolling: true });
+            try {
+              await invoke("authenticate_biometric", { reason: "Activer Touch ID pour FormAssist" });
+              await invoke("save_key_to_keychain");
+              await db.setConfig("biometric_enabled", "1");
+            } catch {
+              // Annulé → on continue sans biométrie
+            }
+            onComplete();
+          }}
+          onSkip={onComplete}
+        />
+      )}
+    </div>
+  );
+}
+
+function BiometricEnrollDialog({
+  enrolling,
+  onEnroll,
+  onSkip,
+}: {
+  enrolling: boolean;
+  onEnroll: () => void;
+  onSkip: () => void;
+}) {
+  const isWindows = /Win/i.test(navigator.platform);
+  const displayLabel = isWindows ? "Windows Hello" : "Touch ID";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <div className="mb-3 flex justify-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+              <Fingerprint className="h-7 w-7 text-primary" />
+            </div>
+          </div>
+          <CardTitle>Activer {displayLabel} ?</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-center text-sm text-muted-foreground">
+            Tu pourras déverrouiller FormAssist en posant le doigt sur le capteur, sans
+            taper ton mot de passe.
+          </p>
+          <Button className="w-full" onClick={onEnroll} disabled={enrolling}>
+            {enrolling ? "Activation…" : `Activer ${displayLabel}`}
+          </Button>
+          <button
+            type="button"
+            onClick={onSkip}
+            className="w-full text-center text-sm text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Plus tard
+          </button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

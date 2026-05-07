@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { Eye, EyeOff, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User } from "lucide-react";
+import { Eye, EyeOff, Fingerprint, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User } from "lucide-react";
 import { db } from "@/lib/db";
 import { encryptValue, decryptValue } from "@/lib/crypto";
 import { testConnection } from "@/lib/claude";
@@ -61,6 +61,12 @@ export function SettingsPage() {
   // Verrouillage
   const [autoLockMinutes, setAutoLockMinutes] = useState("15");
 
+  // Biométrie
+  const [biometricEnrolled, setBiometricEnrolled] = useState(false);
+  const [biometryLabel, setBiometryLabel] = useState("Biométrie");
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricStatus, setBiometricStatus] = useState<"idle" | "working" | "ok" | "error">("idle");
+
   // App info
   const [appVersion, setAppVersion] = useState("");
 
@@ -100,9 +106,46 @@ export function SettingsPage() {
       // Charger les overrides personnalisés
       const overrides = await db.getConfig("model_overrides");
       if (overrides) setCustomOverrides(JSON.parse(overrides));
+
+      // État biométrique
+      try {
+        const available = await invoke<boolean>("is_biometric_available");
+        setBiometricAvailable(available);
+        if (available) {
+          const isWindows = /Win/i.test(navigator.platform);
+          setBiometryLabel(isWindows ? "Windows Hello" : "Touch ID");
+        }
+        const enrolled = await invoke<boolean>("is_biometric_enrolled");
+        setBiometricEnrolled(enrolled);
+      } catch {
+        setBiometricAvailable(false);
+      }
     } catch (err) {
       console.error("Erreur chargement paramètres :", err);
     }
+  }
+
+  async function toggleBiometric() {
+    setBiometricStatus("working");
+    try {
+      if (biometricEnrolled) {
+        // Désactiver
+        await invoke("delete_key_from_keychain");
+        await db.setConfig("biometric_enabled", "0");
+        setBiometricEnrolled(false);
+        setBiometricStatus("ok");
+      } else {
+        // Activer : déclencher l'auth biométrique d'abord
+        await invoke("authenticate_biometric", { reason: `Activer ${biometryLabel} pour FormAssist` });
+        await invoke("save_key_to_keychain");
+        await db.setConfig("biometric_enabled", "1");
+        setBiometricEnrolled(true);
+        setBiometricStatus("ok");
+      }
+    } catch {
+      setBiometricStatus("error");
+    }
+    setTimeout(() => setBiometricStatus("idle"), 3000);
   }
 
   async function testApiKey() {
@@ -493,6 +536,43 @@ export function SettingsPage() {
                   <li>• Profil de style pédagogique</li>
                 </ul>
               </div>
+
+              {biometricAvailable && (
+                <>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <Fingerprint className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm">Déverrouillage {biometryLabel}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {biometricEnrolled
+                          ? `${biometryLabel} activé — pose le doigt pour ouvrir l'app.`
+                          : `Ouvre l'app sans mot de passe grâce à ${biometryLabel}.`}
+                      </p>
+                    </div>
+                    <Button
+                      variant={biometricEnrolled ? "destructive" : "default"}
+                      size="sm"
+                      onClick={toggleBiometric}
+                      disabled={biometricStatus === "working"}
+                    >
+                      {biometricStatus === "working"
+                        ? "…"
+                        : biometricStatus === "ok"
+                          ? (biometricEnrolled ? "Activé ✓" : "Désactivé ✓")
+                          : biometricStatus === "error"
+                            ? "Erreur"
+                            : biometricEnrolled
+                              ? `Désactiver`
+                              : `Activer`}
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              <Separator />
 
               <Button onClick={saveLockSettings} disabled={saveStatus === "saving"}>
                 Enregistrer
