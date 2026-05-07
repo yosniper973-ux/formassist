@@ -46,6 +46,10 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
         onUnlocked();
         return;
       }
+      // Clé introuvable dans le trousseau → désinscrire pour éviter une boucle
+      await db.setConfig("biometric_enabled", "0");
+      setBiometricAvailable(false);
+      setError("Clé biométrique introuvable. Réactive Touch ID dans Paramètres > Sécurité.");
     } catch {
       // Annulé ou échoué → formulaire mot de passe
     } finally {
@@ -76,8 +80,10 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
     // Déclenchement automatique de la biométrie si activée
     async function initBiometric() {
       try {
-        const enrolled = await invoke<boolean>("is_biometric_enrolled");
-        if (!enrolled) {
+        // Utiliser le flag DB plutôt que le trousseau pour éviter un dialogue
+        // de consentement macOS caché derrière la fenêtre au démarrage.
+        const enabled = await db.getConfig("biometric_enabled");
+        if (enabled !== "1") {
           inputRef.current?.focus();
           return;
         }

@@ -115,8 +115,8 @@ export function SettingsPage() {
           const isWindows = /Win/i.test(navigator.platform);
           setBiometryLabel(isWindows ? "Windows Hello" : "Touch ID");
         }
-        const enrolled = await invoke<boolean>("is_biometric_enrolled");
-        setBiometricEnrolled(enrolled);
+        const enabled = await db.getConfig("biometric_enabled");
+        setBiometricEnrolled(enabled === "1");
       } catch {
         setBiometricAvailable(false);
       }
