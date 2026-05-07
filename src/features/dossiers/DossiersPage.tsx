@@ -17,6 +17,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { openCompose } from "@/lib/email-compose";
 import { request as claudeRequest } from "@/lib/claude";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
 import { useAppStore } from "@/stores/appStore";
@@ -81,6 +82,7 @@ async function fileToBase64(file: File): Promise<string> {
 
 export function DossiersPage() {
   const { activeCentreId, addApiCost } = useAppStore();
+  const [senderEmail, setSenderEmail] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("new");
 
   // Cascading selectors
@@ -119,7 +121,18 @@ export function DossiersPage() {
 
   // ─── Loading ───────────────────────────────────────────────
 
-  useEffect(() => { loadFormations(); }, [activeCentreId]);
+  useEffect(() => {
+    loadFormations();
+    if (activeCentreId) {
+      db.query<{ smtp_from_email: string | null; email: string | null }>(
+        "SELECT smtp_from_email, email FROM centres WHERE id = ?",
+        [activeCentreId],
+      ).then((rows) => {
+        const r = rows[0];
+        setSenderEmail(r?.smtp_from_email ?? r?.email ?? "");
+      }).catch(() => {});
+    }
+  }, [activeCentreId]);
   useEffect(() => { if (selectedFormationId) { loadGroups(); loadRcreStatus(); } else { setGroups([]); setSelectedGroupId(""); setRcreStatus("none"); } }, [selectedFormationId]);
   useEffect(() => { if (selectedGroupId) loadLearners(); else { setLearners([]); setSelectedLearnerId(""); } }, [selectedGroupId]);
   useEffect(() => { if (activeTab === "history") loadHistory(); }, [activeTab]);
@@ -373,9 +386,7 @@ export function DossiersPage() {
 
     const subject = `Analyse de votre ${dossierLabel(dossierType ?? "dp")}`;
     const body = `Bonjour ${learner.first_name},\n\nVeuillez trouver ci-dessous le retour sur votre ${dossierLabel(dossierType ?? "dp")}.\n\n${feedback.replace(/[#*`]/g, "").slice(0, 1800)}\n\nBon courage pour la suite.`;
-    const mailto = `mailto:${encodeURIComponent(learner.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailto;
-
+    await openCompose(senderEmail, learner.email, subject, body);
     await db.markDossierSent(savedId);
     setEmailSent(true);
     showToast(`Email ouvert pour ${learner.first_name} ${learner.last_name}`);
@@ -492,6 +503,7 @@ export function DossiersPage() {
           openDetailId={openDetailId}
           onOpenDetail={setOpenDetailId}
           onDeleted={loadHistory}
+          senderEmail={senderEmail}
         />
       )}
 
@@ -757,13 +769,14 @@ function NewAnalysisTab({
 // ─── Onglet Historique ────────────────────────────────────────────────────────
 
 function HistoryTab({
-  history, loading, openDetailId, onOpenDetail, onDeleted,
+  history, loading, openDetailId, onOpenDetail, onDeleted, senderEmail,
 }: {
   history: DossierRow[];
   loading: boolean;
   openDetailId: string | null;
   onOpenDetail: (id: string | null) => void;
   onDeleted: () => void;
+  senderEmail?: string;
 }) {
   const [toDelete, setToDelete] = useState<DossierRow | null>(null);
   const [detail, setDetail] = useState<DossierRow | null>(null);
@@ -834,7 +847,7 @@ function HistoryTab({
 
       {/* Détail */}
       {detail && (
-        <DossierDetailDialog row={detail} onClose={() => onOpenDetail(null)} />
+        <DossierDetailDialog row={detail} onClose={() => onOpenDetail(null)} senderEmail={senderEmail} />
       )}
 
       <ConfirmDialog
@@ -856,7 +869,7 @@ function HistoryTab({
 
 // ─── Dialog Détail ────────────────────────────────────────────────────────────
 
-function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () => void }) {
+function DossierDetailDialog({ row, onClose, senderEmail = "" }: { row: DossierRow; onClose: () => void; senderEmail?: string }) {
   const [sending, setSending] = useState(false);
   const [exportToast, setExportToast] = useState<string | null>(null);
   const [dlToast, setDlToast] = useState<{ path: string; name: string } | null>(null);
@@ -868,8 +881,7 @@ function DossierDetailDialog({ row, onClose }: { row: DossierRow; onClose: () =>
     try {
       const subject = `Analyse de votre ${dossierLabel(row.dossier_type)}`;
       const body = `Bonjour ${row.learner_first_name},\n\nVeuillez trouver ci-dessous le retour sur votre ${dossierLabel(row.dossier_type)}.\n\n${row.feedback_markdown.replace(/[#*`]/g, "").slice(0, 1800)}\n\nBon courage pour la suite.`;
-      const mailto = `mailto:${encodeURIComponent(row.learner_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      window.location.href = mailto;
+      await openCompose(senderEmail, row.learner_email, subject, body);
       await db.markDossierSent(row.id);
       setSent(true);
     } finally {

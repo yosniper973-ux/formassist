@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { open as openUrl } from "@tauri-apps/plugin-shell";
+import { openCompose } from "@/lib/email-compose";
 import {
   Send,
   Printer,
@@ -129,20 +129,6 @@ export function DocumentsPage() {
     }
   }
 
-  function getComposeUrl(senderEmail: string, to: string, subj: string, body: string): string {
-    const domain = senderEmail.split("@")[1]?.toLowerCase() ?? "";
-    const t = encodeURIComponent(to);
-    const s = encodeURIComponent(subj);
-    const b = encodeURIComponent(body);
-    if (domain === "gmail.com" || domain === "googlemail.com") {
-      return `https://mail.google.com/mail/?view=cm&to=${t}&su=${s}&body=${b}`;
-    }
-    if (["hotmail.com","hotmail.fr","outlook.com","outlook.fr","live.com","live.fr","msn.com"].includes(domain)) {
-      return `https://outlook.live.com/mail/0/deeplink/compose?to=${t}&subject=${s}&body=${b}`;
-    }
-    return `mailto:${t}?subject=${s}&body=${b}`;
-  }
-
   async function handleSendEmail() {
     if (!recipient || !subject || !bodyText || !selectedCentreId) return;
 
@@ -162,8 +148,7 @@ export function DocumentsPage() {
     setSendResult(null);
 
     try {
-      const url = getComposeUrl(senderEmail, recipient, subject, bodyText);
-      await openUrl(url);
+      await openCompose(senderEmail, recipient, subject, bodyText);
 
       await db.execute(
         `INSERT INTO email_log (id, centre_id, recipient, subject, body_preview, attachments, status, created_at)

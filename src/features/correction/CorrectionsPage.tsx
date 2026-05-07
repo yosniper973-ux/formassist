@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
+import { openCompose } from "@/lib/email-compose";
 import { request as claudeRequest } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Group, Learner, Correction, CriteriaGrid, GeneratedContent } from "@/types";
@@ -80,6 +81,7 @@ function labelForContentType(t: string): string {
 
 export function CorrectionsPage() {
   const { activeCentreId, addApiCost } = useAppStore();
+  const [senderEmail, setSenderEmail] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("new");
 
   // Cascading selectors
@@ -124,6 +126,15 @@ export function CorrectionsPage() {
 
   useEffect(() => {
     loadFormations();
+    if (activeCentreId) {
+      db.query<{ smtp_from_email: string | null; email: string | null }>(
+        "SELECT smtp_from_email, email FROM centres WHERE id = ?",
+        [activeCentreId],
+      ).then((rows) => {
+        const r = rows[0];
+        setSenderEmail(r?.smtp_from_email ?? r?.email ?? "");
+      }).catch(() => {});
+    }
   }, [activeCentreId]);
 
   useEffect(() => {
@@ -608,6 +619,7 @@ ${instructions}`;
           savedCorrectionId={savedCorrectionId}
           gradeColor={gradeColor}
           gradeBg={gradeBg}
+          senderEmail={senderEmail}
         />
       ) : (
         <HistoryTab
@@ -653,6 +665,7 @@ function NewCorrectionTab({
   savedCorrectionId,
   gradeColor,
   gradeBg,
+  senderEmail,
 }: {
   formations: Formation[];
   groups: Group[];
@@ -689,6 +702,7 @@ function NewCorrectionTab({
   savedCorrectionId: string | null;
   gradeColor: (grade: number, max: number) => string;
   gradeBg: (grade: number, max: number) => string;
+  senderEmail: string;
 }) {
   const isGroupCorrection = selectedLearnerIds.length > 1;
   const selectedLearners = learners.filter((l) => selectedLearnerIds.includes(l.id));
@@ -726,9 +740,7 @@ function NewCorrectionTab({
 
     const body = `Bonjour ${learner.first_name},\n\nVoici le retour sur ${contentTitle ?? "ton exercice"}.\n\n${noteLine}${gridLines}${generalComment}\n\nBon courage pour la suite.`;
     const trimmed = body.length > 1800 ? body.slice(0, 1800) + "…" : body;
-    const mailto = `mailto:${encodeURIComponent(learner.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(trimmed)}`;
-
-    window.location.href = mailto;
+    await openCompose(senderEmail, learner.email, subject, trimmed);
 
     if (savedCorrectionId) {
       const now = new Date().toISOString().replace("T", " ").substring(0, 19);
