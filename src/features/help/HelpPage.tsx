@@ -314,7 +314,7 @@ const SECTIONS: Section[] = [
         <div className="space-y-2">
           <p className="font-semibold">Prérequis :</p>
           <p className="text-muted-foreground">
-            Configure d'abord ton compte email dans <strong>Paramètres → Sécurité</strong> (serveur SMTP, identifiants). Sans cette configuration, l'envoi ne fonctionnera pas.
+            Configure d'abord ton compte email dans <strong>Centres → modifier le centre → onglet Email</strong> (serveur SMTP, identifiants). Sans cette configuration, l'envoi ne fonctionnera pas.
           </p>
         </div>
         <div className="space-y-2">

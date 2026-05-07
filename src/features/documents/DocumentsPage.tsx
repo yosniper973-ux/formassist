@@ -138,7 +138,7 @@ export function DocumentsPage() {
     if (!centre.smtp_host || !centre.smtp_user || !centre.smtp_password) {
       setSendResult({
         ok: false,
-        msg: "Configure les paramètres SMTP du centre dans la page Centres > onglet Facturation.",
+        msg: "Configure les paramètres SMTP du centre dans Centres → modifier le centre → onglet Email.",
       });
       return;
     }

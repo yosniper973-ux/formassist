@@ -61,6 +61,12 @@ interface FormData {
   bank_details: string;
   legal_mentions: string;
   deroulement_template_path: string;
+  smtp_host: string;
+  smtp_port: string;
+  smtp_user: string;
+  smtp_password: string;
+  smtp_from_email: string;
+  smtp_from_name: string;
 }
 
 const EMPTY_FORM: FormData = {
@@ -81,12 +87,18 @@ const EMPTY_FORM: FormData = {
   bank_details: "",
   legal_mentions: "",
   deroulement_template_path: "",
+  smtp_host: "",
+  smtp_port: "587",
+  smtp_user: "",
+  smtp_password: "",
+  smtp_from_email: "",
+  smtp_from_name: "",
 };
 
 export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [activeTab, setActiveTab] = useState<
-    "infos" | "facturation" | "mentions" | "modeles"
+    "infos" | "facturation" | "email" | "mentions" | "modeles"
   >("infos");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -113,6 +125,12 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         bank_details: centre.bank_details ?? "",
         legal_mentions: centre.legal_mentions ?? "",
         deroulement_template_path: centre.deroulement_template_path ?? "",
+        smtp_host: centre.smtp_host ?? "",
+        smtp_port: centre.smtp_port?.toString() ?? "587",
+        smtp_user: centre.smtp_user ?? "",
+        smtp_password: centre.smtp_password ?? "",
+        smtp_from_email: centre.smtp_from_email ?? "",
+        smtp_from_name: centre.smtp_from_name ?? "",
       });
     }
   }, [centre]);
@@ -200,6 +218,12 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         bank_details: form.bank_details || null,
         legal_mentions: form.legal_mentions || null,
         deroulement_template_path: form.deroulement_template_path || null,
+        smtp_host: form.smtp_host || null,
+        smtp_port: form.smtp_port ? parseInt(form.smtp_port, 10) : null,
+        smtp_user: form.smtp_user || null,
+        smtp_password: form.smtp_password || null,
+        smtp_from_email: form.smtp_from_email || null,
+        smtp_from_name: form.smtp_from_name || null,
       };
 
       if (centre) {
@@ -220,6 +244,7 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
   const tabs = [
     { id: "infos" as const, label: "Informations", icon: <Building2 className="h-4 w-4" /> },
     { id: "facturation" as const, label: "Facturation", icon: <CreditCard className="h-4 w-4" /> },
+    { id: "email" as const, label: "Email", icon: <Mail className="h-4 w-4" /> },
     { id: "mentions" as const, label: "Mentions & PDF", icon: <FileText className="h-4 w-4" /> },
     { id: "modeles" as const, label: "Modèles", icon: <FileType2 className="h-4 w-4" /> },
   ];
@@ -542,6 +567,95 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
                     placeholder="IBAN : FR76…&#10;BIC : BNPAFRPP&#10;Banque : BNP Paribas"
                     rows={3}
                   />
+                </div>
+              </div>
+            )}
+
+            {/* ─── Email / SMTP ─── */}
+            {activeTab === "email" && (
+              <div className="space-y-5">
+                <div className="rounded-md border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                  <p>
+                    Configure le serveur SMTP pour envoyer des emails depuis FormAssist
+                    (convocations, factures, documents) <strong>au nom de ce centre</strong>.
+                    Ces identifiants ne sont jamais partagés.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtp-host">Serveur SMTP</Label>
+                    <Input
+                      id="smtp-host"
+                      value={form.smtp_host}
+                      onChange={(e) => update("smtp_host", e.target.value)}
+                      placeholder="smtp.gmail.com"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtp-port">Port</Label>
+                    <Input
+                      id="smtp-port"
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={form.smtp_port}
+                      onChange={(e) => update("smtp_port", e.target.value)}
+                      placeholder="587"
+                    />
+                    <p className="text-xs text-muted-foreground">587 (TLS) ou 465 (SSL)</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtp-user">Identifiant (email)</Label>
+                    <Input
+                      id="smtp-user"
+                      value={form.smtp_user}
+                      onChange={(e) => update("smtp_user", e.target.value)}
+                      placeholder="mon.adresse@gmail.com"
+                      type="email"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtp-password">Mot de passe / App password</Label>
+                    <Input
+                      id="smtp-password"
+                      value={form.smtp_password}
+                      onChange={(e) => update("smtp_password", e.target.value)}
+                      placeholder="••••••••••••"
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtp-from-email">Email expéditeur affiché</Label>
+                    <Input
+                      id="smtp-from-email"
+                      value={form.smtp_from_email}
+                      onChange={(e) => update("smtp_from_email", e.target.value)}
+                      placeholder="formation@centre.fr"
+                      type="email"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Si vide, l'identifiant SMTP est utilisé.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtp-from-name">Nom expéditeur affiché</Label>
+                    <Input
+                      id="smtp-from-name"
+                      value={form.smtp_from_name}
+                      onChange={(e) => update("smtp_from_name", e.target.value)}
+                      placeholder="FormAssist – Centre AFPA"
+                    />
+                  </div>
                 </div>
               </div>
             )}
