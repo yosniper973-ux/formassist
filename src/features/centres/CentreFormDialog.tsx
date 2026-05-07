@@ -11,9 +11,10 @@ import {
   FileType2,
   Upload,
   Trash2,
+  ImageIcon,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
 import type { Centre } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ interface Props {
 interface FormData {
   name: string;
   color: string;
+  logo_path: string;
   address: string;
   phone: string;
   email: string;
@@ -63,6 +65,7 @@ interface FormData {
 const EMPTY_FORM: FormData = {
   name: "",
   color: PRESET_COLORS[0]!,
+  logo_path: "",
   address: "",
   phone: "",
   email: "",
@@ -87,12 +90,14 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   useEffect(() => {
     if (centre) {
       setForm({
         name: centre.name,
         color: centre.color,
+        logo_path: centre.logo_path ?? "",
         address: centre.address ?? "",
         phone: centre.phone ?? "",
         email: centre.email ?? "",
@@ -110,6 +115,29 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
       });
     }
   }, [centre]);
+
+  async function handleUploadLogo() {
+    setError("");
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "svg", "webp"] }],
+      });
+      if (!selected || typeof selected !== "string") return;
+      setUploadingLogo(true);
+      const savedPath = await invoke<string>("save_imported_file", {
+        sourcePath: selected,
+        category: "logos",
+      });
+      update("logo_path", savedPath);
+    } catch (err) {
+      console.error(err);
+      setError("Impossible d'importer le logo. Réessaie.");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
 
   async function handleUploadTemplate() {
     setError("");
@@ -156,6 +184,7 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
       const data: Record<string, unknown> = {
         name: form.name.trim(),
         color: form.color,
+        logo_path: form.logo_path || null,
         address: form.address || null,
         phone: form.phone || null,
         email: form.email || null,
@@ -287,6 +316,57 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
                       title="Couleur personnalisée"
                     />
                   </div>
+                </div>
+
+                {/* Logo */}
+                <div className="space-y-1.5">
+                  <Label>Logo du centre</Label>
+                  {form.logo_path ? (
+                    <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                      <img
+                        src={convertFileSrc(form.logo_path)}
+                        alt="Logo"
+                        className="h-10 w-auto max-w-[80px] rounded object-contain"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs text-muted-foreground">
+                          {form.logo_path.split(/[/\\]/).pop()}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleUploadLogo}
+                        disabled={uploadingLogo}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        Remplacer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => update("logo_path", "")}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleUploadLogo}
+                      disabled={uploadingLogo}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 px-4 py-5 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                      {uploadingLogo ? "Import en cours…" : "Importer un logo (PNG, JPG, SVG)"}
+                    </button>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Utilisé sur les factures et fiches pédagogiques.
+                  </p>
                 </div>
 
                 <Separator />
