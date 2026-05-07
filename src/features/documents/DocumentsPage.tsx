@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
 import {
   Send,
   Printer,
@@ -129,16 +129,31 @@ export function DocumentsPage() {
     }
   }
 
+  function getComposeUrl(senderEmail: string, to: string, subj: string, body: string): string {
+    const domain = senderEmail.split("@")[1]?.toLowerCase() ?? "";
+    const t = encodeURIComponent(to);
+    const s = encodeURIComponent(subj);
+    const b = encodeURIComponent(body);
+    if (domain === "gmail.com" || domain === "googlemail.com") {
+      return `https://mail.google.com/mail/?view=cm&to=${t}&su=${s}&body=${b}`;
+    }
+    if (["hotmail.com","hotmail.fr","outlook.com","outlook.fr","live.com","live.fr","msn.com"].includes(domain)) {
+      return `https://outlook.live.com/mail/0/deeplink/compose?to=${t}&subject=${s}&body=${b}`;
+    }
+    return `mailto:${t}?subject=${s}&body=${b}`;
+  }
+
   async function handleSendEmail() {
     if (!recipient || !subject || !bodyText || !selectedCentreId) return;
 
     const centre = centres.find((c) => c.id === selectedCentreId);
     if (!centre) return;
 
-    if (!centre.smtp_host || !centre.smtp_user || !centre.smtp_password) {
+    const senderEmail = centre.smtp_from_email || centre.email || "";
+    if (!senderEmail) {
       setSendResult({
         ok: false,
-        msg: "Configure les paramètres SMTP du centre dans Centres → modifier le centre → onglet Email.",
+        msg: "Indique ton adresse email dans Centres → modifier le centre → onglet Email.",
       });
       return;
     }
@@ -147,50 +162,22 @@ export function DocumentsPage() {
     setSendResult(null);
 
     try {
-      await invoke("send_email", {
-        args: {
-          smtp_host: centre.smtp_host,
-          smtp_port: centre.smtp_port || 587,
-          smtp_user: centre.smtp_user,
-          smtp_password: centre.smtp_password,
-          from_email: centre.smtp_from_email || centre.email || centre.smtp_user,
-          from_name: centre.smtp_from_name || centre.name,
-          to: recipient,
-          subject,
-          body_html: `<div style="font-family: sans-serif; line-height: 1.6;">${bodyText.replace(/\n/g, "<br/>")}</div>`,
-          body_text: bodyText,
-          attachments,
-        },
-      });
+      const url = getComposeUrl(senderEmail, recipient, subject, bodyText);
+      await openUrl(url);
 
-      // Log the email
       await db.execute(
         `INSERT INTO email_log (id, centre_id, recipient, subject, body_preview, attachments, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'sent', datetime('now'))`,
-        [
-          db.generateId(),
-          selectedCentreId,
-          recipient,
-          subject,
-          bodyText.substring(0, 200),
-          JSON.stringify(attachments),
-        ],
+         VALUES (?, ?, ?, ?, ?, ?, 'composed', datetime('now'))`,
+        [db.generateId(), selectedCentreId, recipient, subject, bodyText.substring(0, 200), JSON.stringify(attachments)],
       );
 
-      setSendResult({ ok: true, msg: "Email envoyé avec succès !" });
+      setSendResult({ ok: true, msg: "Fenêtre de composition ouverte dans ton navigateur." });
       setRecipient("");
       setSubject("");
       setBodyText("");
       setAttachments([]);
     } catch (err) {
-      const errorMsg = String(err);
-      // Log failed attempt
-      await db.execute(
-        `INSERT INTO email_log (id, centre_id, recipient, subject, body_preview, status, error_message, created_at)
-         VALUES (?, ?, ?, ?, ?, 'failed', ?, datetime('now'))`,
-        [db.generateId(), selectedCentreId, recipient, subject, bodyText.substring(0, 200), errorMsg],
-      );
-      setSendResult({ ok: false, msg: `Erreur : ${errorMsg}` });
+      setSendResult({ ok: false, msg: `Erreur : ${String(err)}` });
     } finally {
       setSending(false);
     }
@@ -331,7 +318,7 @@ export function DocumentsPage() {
               ) : (
                 <Send className="h-4 w-4 mr-2" />
               )}
-              {sending ? "Envoi en cours..." : "Envoyer"}
+              {sending ? "Ouverture…" : "Ouvrir dans mon mail"}
             </Button>
             <Button
               variant="outline"
