@@ -214,9 +214,12 @@ export function AppShell() {
         )}
 
         <main
-          className="flex-1 overflow-y-auto p-6 transition-[background] duration-500 page-flip-perspective"
+          className="flex-1 overflow-y-auto p-6 transition-[background] duration-500"
           style={{ background: mainBackground }}
         >
+          {/* page-flip-perspective ici (pas sur main) — évite que position:fixed
+              des dialogs soit piégé par la perspective de main */}
+          <div className="page-flip-perspective">
           {/* Wrapper qui se "tourne" comme une page de livre à chaque navigation */}
           <div key={location.pathname} className="page-flip">
             {/* Bandeau d'aide contextuel (première visite seulement) */}
@@ -240,6 +243,7 @@ export function AppShell() {
             )}
 
             <Outlet />
+          </div>
           </div>
         </main>
       </div>
