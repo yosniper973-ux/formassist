@@ -45,6 +45,9 @@ const DashboardPedagoPage = lazy(() =>
 const DashboardFinancePage = lazy(() =>
   import("@/features/dashboard/DashboardFinancePage").then((m) => ({ default: m.DashboardFinancePage })),
 );
+const StatistiquesPage = lazy(() =>
+  import("@/features/dashboard/StatistiquesPage").then((m) => ({ default: m.StatistiquesPage })),
+);
 const HelpPage = lazy(() =>
   import("@/features/help/HelpPage").then((m) => ({ default: m.HelpPage })),
 );
@@ -123,7 +126,7 @@ export function Router() {
         />
         <Route
           path="/statistiques"
-          element={<LazyRoute><DashboardPedagoPage /></LazyRoute>}
+          element={<LazyRoute><StatistiquesPage /></LazyRoute>}
         />
         <Route
           path="/parametres"
