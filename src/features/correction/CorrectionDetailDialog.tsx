@@ -362,7 +362,7 @@ Bon courage pour la suite.`;
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-5">
               {data.groupMembers && data.groupMembers.length > 1 && (
                 <div className="rounded-lg border bg-purple-50/30 p-4 space-y-3">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -466,13 +466,22 @@ Bon courage pour la suite.`;
 
             {/* Footer actions */}
             <div className="flex items-center justify-between border-t p-4 bg-muted/30">
-              <p className="text-xs text-muted-foreground">
-                {data.groupMembers && data.groupMembers.length > 1
-                  ? "Utilise les boutons « Email » au-dessus pour envoyer le retour à chaque apprenant."
-                  : data.learner?.email
-                    ? `Email : ${data.learner.email}`
-                    : "Aucun email enregistré pour cet apprenant"}
-              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={onClose}
+                  className="flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+                >
+                  <X className="h-4 w-4" />
+                  Fermer
+                </button>
+                <p className="text-xs text-muted-foreground hidden sm:block">
+                  {data.groupMembers && data.groupMembers.length > 1
+                    ? "Utilise les boutons « Email » au-dessus pour envoyer le retour à chaque apprenant."
+                    : data.learner?.email
+                      ? `Email : ${data.learner.email}`
+                      : "Aucun email enregistré pour cet apprenant"}
+                </p>
+              </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={handleExportWord}>
                   <Download className="h-3.5 w-3.5" /> Word
