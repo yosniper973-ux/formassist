@@ -271,37 +271,52 @@ mod biometric_windows {
     }
 }
 
-const KEYRING_SERVICE: &str = "FormAssist";
-const KEYRING_USER: &str = "biometric_encryption_key";
+fn biometric_key_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Répertoire de données inaccessible : {e}"))?;
+    Ok(dir.join("biometric.key"))
+}
 
-/// Stocke la clé de chiffrement en mémoire dans le trousseau OS (Keychain / Credential Manager).
-/// À appeler après une auth biométrique réussie lors de l'activation.
+/// Stocke la clé de chiffrement dans le répertoire de données de l'app.
 #[tauri::command]
-pub fn save_key_to_keychain(state: State<'_, AuthState>) -> Result<(), String> {
+pub fn save_key_to_keychain(
+    app: tauri::AppHandle,
+    state: State<'_, AuthState>,
+) -> Result<(), String> {
     let enc_key = state.encryption_key.lock().map_err(|e| e.to_string())?;
     let key = enc_key.as_ref().ok_or("Application non déverrouillée.")?;
 
+    let path = biometric_key_path(&app)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Impossible de créer le répertoire : {e}"))?;
+    }
     let encoded = base64::engine::general_purpose::STANDARD.encode(key);
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Impossible d'accéder au trousseau : {e}"))?;
-    entry
-        .set_password(&encoded)
-        .map_err(|e| format!("Impossible de sauvegarder dans le trousseau : {e}"))?;
+    std::fs::write(&path, encoded.as_bytes())
+        .map_err(|e| format!("Impossible de sauvegarder la clé : {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
     Ok(())
 }
 
-/// Charge la clé depuis le trousseau et la place dans AuthState.
-/// À appeler après une auth biométrique réussie lors du déverrouillage.
+/// Charge la clé depuis le répertoire de données et la place dans AuthState.
 #[tauri::command]
-pub fn load_key_from_keychain(state: State<'_, AuthState>) -> Result<bool, String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Impossible d'accéder au trousseau : {e}"))?;
-
-    match entry.get_password() {
+pub fn load_key_from_keychain(
+    app: tauri::AppHandle,
+    state: State<'_, AuthState>,
+) -> Result<bool, String> {
+    let path = biometric_key_path(&app)?;
+    match std::fs::read_to_string(&path) {
         Ok(encoded) => {
             let key = base64::engine::general_purpose::STANDARD
-                .decode(&encoded)
-                .map_err(|e| format!("Clé corrompue dans le trousseau : {e}"))?;
+                .decode(encoded.trim())
+                .map_err(|e| format!("Clé corrompue : {e}"))?;
             let mut enc_key = state.encryption_key.lock().map_err(|e| e.to_string())?;
             *enc_key = Some(key);
             Ok(true)
@@ -310,23 +325,21 @@ pub fn load_key_from_keychain(state: State<'_, AuthState>) -> Result<bool, Strin
     }
 }
 
-/// Supprime la clé du trousseau (désactivation de la biométrie).
+/// Supprime la clé (désactivation de la biométrie).
 #[tauri::command]
-pub fn delete_key_from_keychain() -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Impossible d'accéder au trousseau : {e}"))?;
-    match entry.delete_credential() {
+pub fn delete_key_from_keychain(app: tauri::AppHandle) -> Result<(), String> {
+    let path = biometric_key_path(&app)?;
+    match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()), // déjà absent, pas d'erreur
-        Err(e) => Err(format!("Impossible de supprimer du trousseau : {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Impossible de supprimer la clé : {e}")),
     }
 }
 
-/// Vérifie si une clé biométrique est enregistrée dans le trousseau.
+/// Vérifie si une clé biométrique est présente.
 #[tauri::command]
-pub fn is_biometric_enrolled() -> bool {
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .is_some()
+pub fn is_biometric_enrolled(app: tauri::AppHandle) -> bool {
+    biometric_key_path(&app)
+        .map(|p| p.exists())
+        .unwrap_or(false)
 }

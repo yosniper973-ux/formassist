@@ -1,6 +1,6 @@
 [package]
 name = "formassist"
-version = "0.2.77"
+version = "0.2.78"
 description = "FormAssist — Assistant pédagogique pour formatrice indépendante"
 authors = ["FormAssist"]
 edition = "2021"
@@ -32,7 +32,6 @@ uuid = { version = "1", features = ["v4"] }
 lettre = { version = "0.11", features = ["tokio1-native-tls", "smtp-transport", "builder"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
-keyring = { version = "3", features = [] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
