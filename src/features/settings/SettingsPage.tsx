@@ -620,11 +620,15 @@ export function SettingsPage() {
 
               <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground">
                 <p>
-                  FormAssist est un assistant pédagogique conçu pour les formatrices
-                  indépendantes dispensant des Titres Professionnels du Ministère du Travail.
+                  FormAssist est un assistant pédagogique conçu pour les formateurs
+                  indépendants dispensant des Titres Professionnels du Ministère du Travail.
                   Toutes tes données restent sur ton ordinateur.
                 </p>
               </div>
+
+              <p className="pt-2 text-center text-xs italic text-muted-foreground">
+                © 2026 — Développé par Yohann Rocher
+              </p>
             </CardContent>
           </Card>
         )}
