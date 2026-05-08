@@ -109,7 +109,7 @@ jobs:
 
             À partir de cette version, les mises à jour se font automatiquement via
             le bouton "Vérifier les mises à jour" dans l'application (Paramètres → À propos).
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           # Génère aussi le latest.json + les fichiers de signature .sig pour l'updater
           includeUpdaterJson: true
@@ -178,7 +178,7 @@ jobs:
 
             À partir de cette version, les mises à jour se font automatiquement via
             le bouton "Vérifier les mises à jour" dans l'application (Paramètres → À propos).
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
 
@@ -249,3 +249,7 @@ jobs:
 
           gh release upload "$TAG" /tmp/sigs/latest.json --clobber
           echo "latest.json uploadé."
+
+          # Publier la release (draft → publique) maintenant que tout est prêt
+          gh release edit "$TAG" --draft=false
+          echo "Release $TAG publiée."
