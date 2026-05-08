@@ -279,7 +279,7 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
                     className="flex w-full items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground hover:underline"
                   >
                     <Fingerprint className="h-4 w-4" />
-                    Utiliser Touch ID / Windows Hello
+                    {/Win/i.test(navigator.platform) ? "Utiliser Windows Hello" : "Utiliser Touch ID"}
                   </button>
                 )}
 
