@@ -121,10 +121,10 @@ export function DashboardPedagoPage() {
     setLoading(true);
     setError(null);
     try {
-      const today = new Date().toISOString().split("T")[0]!;
-      const in7days = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]!;
-      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-        .toISOString().split("T")[0]!;
+      const today = toLocalDateString(new Date());
+      const in7days = toLocalDateString(new Date(Date.now() + 7 * 86400000));
+      const now = new Date();
+      const monthStart = toLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1));
 
       const [centresRows, formationsRows, learnersRows, contentsRows] = await Promise.all([
         db.query<{ total: number }>(
@@ -250,7 +250,7 @@ export function DashboardPedagoPage() {
       const coveredComp = coverageRows[0]?.covered_comp ?? 0;
       const competenceCoverage = totalComp > 0 ? Math.round((coveredComp / totalComp) * 100) : 0;
 
-      const today = new Date().toISOString().split("T")[0]!;
+      const today = toLocalDateString(new Date());
       const formationProgress: FormationProgress[] = [];
 
       for (const f of formations) {
@@ -731,9 +731,23 @@ function BarChart({ buckets }: { buckets: LearnerProgressBucket[] }) {
 
 function formatDate(iso: string): string {
   try {
-    const d = new Date(iso);
+    // Parse YYYY-MM-DD comme date locale pour éviter le décalage UTC
+    // (sinon, en fuseau ouest comme la Guyane UTC-3, le 8 devient le 7).
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+    const d = m
+      ? new Date(parseInt(m[1]!, 10), parseInt(m[2]!, 10) - 1, parseInt(m[3]!, 10), 12, 0, 0)
+      : new Date(iso);
     return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
   } catch {
     return iso;
   }
+}
+
+/** Renvoie la date du jour au format YYYY-MM-DD selon le fuseau LOCAL
+ * (toISOString utilise UTC et décale d'un jour en Guyane / autres fuseaux ouest). */
+function toLocalDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
