@@ -86,17 +86,31 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
           inputRef.current?.focus();
           return;
         }
-        // Affiche le bouton immédiatement — Windows Hello peut être lent à répondre au démarrage
-        setBiometricAvailable(true);
-        // Sur Windows : laisser Windows Hello s'initialiser avant de vérifier
-        if (/Win/i.test(navigator.platform)) {
-          await new Promise<void>((r) => setTimeout(r, 1200));
-        }
-        const available = await invoke<boolean>("is_biometric_available");
-        if (available) {
+
+        const isWindows = /Win/i.test(navigator.platform);
+
+        if (isWindows) {
+          // Windows : is_biometric_available() (WinRT async) ne se complète pas
+          // depuis un thread Tauri. On vérifie juste la présence du fichier de clé.
+          const enrolled = await invoke<boolean>("is_biometric_enrolled");
+          if (!enrolled) {
+            inputRef.current?.focus();
+            return;
+          }
+          setBiometricAvailable(true);
+          // Laisser la fenêtre s'afficher complètement avant de déclencher Hello
+          await new Promise<void>((r) => setTimeout(r, 800));
           await tryBiometric();
+        } else {
+          // macOS : LocalAuthentication est synchrone et fiable
+          const available = await invoke<boolean>("is_biometric_available");
+          if (available) {
+            setBiometricAvailable(true);
+            await tryBiometric();
+          } else {
+            inputRef.current?.focus();
+          }
         }
-        // Sinon le bouton reste visible — l'utilisateur peut cliquer manuellement
       } catch {
         inputRef.current?.focus();
       }
