@@ -81,20 +81,22 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
     // Déclenchement automatique de la biométrie si activée
     async function initBiometric() {
       try {
-        // Utiliser le flag DB plutôt que le trousseau pour éviter un dialogue
-        // de consentement macOS caché derrière la fenêtre au démarrage.
         const enabled = await db.getConfig("biometric_enabled");
         if (enabled !== "1") {
           inputRef.current?.focus();
           return;
         }
+        // Affiche le bouton immédiatement — Windows Hello peut être lent à répondre au démarrage
+        setBiometricAvailable(true);
+        // Sur Windows : laisser Windows Hello s'initialiser avant de vérifier
+        if (/Win/i.test(navigator.platform)) {
+          await new Promise<void>((r) => setTimeout(r, 1200));
+        }
         const available = await invoke<boolean>("is_biometric_available");
         if (available) {
-          setBiometricAvailable(true);
           await tryBiometric();
-        } else {
-          inputRef.current?.focus();
         }
+        // Sinon le bouton reste visible — l'utilisateur peut cliquer manuellement
       } catch {
         inputRef.current?.focus();
       }
