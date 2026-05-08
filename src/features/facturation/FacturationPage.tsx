@@ -23,6 +23,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DeroulementEditor } from "./deroulement/DeroulementEditor";
 import { listDeroulementSheetsForInvoice } from "./deroulement/queries";
 import type { DeroulementSheetRow } from "./deroulement/types";
+import { FinancesDashboard } from "./FinancesDashboard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -202,7 +203,7 @@ export function FacturationPage() {
       {/* Filtres */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Rechercher une facture…"
             value={search}
@@ -222,6 +223,15 @@ export function FacturationPage() {
         ))}
       </div>
 
+      {/* Tableau de bord (vue Tous les centres uniquement, quand il y a des données) */}
+      {!loading && !activeCentreId && invoices.length > 0 && !search && !filterStatus && (
+        <FinancesDashboard
+          invoices={invoices}
+          centres={centres}
+          onOpenInvoice={openDetail}
+        />
+      )}
+
       {/* Liste */}
       {loading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -234,6 +244,11 @@ export function FacturationPage() {
         />
       ) : (
         <div className="space-y-6">
+          {!activeCentreId && invoices.length > 0 && (
+            <h2 className="text-base font-semibold text-foreground">
+              Toutes les factures
+            </h2>
+          )}
           {Array.from(grouped.entries()).map(([centreName, invs]) => (
             <section key={centreName}>
               <div className="mb-2 flex items-center gap-2">

@@ -1111,7 +1111,7 @@ Inclus au minimum : accueil/introduction, apport theorique, mise en pratique, sy
       {/* Recherche */}
       {sheets.length > 0 && (
         <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Rechercher une fiche..."
             value={search}

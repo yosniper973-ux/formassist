@@ -200,6 +200,8 @@ export function SettingsPage() {
     try {
       await db.setConfig("budget_monthly", budget);
       await db.setConfig("cost_alert_threshold", alertThreshold);
+      // Notifier le Header (et autres composants) que le budget a changé
+      window.dispatchEvent(new Event("budget-updated"));
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {
