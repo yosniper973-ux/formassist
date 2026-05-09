@@ -15,6 +15,7 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { invoke } from "@tauri-apps/api/core";
 import { downloadDocx } from "@/lib/docx-export";
+import { fillTemplateWithAI, templateHasPlaceholders } from "./ai-fill-template";
 import type { DeroulementDraft } from "./types";
 
 function bulletLines(raw: string): string[] {
@@ -244,15 +245,42 @@ async function fillUserTemplate(
   return out as Blob;
 }
 
-/** Génère et télécharge la fiche de déroulement en .docx */
+/** Génère et télécharge la fiche de déroulement en .docx
+ *
+ * Stratégie :
+ * 1. Pas de template → format FormAssist par défaut.
+ * 2. Template avec balises {formation}, {phases}... → docxtemplater (rapide, fiable).
+ * 3. Template sans balises → Claude analyse les cellules et remplit
+ *    intelligemment en préservant la mise en forme (police, couleurs, tableaux).
+ */
 export async function exportDeroulementDocx(params: {
   draft: DeroulementDraft;
   templatePath: string | null;
   fileName: string;
 }): Promise<string | null> {
-  const blob = params.templatePath
-    ? await fillUserTemplate(params.templatePath, params.draft)
-    : await buildDefaultDocx(params.draft);
-
+  let blob: Blob;
+  if (!params.templatePath) {
+    blob = await buildDefaultDocx(params.draft);
+  } else {
+    const hasTags = await templateHasPlaceholders(params.templatePath);
+    if (hasTags) {
+      blob = await fillUserTemplate(params.templatePath, params.draft);
+    } else {
+      const result = await fillTemplateWithAI(params.templatePath, params.draft);
+      blob = result.blob;
+    }
+  }
   return downloadDocx(blob, params.fileName);
+}
+
+/** Comme exportDeroulementDocx, mais renvoie aussi le blob pour conversion PDF. */
+export async function generateDeroulementBlob(params: {
+  draft: DeroulementDraft;
+  templatePath: string | null;
+}): Promise<Blob> {
+  if (!params.templatePath) return buildDefaultDocx(params.draft);
+  const hasTags = await templateHasPlaceholders(params.templatePath);
+  if (hasTags) return fillUserTemplate(params.templatePath, params.draft);
+  const result = await fillTemplateWithAI(params.templatePath, params.draft);
+  return result.blob;
 }

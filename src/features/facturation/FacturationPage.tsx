@@ -1156,6 +1156,7 @@ function InvoiceDetailView({
           invoice={invoice}
           centre={centre}
           lines={lines}
+          deroulementSheets={deroulementSheets}
           onClose={() => setShowSendDialog(false)}
           onSent={() => {
             setShowSendDialog(false);

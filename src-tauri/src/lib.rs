@@ -94,6 +94,9 @@ pub fn run() {
             commands::export_database,
             // REAC
             commands::save_reac,
+            // DOCX → PDF (LibreOffice)
+            commands::docx_to_pdf,
+            commands::is_libreoffice_available,
         ])
         .run(tauri::generate_context!())
         .expect("Erreur lors du lancement de FormAssist");
