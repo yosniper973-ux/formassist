@@ -361,7 +361,11 @@ function InvoiceDoc({ invoice, lines, centre, pro }: InvoiceDocProps) {
             <Text style={styles.emitterLineSmall}>
               SIRET : {formatSiret(pro.siret)}
               {pro.nda ? `   ·   NDA : ${pro.nda}` : ""}
+              {pro.naf_code ? `   ·   NAF : ${pro.naf_code}` : ""}
             </Text>
+          )}
+          {!pro.siret && pro.naf_code && (
+            <Text style={styles.emitterLineSmall}>NAF : {pro.naf_code}</Text>
           )}
           {!pro.tva_exempt && pro.tva_number && (
             <Text style={styles.emitterLineSmall}>N° TVA : {pro.tva_number}</Text>

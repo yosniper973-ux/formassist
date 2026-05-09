@@ -46,6 +46,7 @@ export interface ProfessionalInfo {
   address: string;
   siret: string;
   nda: string;          // Numéro de déclaration d'activité
+  naf_code: string;     // Code NAF / APE (ex : 8559A)
   tva_number: string | null;
   tva_exempt: boolean;  // true = franchise TVA (art. 293 B CGI)
   rib: string;

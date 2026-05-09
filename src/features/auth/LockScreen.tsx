@@ -94,6 +94,10 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
           // depuis un thread Tauri. On vérifie juste la présence du fichier de clé.
           const enrolled = await invoke<boolean>("is_biometric_enrolled");
           if (!enrolled) {
+            // État incohérent : flag activé mais pas de clé sur le disque
+            // (peut arriver si l'activation a échoué silencieusement).
+            // On nettoie pour éviter de boucler dans cet état.
+            await db.setConfig("biometric_enabled", "0");
             inputRef.current?.focus();
             return;
           }

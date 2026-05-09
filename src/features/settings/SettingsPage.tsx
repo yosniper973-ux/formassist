@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PRESET_LABELS, MODELS } from "@/config/models";
 import type { TaskType, ModelTier } from "@/types/api";
 import type { ProfessionalInfo } from "@/types/invoice";
@@ -23,6 +24,7 @@ const EMPTY_PRO_INFO: ProfessionalInfo = {
   address: "",
   siret: "",
   nda: "",
+  naf_code: "",
   tva_number: null,
   tva_exempt: true,
   rib: "",
@@ -82,6 +84,7 @@ export function SettingsPage() {
   const [biometryLabel, setBiometryLabel] = useState("Biométrie");
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricStatus, setBiometricStatus] = useState<"idle" | "working" | "ok" | "error">("idle");
+  const [biometricError, setBiometricError] = useState("");
 
   // App info
   const [appVersion, setAppVersion] = useState("");
@@ -131,14 +134,33 @@ export function SettingsPage() {
 
       // État biométrique
       try {
-        const available = await invoke<boolean>("is_biometric_available");
-        setBiometricAvailable(available);
-        if (available) {
-          const isWindows = /Win/i.test(navigator.platform);
-          setBiometryLabel(isWindows ? "Windows Hello" : "Touch ID");
+        const isWindows = /Win/i.test(navigator.platform);
+        setBiometryLabel(isWindows ? "Windows Hello" : "Touch ID");
+
+        // Sur Windows, is_biometric_available() (WinRT async) peut hanger
+        // depuis un thread Tauri. On suppose Windows Hello disponible et on
+        // affiche le bouton ; l'éventuel échec sera surfacé lors du clic.
+        // Sur macOS, l'appel est synchrone et fiable.
+        if (isWindows) {
+          setBiometricAvailable(true);
+        } else {
+          const available = await invoke<boolean>("is_biometric_available");
+          setBiometricAvailable(available);
         }
+
+        // Vérifie la cohérence : biometric_enabled doit correspondre à la
+        // présence effective de la clé sur le disque.
         const enabled = await db.getConfig("biometric_enabled");
-        setBiometricEnrolled(enabled === "1");
+        const enrolled = await invoke<boolean>("is_biometric_enrolled").catch(
+          () => false,
+        );
+        if (enabled === "1" && !enrolled) {
+          // Incohérence : flag activé mais pas de clé → on remet à zéro
+          await db.setConfig("biometric_enabled", "0");
+          setBiometricEnrolled(false);
+        } else {
+          setBiometricEnrolled(enabled === "1" && enrolled);
+        }
       } catch {
         setBiometricAvailable(false);
       }
@@ -149,6 +171,7 @@ export function SettingsPage() {
 
   async function toggleBiometric() {
     setBiometricStatus("working");
+    setBiometricError("");
     try {
       if (biometricEnrolled) {
         // Désactiver
@@ -157,17 +180,49 @@ export function SettingsPage() {
         setBiometricEnrolled(false);
         setBiometricStatus("ok");
       } else {
-        // Activer : déclencher l'auth biométrique d'abord
-        await invoke("authenticate_biometric", { reason: `Activer ${biometryLabel} pour FormAssist` });
+        // Activer : 1) authentification biométrique
+        await invoke("authenticate_biometric", {
+          reason: `Activer ${biometryLabel} pour FormAssist`,
+        });
+        // 2) Sauvegarde de la clé chiffrée localement
         await invoke("save_key_to_keychain");
+        // 3) Vérification que la clé a bien été écrite sur le disque
+        const enrolled = await invoke<boolean>("is_biometric_enrolled");
+        if (!enrolled) {
+          throw new Error(
+            "La clé biométrique n'a pas pu être enregistrée sur le disque. " +
+              "Vérifie que l'appli a accès à son répertoire de données.",
+          );
+        }
+        // 4) Activation du flag uniquement après vérification
         await db.setConfig("biometric_enabled", "1");
         setBiometricEnrolled(true);
         setBiometricStatus("ok");
       }
-    } catch {
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Activation impossible.";
+      // En cas d'échec partiel, on nettoie pour rester cohérent : pas de
+      // clé orpheline et flag à 0, sinon le prochain démarrage essaiera
+      // un déverrouillage qui échouera silencieusement.
+      try {
+        await invoke("delete_key_from_keychain");
+      } catch {
+        /* ignore */
+      }
+      await db.setConfig("biometric_enabled", "0");
+      setBiometricEnrolled(false);
       setBiometricStatus("error");
+      setBiometricError(message);
     }
-    setTimeout(() => setBiometricStatus("idle"), 3000);
+    setTimeout(() => {
+      setBiometricStatus("idle");
+      setBiometricError("");
+    }, 6000);
   }
 
   async function testApiKey() {
@@ -393,6 +448,21 @@ export function SettingsPage() {
                     placeholder="97 30 01234 56"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="pro-naf">Code NAF / APE</Label>
+                <Input
+                  id="pro-naf"
+                  value={proInfo.naf_code}
+                  onChange={(e) => updatePro("naf_code", e.target.value)}
+                  placeholder="8559A"
+                  maxLength={6}
+                  className="w-40"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Code d'activité INSEE (ex : 8559A pour la formation continue d'adultes).
+                </p>
               </div>
 
               <Separator />
@@ -711,34 +781,47 @@ export function SettingsPage() {
               {biometricAvailable && (
                 <>
                   <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <Fingerprint className="h-4 w-4 text-primary" />
-                        <span className="font-medium text-sm">Déverrouillage {biometryLabel}</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <Fingerprint className="h-4 w-4 text-primary" />
+                          <span className="font-medium text-sm">
+                            Déverrouillage {biometryLabel}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {biometricEnrolled
+                            ? `${biometryLabel} activé — pose le doigt pour ouvrir l'app.`
+                            : `Ouvre l'app sans mot de passe grâce à ${biometryLabel}.`}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {biometricEnrolled
-                          ? `${biometryLabel} activé — pose le doigt pour ouvrir l'app.`
-                          : `Ouvre l'app sans mot de passe grâce à ${biometryLabel}.`}
-                      </p>
+                      <Button
+                        variant={biometricEnrolled ? "destructive" : "default"}
+                        size="sm"
+                        onClick={toggleBiometric}
+                        disabled={biometricStatus === "working"}
+                      >
+                        {biometricStatus === "working"
+                          ? "…"
+                          : biometricStatus === "ok"
+                            ? biometricEnrolled
+                              ? "Activé ✓"
+                              : "Désactivé ✓"
+                            : biometricStatus === "error"
+                              ? "Erreur"
+                              : biometricEnrolled
+                                ? `Désactiver`
+                                : `Activer`}
+                      </Button>
                     </div>
-                    <Button
-                      variant={biometricEnrolled ? "destructive" : "default"}
-                      size="sm"
-                      onClick={toggleBiometric}
-                      disabled={biometricStatus === "working"}
-                    >
-                      {biometricStatus === "working"
-                        ? "…"
-                        : biometricStatus === "ok"
-                          ? (biometricEnrolled ? "Activé ✓" : "Désactivé ✓")
-                          : biometricStatus === "error"
-                            ? "Erreur"
-                            : biometricEnrolled
-                              ? `Désactiver`
-                              : `Activer`}
-                    </Button>
+                    {biometricStatus === "error" && biometricError && (
+                      <Alert variant="destructive">
+                        <AlertDescription className="text-xs">
+                          {biometricError}
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
                 </>
               )}
