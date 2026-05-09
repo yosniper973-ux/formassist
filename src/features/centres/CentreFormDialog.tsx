@@ -54,11 +54,11 @@ interface FormData {
   referent_name: string;
   referent_email: string;
   referent_phone: string;
+  siret: string;
   hourly_rate: string;
   billing_unit: string;
   payment_delay_days: string;
   invoice_numbering: string;
-  bank_details: string;
   legal_mentions: string;
   deroulement_template_path: string;
   smtp_from_email: string;
@@ -75,11 +75,11 @@ const EMPTY_FORM: FormData = {
   referent_name: "",
   referent_email: "",
   referent_phone: "",
+  siret: "",
   hourly_rate: "",
   billing_unit: "hour",
   payment_delay_days: "30",
   invoice_numbering: "",
-  bank_details: "",
   legal_mentions: "",
   deroulement_template_path: "",
   smtp_from_email: "",
@@ -108,11 +108,11 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         referent_name: centre.referent_name ?? "",
         referent_email: centre.referent_email ?? "",
         referent_phone: centre.referent_phone ?? "",
+        siret: centre.siret ?? "",
         hourly_rate: centre.hourly_rate?.toString() ?? "",
         billing_unit: centre.billing_unit,
         payment_delay_days: centre.payment_delay_days.toString(),
         invoice_numbering: centre.invoice_numbering ?? "",
-        bank_details: centre.bank_details ?? "",
         legal_mentions: centre.legal_mentions ?? "",
         deroulement_template_path: centre.deroulement_template_path ?? "",
         smtp_from_email: centre.smtp_from_email ?? "",
@@ -196,11 +196,11 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         referent_name: form.referent_name || null,
         referent_email: form.referent_email || null,
         referent_phone: form.referent_phone || null,
+        siret: form.siret.replace(/\s+/g, "") || null,
         hourly_rate: form.hourly_rate ? parseFloat(form.hourly_rate) : null,
         billing_unit: form.billing_unit,
         payment_delay_days: parseInt(form.payment_delay_days, 10),
         invoice_numbering: form.invoice_numbering || null,
-        bank_details: form.bank_details || null,
         legal_mentions: form.legal_mentions || null,
         deroulement_template_path: form.deroulement_template_path || null,
         smtp_from_email: form.smtp_from_email || null,
@@ -539,14 +539,17 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="bank">Coordonnées bancaires (RIB)</Label>
-                  <Textarea
-                    id="bank"
-                    value={form.bank_details}
-                    onChange={(e) => update("bank_details", e.target.value)}
-                    placeholder="IBAN : FR76…&#10;BIC : BNPAFRPP&#10;Banque : BNP Paribas"
-                    rows={3}
+                  <Label htmlFor="siret">SIRET du centre</Label>
+                  <Input
+                    id="siret"
+                    value={form.siret}
+                    onChange={(e) => update("siret", e.target.value)}
+                    placeholder="123 456 789 00012"
+                    maxLength={20}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Apparaîtra automatiquement comme SIRET du destinataire sur les factures.
+                  </p>
                 </div>
               </div>
             )}

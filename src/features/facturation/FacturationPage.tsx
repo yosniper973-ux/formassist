@@ -10,6 +10,8 @@ import {
   Building2,
   Search,
   ClipboardList,
+  Download,
+  Mail,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
@@ -24,6 +26,9 @@ import { DeroulementEditor } from "./deroulement/DeroulementEditor";
 import { listDeroulementSheetsForInvoice } from "./deroulement/queries";
 import type { DeroulementSheetRow } from "./deroulement/types";
 import { FinancesDashboard } from "./FinancesDashboard";
+import { SendInvoiceDialog } from "./SendInvoiceDialog";
+import { downloadInvoicePdf } from "./invoice-pdf";
+import { getProfessionalInfo, isProfessionalInfoComplete } from "@/lib/professional-info";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -792,6 +797,10 @@ function InvoiceDetailView({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showDeroulement, setShowDeroulement] = useState(false);
   const [deroulementSheets, setDeroulementSheets] = useState<DeroulementSheetRow[]>([]);
+  const [showSendDialog, setShowSendDialog] = useState(false);
+  const [centre, setCentre] = useState<Centre | null>(null);
+  const [pdfMessage, setPdfMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const loadDeroulementSheets = useCallback(async () => {
     const rows = await listDeroulementSheetsForInvoice(invoice.id);
@@ -806,8 +815,48 @@ function InvoiceDetailView({
       );
       setLines(rows);
       await loadDeroulementSheets();
+      // Charge le centre complet (pour SMTP, SIRET, etc.)
+      const centres = await db.query<Centre>(
+        "SELECT * FROM centres WHERE id = ?",
+        [invoice.centre_id],
+      );
+      if (centres[0]) setCentre(centres[0]);
     })();
-  }, [invoice.id, loadDeroulementSheets]);
+  }, [invoice.id, invoice.centre_id, loadDeroulementSheets]);
+
+  async function handleDownloadPdf() {
+    if (!centre) return;
+    setPdfMessage(null);
+    setGeneratingPdf(true);
+    try {
+      const pro = await getProfessionalInfo();
+      if (!isProfessionalInfoComplete(pro)) {
+        setPdfMessage({
+          kind: "err",
+          text: "Renseigne d'abord tes infos pro dans Paramètres → Infos pro (nom, adresse, SIRET).",
+        });
+        return;
+      }
+      const path = await downloadInvoicePdf(invoice, lines, centre, pro);
+      if (path) {
+        await db.execute(
+          "UPDATE invoices SET file_path = ? WHERE id = ?",
+          [path, invoice.id],
+        );
+        setPdfMessage({ kind: "ok", text: `PDF enregistré : ${path}` });
+      } else {
+        setPdfMessage({ kind: "ok", text: "PDF téléchargé." });
+      }
+    } catch (err) {
+      console.error(err);
+      setPdfMessage({
+        kind: "err",
+        text: err instanceof Error ? err.message : "Échec de la génération PDF.",
+      });
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
 
   const parsedAdjustments: InvoiceAdjustment[] = (() => {
     if (!invoice.adjustments) return [];
@@ -883,8 +932,31 @@ function InvoiceDetailView({
               </Badge>
             )}
           </Button>
+          <Button
+            variant="outline"
+            onClick={handleDownloadPdf}
+            disabled={generatingPdf || !centre}
+          >
+            {generatingPdf ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {generatingPdf ? "Génération…" : "Télécharger PDF"}
+          </Button>
+          {invoice.status === "draft" && centre && (
+            <Button onClick={() => setShowSendDialog(true)} disabled={updating}>
+              <Mail className="h-4 w-4" />
+              Envoyer par email
+            </Button>
+          )}
           {invoice.status === "draft" && (
-            <Button onClick={() => updateStatus("sent")} disabled={updating}>
+            <Button
+              variant="outline"
+              onClick={() => updateStatus("sent")}
+              disabled={updating}
+              title="Marquer envoyée sans envoyer de mail"
+            >
               <Send className="h-4 w-4" />
               Marquer envoyée
             </Button>
@@ -1077,6 +1149,39 @@ function InvoiceDetailView({
             loadDeroulementSheets();
           }}
         />
+      )}
+
+      {showSendDialog && centre && (
+        <SendInvoiceDialog
+          invoice={invoice}
+          centre={centre}
+          lines={lines}
+          onClose={() => setShowSendDialog(false)}
+          onSent={() => {
+            setShowSendDialog(false);
+            onUpdated();
+          }}
+        />
+      )}
+
+      {pdfMessage && (
+        <div
+          className={`fixed bottom-6 right-6 z-40 max-w-md rounded-lg px-4 py-3 shadow-lg ${
+            pdfMessage.kind === "ok"
+              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+              : "bg-red-50 text-red-800 border border-red-200"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <p className="flex-1 text-sm">{pdfMessage.text}</p>
+            <button
+              onClick={() => setPdfMessage(null)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

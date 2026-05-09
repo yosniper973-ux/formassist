@@ -39,6 +39,12 @@ pub fn run() {
             sql: include_str!("../migrations/005_import_source.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "invoice_pro_info",
+            sql: include_str!("../migrations/006_invoice_pro_info.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

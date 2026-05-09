@@ -2,18 +2,34 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { Eye, EyeOff, Fingerprint, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User } from "lucide-react";
+import { Eye, EyeOff, Fingerprint, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User, Briefcase } from "lucide-react";
 import { db } from "@/lib/db";
 import { encryptValue, decryptValue } from "@/lib/crypto";
 import { testConnection } from "@/lib/claude";
+import { getProfessionalInfo, setProfessionalInfo } from "@/lib/professional-info";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PRESET_LABELS, MODELS } from "@/config/models";
 import type { TaskType, ModelTier } from "@/types/api";
+import type { ProfessionalInfo } from "@/types/invoice";
+
+const EMPTY_PRO_INFO: ProfessionalInfo = {
+  full_name: "",
+  address: "",
+  siret: "",
+  nda: "",
+  tva_number: null,
+  tva_exempt: true,
+  rib: "",
+  bank_name: "",
+  iban: "",
+  bic: "",
+};
 
 const PRESET_KEYS = ["quality", "balanced", "economic", "custom"] as const;
 
@@ -70,13 +86,16 @@ export function SettingsPage() {
   // App info
   const [appVersion, setAppVersion] = useState("");
 
+  // Infos pro émetteur
+  const [proInfo, setProInfo] = useState<ProfessionalInfo>(EMPTY_PRO_INFO);
+
   useEffect(() => {
     loadSettings();
   }, []);
 
   async function loadSettings() {
     try {
-      const [encKey, presetVal, budgetVal, thresholdVal, lockVal, version, firstName] = await Promise.all([
+      const [encKey, presetVal, budgetVal, thresholdVal, lockVal, version, firstName, pro] = await Promise.all([
         db.getConfig("api_key"),
         db.getConfig("model_preset"),
         db.getConfig("budget_monthly"),
@@ -84,7 +103,10 @@ export function SettingsPage() {
         db.getConfig("auto_lock_minutes"),
         invoke<string>("get_app_version").catch(() => "0.1.0"),
         db.getConfig("user_first_name"),
+        getProfessionalInfo(),
       ]);
+
+      setProInfo(pro);
 
       if (firstName) setUserFirstName(firstName);
 
@@ -220,6 +242,22 @@ export function SettingsPage() {
     }
   }
 
+  async function saveProInfo() {
+    setSaveStatus("saving");
+    try {
+      await setProfessionalInfo(proInfo);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (err) {
+      console.error("Erreur enregistrement infos pro :", err);
+      setSaveStatus("error");
+    }
+  }
+
+  function updatePro<K extends keyof ProfessionalInfo>(field: K, value: ProfessionalInfo[K]) {
+    setProInfo((p) => ({ ...p, [field]: value }));
+  }
+
   async function saveFirstName() {
     setSaveStatus("saving");
     try {
@@ -235,6 +273,7 @@ export function SettingsPage() {
 
   const sections = [
     { id: "profil", label: "Profil", icon: <User className="h-4 w-4" /> },
+    { id: "infos_pro", label: "Infos pro", icon: <Briefcase className="h-4 w-4" /> },
     { id: "api", label: "Clé API Claude", icon: <Key className="h-4 w-4" /> },
     { id: "modeles", label: "Modèles IA", icon: <Sliders className="h-4 w-4" /> },
     { id: "budget", label: "Budget", icon: <DollarSign className="h-4 w-4" /> },
@@ -297,6 +336,136 @@ export function SettingsPage() {
                 </p>
               </div>
               <Button onClick={saveFirstName} disabled={saveStatus === "saving"}>
+                {saveStatus === "saving" ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ─── Infos pro émetteur ─── */}
+        {activeSection === "infos_pro" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Infos pro émetteur</CardTitle>
+              <CardDescription>
+                Ces informations apparaissent en haut des factures que tu envoies, ainsi que ton RIB en pied de page.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="pro-name">Nom complet ou raison sociale *</Label>
+                <Input
+                  id="pro-name"
+                  value={proInfo.full_name}
+                  onChange={(e) => updatePro("full_name", e.target.value)}
+                  placeholder="Ex : Jo-Anne Rocher"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="pro-address">Adresse pro *</Label>
+                <Textarea
+                  id="pro-address"
+                  value={proInfo.address}
+                  onChange={(e) => updatePro("address", e.target.value)}
+                  placeholder={"12 rue de l'Exemple\n97300 Cayenne"}
+                  rows={3}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pro-siret">SIRET *</Label>
+                  <Input
+                    id="pro-siret"
+                    value={proInfo.siret}
+                    onChange={(e) => updatePro("siret", e.target.value)}
+                    placeholder="123 456 789 00012"
+                    maxLength={20}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pro-nda">N° de Déclaration d'Activité (NDA)</Label>
+                  <Input
+                    id="pro-nda"
+                    value={proInfo.nda}
+                    onChange={(e) => updatePro("nda", e.target.value)}
+                    placeholder="97 30 01234 56"
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label>Régime de TVA</Label>
+                <div className="space-y-2">
+                  <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-accent">
+                    <input
+                      type="radio"
+                      checked={proInfo.tva_exempt}
+                      onChange={() => updatePro("tva_exempt", true)}
+                      className="mt-1"
+                    />
+                    <div>
+                      <p className="text-sm font-medium">Franchise en base de TVA (art. 293 B du CGI)</p>
+                      <p className="text-xs text-muted-foreground">
+                        Tu ne factures pas la TVA. Mention obligatoire imprimée automatiquement.
+                      </p>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-accent">
+                    <input
+                      type="radio"
+                      checked={!proInfo.tva_exempt}
+                      onChange={() => updatePro("tva_exempt", false)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Assujettie à la TVA</p>
+                      {!proInfo.tva_exempt && (
+                        <Input
+                          value={proInfo.tva_number ?? ""}
+                          onChange={(e) => updatePro("tva_number", e.target.value)}
+                          placeholder="N° TVA intracommunautaire — FR12345678900"
+                          className="mt-2"
+                        />
+                      )}
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label>Coordonnées bancaires (RIB)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Apparaîtront en pied de facture pour permettre au centre de te payer.
+                </p>
+                <div className="space-y-2">
+                  <Input
+                    value={proInfo.bank_name}
+                    onChange={(e) => updatePro("bank_name", e.target.value)}
+                    placeholder="Nom de la banque"
+                  />
+                  <Input
+                    value={proInfo.iban}
+                    onChange={(e) => updatePro("iban", e.target.value)}
+                    placeholder="IBAN — FR76 1234 5678 9012 3456 7890 123"
+                    className="font-mono"
+                  />
+                  <Input
+                    value={proInfo.bic}
+                    onChange={(e) => updatePro("bic", e.target.value)}
+                    placeholder="BIC — BNPAFRPP"
+                    className="font-mono"
+                    maxLength={11}
+                  />
+                </div>
+              </div>
+
+              <Button onClick={saveProInfo} disabled={saveStatus === "saving"}>
                 {saveStatus === "saving" ? "Enregistrement…" : "Enregistrer"}
               </Button>
             </CardContent>
