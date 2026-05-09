@@ -142,32 +142,53 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
     const slotDates = Array.from(new Set(det.slots.map((s) => s.date))).sort();
     const datesLabel = formatDatesLabel(slotDates);
 
-    // Mode "découpage par créneaux" :
-    // si 1 seule compétence couverte + plusieurs créneaux avec titres distincts,
-    // on crée 1 phase par groupe de créneaux ayant le même titre.
-    // Ex : 7 créneaux dont 3 "Apports théoriques", 2 "Mises en pratique", 2 "ECF"
-    //   → 3 phases au lieu d'1.
-    const distinctTitles = new Set(
+    // Mode "découpage par créneaux" (option C) :
+    // Si le planning contient des créneaux avec des titres pédagogiques
+    // distincts (ex : "Apports théoriques", "Mises en pratique", "ECF"),
+    // on crée 1 phase par groupe de créneaux ayant le même titre — quel
+    // que soit le nombre de compétences couvertes. Une même compétence
+    // peut alors apparaître dans plusieurs phases (théorie + ECF par ex.),
+    // et plusieurs compétences peuvent être regroupées dans une même phase
+    // (mises en pratique multi-compétences).
+    //
+    // Les titres de créneaux sont nettoyés des codes compétence (C1.1, CP2…)
+    // avant d'être comparés, pour que "C1.1 Apports théoriques" et
+    // "C1.2 Apports théoriques" soient regroupés dans la même phase.
+    const extractCodes = (title: string | null | undefined): string[] => {
+      if (!title) return [];
+      const matches = title.toUpperCase().match(/C{1,3}P*\s*\d+(?:\.\d+)?/g) ?? [];
+      return [...new Set(matches.map((s) => s.replace(/[\s.]/g, "")))];
+    };
+    const cleanTitle = (title: string | null | undefined): string => {
+      if (!title) return "";
+      return title
+        .replace(/\bC{1,3}P*\s*\d+(?:\.\d+)?\b/gi, "")
+        .replace(/[–—-]\s*$/g, "") // retire les tirets de fin
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const compByCode = new Map<string, (typeof det.competences)[number]>();
+    for (const c of det.competences) {
+      const norm = c.competence.code.toUpperCase().replace(/[\s.]/g, "");
+      compByCode.set(norm, c);
+    }
+
+    const cleanedTitleSet = new Set(
       det.slots
-        .map((s) => (s.title ?? "").trim().toLowerCase())
+        .map((s) => cleanTitle(s.title).toLowerCase())
         .filter(Boolean),
     );
-    const useSlotSplit =
-      det.competences.length === 1 && distinctTitles.size >= 2;
+    const useSlotSplit = cleanedTitleSet.size >= 2;
 
     let phases: PhaseDraft[];
 
     if (useSlotSplit) {
-      const comp = det.competences[0]!;
-      const objectifs = comp.criteria
-        .map((cr) => `- ${cr.description}`)
-        .join("\n");
-
-      // Grouper les créneaux par titre (préserve l'ordre des dates)
+      // Groupement par titre nettoyé, ordre = première apparition chronologique
       const orderedKeys: string[] = [];
       const groups = new Map<string, typeof det.slots>();
       for (const slot of det.slots) {
-        const key = (slot.title ?? "").trim() || "(sans titre)";
+        const key = cleanTitle(slot.title) || "(sans titre)";
         if (!groups.has(key)) {
           groups.set(key, []);
           orderedKeys.push(key);
@@ -181,17 +202,44 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
           (acc, s) => acc + (s.duration_hours ?? 0),
           0,
         );
+
+        // Détermination des compétences couvertes par cette phase :
+        // on extrait les codes compétence des titres des créneaux du groupe.
+        // Si aucun code détecté → toutes les compétences du CCP s'appliquent
+        // (l'utilisateur ajustera manuellement si besoin).
+        const phaseCompIds = new Set<string>();
+        for (const slot of slots) {
+          for (const code of extractCodes(slot.title)) {
+            const comp = compByCode.get(code);
+            if (comp) phaseCompIds.add(comp.competence.id);
+          }
+        }
+        const phaseComps =
+          phaseCompIds.size > 0
+            ? det.competences.filter((c) => phaseCompIds.has(c.competence.id))
+            : det.competences;
+
+        const code = phaseComps.map((c) => c.competence.code).join(" + ");
+        const objectifs = phaseComps
+          .flatMap((c) => c.criteria)
+          .map((cr) => `- ${cr.description}`)
+          .join("\n");
+
         const description = slots
           .map((s) => s.description)
-          .filter((d): d is string => typeof d === "string" && d.trim().length > 0)
+          .filter(
+            (d): d is string => typeof d === "string" && d.trim().length > 0,
+          )
           .join("\n\n");
+
         return {
-          // ID synthétique unique par phase pour que le prefill IA fonctionne
-          competence_id: `${comp.competence.id}#${i}`,
-          code: comp.competence.code,
+          // ID synthétique unique par phase (le prefill IA utilise cet ID
+          // pour faire correspondre les contenus générés)
+          competence_id: `__phase_${i}__`,
+          code,
           intitule: title,
           duree_heures: Math.round(totalHours * 10) / 10,
-          is_ecf: /ecf|évaluation|evaluation\b/i.test(title),
+          is_ecf: /\becf\b|\bévaluation\b|\bevaluation\b/i.test(title),
           selected_content_ids: [],
           objectifs_operationnels: objectifs,
           contenu: description,
@@ -202,6 +250,7 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
       });
     } else {
       // Mode standard : 1 phase = 1 compétence
+      // (utilisé quand tous les créneaux ont le même titre ou aucun titre)
       phases = det.competences.map((c) => {
         const dureeCompetence =
           det.total_duration_hours / Math.max(1, det.competences.length);
