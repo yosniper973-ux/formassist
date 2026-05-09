@@ -142,26 +142,87 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
     const slotDates = Array.from(new Set(det.slots.map((s) => s.date))).sort();
     const datesLabel = formatDatesLabel(slotDates);
 
-    const phases: PhaseDraft[] = det.competences.map((c) => {
-      const dureeCompetence = det.total_duration_hours / Math.max(1, det.competences.length);
-      // Mapping durée : si on peut sommer les slots uniquement liés à cette compétence, on le fait
-      const objectifs = c.criteria
+    // Mode "découpage par créneaux" :
+    // si 1 seule compétence couverte + plusieurs créneaux avec titres distincts,
+    // on crée 1 phase par groupe de créneaux ayant le même titre.
+    // Ex : 7 créneaux dont 3 "Apports théoriques", 2 "Mises en pratique", 2 "ECF"
+    //   → 3 phases au lieu d'1.
+    const distinctTitles = new Set(
+      det.slots
+        .map((s) => (s.title ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const useSlotSplit =
+      det.competences.length === 1 && distinctTitles.size >= 2;
+
+    let phases: PhaseDraft[];
+
+    if (useSlotSplit) {
+      const comp = det.competences[0]!;
+      const objectifs = comp.criteria
         .map((cr) => `- ${cr.description}`)
         .join("\n");
-      return {
-        competence_id: c.competence.id,
-        code: c.competence.code,
-        intitule: c.competence.title,
-        duree_heures: Math.round(dureeCompetence * 10) / 10,
-        is_ecf: false,
-        selected_content_ids: [],
-        objectifs_operationnels: objectifs,
-        contenu: "",
-        methodes: "",
-        outils: "",
-        evaluation: "",
-      };
-    });
+
+      // Grouper les créneaux par titre (préserve l'ordre des dates)
+      const orderedKeys: string[] = [];
+      const groups = new Map<string, typeof det.slots>();
+      for (const slot of det.slots) {
+        const key = (slot.title ?? "").trim() || "(sans titre)";
+        if (!groups.has(key)) {
+          groups.set(key, []);
+          orderedKeys.push(key);
+        }
+        groups.get(key)!.push(slot);
+      }
+
+      phases = orderedKeys.map((title, i) => {
+        const slots = groups.get(title)!;
+        const totalHours = slots.reduce(
+          (acc, s) => acc + (s.duration_hours ?? 0),
+          0,
+        );
+        const description = slots
+          .map((s) => s.description)
+          .filter((d): d is string => typeof d === "string" && d.trim().length > 0)
+          .join("\n\n");
+        return {
+          // ID synthétique unique par phase pour que le prefill IA fonctionne
+          competence_id: `${comp.competence.id}#${i}`,
+          code: comp.competence.code,
+          intitule: title,
+          duree_heures: Math.round(totalHours * 10) / 10,
+          is_ecf: /ecf|évaluation|evaluation\b/i.test(title),
+          selected_content_ids: [],
+          objectifs_operationnels: objectifs,
+          contenu: description,
+          methodes: "",
+          outils: "",
+          evaluation: "",
+        };
+      });
+    } else {
+      // Mode standard : 1 phase = 1 compétence
+      phases = det.competences.map((c) => {
+        const dureeCompetence =
+          det.total_duration_hours / Math.max(1, det.competences.length);
+        const objectifs = c.criteria
+          .map((cr) => `- ${cr.description}`)
+          .join("\n");
+        return {
+          competence_id: c.competence.id,
+          code: c.competence.code,
+          intitule: c.competence.title,
+          duree_heures: Math.round(dureeCompetence * 10) / 10,
+          is_ecf: false,
+          selected_content_ids: [],
+          objectifs_operationnels: objectifs,
+          contenu: "",
+          methodes: "",
+          outils: "",
+          evaluation: "",
+        };
+      });
+    }
 
     return {
       invoice_id: invoice.id,
