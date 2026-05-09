@@ -29,6 +29,8 @@ interface CellInfo {
   paragraph: Element;
   /** Texte du paragraphe précédent (contexte pour Claude) */
   context_before: string;
+  /** Numéro de bloc de phase auquel appartient cette cellule (1, 2, 3…) ou null */
+  phase_block: number | null;
 }
 
 interface ClaudeReplacement {
@@ -58,8 +60,6 @@ function extractCells(documentXml: Document): CellInfo[] {
   for (let i = 0; i < paragraphs.length; i++) {
     const p = paragraphs[i]!;
     const text = getParagraphText(p).trim();
-    // On garde même les paragraphes vides : ils sont les meilleurs candidats
-    // pour insérer le texte de la séance.
 
     // Construction du path lisible
     let path = "p[" + i + "]";
@@ -67,13 +67,12 @@ function extractCells(documentXml: Document): CellInfo[] {
     const segments: string[] = [];
     while (parent && parent.localName !== "body") {
       if (parent.localName === "tc") {
-        // index dans la ligne
         const row = parent.parentElement;
         if (row) {
-          const cells = Array.from(row.children).filter(
+          const tcs = Array.from(row.children).filter(
             (c) => (c as Element).localName === "tc",
           );
-          const idx = cells.indexOf(parent);
+          const idx = tcs.indexOf(parent);
           segments.unshift(`cell[${idx}]`);
         }
       } else if (parent.localName === "tr") {
@@ -100,7 +99,6 @@ function extractCells(documentXml: Document): CellInfo[] {
     segments.push(path);
     path = segments.join("/");
 
-    // Contexte = texte du paragraphe juste avant
     const context_before = i > 0 ? getParagraphText(paragraphs[i - 1]!).trim() : "";
 
     cells.push({
@@ -109,7 +107,22 @@ function extractCells(documentXml: Document): CellInfo[] {
       text,
       paragraph: p,
       context_before,
+      phase_block: null,
     });
+  }
+
+  // Deuxième passe : détecte les blocs de phase et propage le numéro.
+  // Gère les variantes : "Phase 1", "Séquence 2", "Module 3", "Étape 4",
+  // "Partie 5", "Activité 6", "Bloc 7", "Séance 8", "Unité 9", etc.
+  const PHASE_LABEL_RE =
+    /^(?:phase|s[ée]quence|module|[ée]tape|partie|activit[ée]|bloc|s[ée]ance|unit[ée]|section)\s+(\d+)\s*[:：\s]/i;
+  let currentPhase: number | null = null;
+  for (const cell of cells) {
+    const m = cell.text.match(PHASE_LABEL_RE);
+    if (m) {
+      currentPhase = parseInt(m[1]!, 10);
+    }
+    cell.phase_block = currentPhase;
   }
 
   return cells;
@@ -169,18 +182,36 @@ function replaceParagraphText(p: Element, newText: string, doc: Document): void 
 /* Claude prompt                                                              */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-const SYSTEM_PROMPT = `Tu es un expert en bureautique pédagogique. Tu reçois la liste des paragraphes d'un template Word de fiche de déroulement de séance, et les données réelles de la séance à insérer.
+const SYSTEM_PROMPT = `Tu es un expert en bureautique pédagogique. Tu reçois :
+1. La liste des paragraphes d'un template Word de fiche de déroulement de séance (avec pour chaque cellule son texte actuel, son chemin XML, son contexte et son numéro de bloc de phase détecté).
+2. Les données réelles de la séance à insérer, avec N phases numérotées.
 
-Pour chaque paragraphe, identifie s'il doit être :
-- **Remplacé** : par une donnée précise de la séance (titre, date, durée, objectif, contenu d'une phase, etc.)
-- **Conservé** (KEEP) : c'est un libellé / titre / consigne du template (ex : "Phase 1 :", "Objectifs opérationnels", "Date :", légendes, etc.)
+Pour chaque paragraphe, décide :
+- **Remplacer** : mettre une donnée précise de la séance à la place du texte actuel
+- **"KEEP"** : conserver le texte tel quel (libellés, titres de colonnes, légendes)
 
 Règles strictes :
-1. Ne remplace JAMAIS les libellés (ex : "Date :", "Phase 1 :", "Méthodes pédagogiques", titres de colonnes).
-2. Si le paragraphe est vide ou contient juste un placeholder vague et qu'il est dans un contexte clair (ex : à droite d'une cellule "Date :"), remplis-le.
-3. Si tu n'es pas sûr, mets "KEEP".
-4. Pour les listes (ex : objectifs opérationnels), utilise des sauts de ligne entre items.
-5. Si le template a une seule "ligne phase" pour plusieurs phases, mets uniquement les données de la PREMIÈRE phase (les phases suivantes seront ignorées dans cette version).
+1. Ne remplace JAMAIS les libellés fixes : titres de colonnes (ex : "Phases", "Objectifs opérationnels (compétences attendues)", "Contenu", "Méthodes pédagogiques (1)", "Outils et techniques (2)", "Evaluation prévue"), légendes en bas de page, en-têtes de section.
+2. Remplis les zones vides ou placeholders : paragraphes vides, "……", "XXXXXX", "x heures", "Intitulé", "durée", "00/00/XXXX", "Prénom NOM", etc.
+3. Correspondance des phases — chaque cellule a un champ "phase_block" (1, 2, 3… ou null). Utilise-le pour associer la bonne phase :
+   - phase_block = 1 → utilise les données de la phase numéro 1
+   - phase_block = 2 → utilise les données de la phase numéro 2
+   - phase_block = N → utilise les données de la phase numéro N
+   - Si phase_block > nombre de phases dans les données → laisse en "KEEP"
+4. Dans chaque bloc de phase, identifie et remplis :
+   - La cellule contenant "Phase N : durée" ou juste "durée" → "Phase N : X h" (durée de la phase correspondante)
+   - La cellule contenant "Intitulé" → intitulé de la phase
+   - La cellule vide à côté / en dessous de "Objectifs opérationnels" → objectifs_operationnels
+   - La cellule vide à côté / en dessous de "Contenu" → contenu
+   - La cellule vide à côté / en dessous de "Méthodes pédagogiques" → methodes
+   - La cellule vide à côté / en dessous de "Outils et techniques" → outils
+   - La cellule vide à côté / en dessous de "Evaluation prévue" → evaluation
+5. Remplis aussi les cellules globales :
+   - "Durée totale : x heures" → "Durée totale : X heures" (duree_totale)
+   - Zone formation/titre/dates/rédacteur dans l'en-tête du document
+   - Zone objectif général
+6. Pour les listes (objectifs, critères), utilise des sauts de ligne \\n entre items.
+7. En cas de doute, mets "KEEP".
 
 Format de sortie : UN BLOC JSON unique, pas de texte autour :
 
@@ -231,6 +262,7 @@ export async function fillTemplateWithAI(
     path: c.path,
     text: c.text,
     context_before: c.context_before,
+    phase_block: c.phase_block,
   }));
 
   const seanceData = {
@@ -240,6 +272,7 @@ export async function fillTemplateWithAI(
     dates: data.dates_label,
     duree_totale: `${data.total_duration_hours} h`,
     objectif_general: data.objectif_general,
+    nb_phases: data.phases.length,
     phases: data.phases.map((p, i) => ({
       numero: i + 1,
       duree: `${p.duree_heures} h`,
@@ -254,11 +287,13 @@ export async function fillTemplateWithAI(
   };
 
   // 5. Appel Claude
-  const userMessage = `Voici les paragraphes du template :\n\n` +
+  const userMessage =
+    `Le template a ${data.phases.length} phase(s) à remplir.\n\n` +
+    `Voici les paragraphes du template :\n\n` +
     JSON.stringify({ cells: cellsForClaude }, null, 2) +
     `\n\nVoici les données réelles de la séance :\n\n` +
     JSON.stringify(seanceData, null, 2) +
-    `\n\nRenvoie UNIQUEMENT le JSON décrivant les remplacements à appliquer.`;
+    `\n\nRenvoie UNIQUEMENT le JSON décrivant les remplacements à appliquer. Remplis TOUTES les phases présentes dans les données (${data.phases.length} phase(s)).`;
 
   const result = await claudeRequest({
     task: "prefill_deroulement",
