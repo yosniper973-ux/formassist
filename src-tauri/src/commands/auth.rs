@@ -97,38 +97,51 @@ pub fn is_unlocked(state: State<'_, AuthState>) -> Result<bool, String> {
 
 /// Vérifie si la biométrie est disponible sur cette machine.
 #[tauri::command]
-pub fn is_biometric_available() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        biometric_macos::can_evaluate()
-    }
-    #[cfg(target_os = "windows")]
-    {
-        biometric_windows::is_available()
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        false
-    }
+pub async fn is_biometric_available() -> bool {
+    tokio::task::spawn_blocking(|| {
+        #[cfg(target_os = "macos")]
+        {
+            biometric_macos::can_evaluate()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            biometric_windows::is_available()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            false
+        }
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// Déclenche la vérification biométrique (Touch ID / Windows Hello).
 /// Renvoie Ok(()) si l'utilisateur est authentifié, Err(message) sinon.
+///
+/// La commande est async + spawn_blocking pour éviter de figer le thread
+/// principal Tauri (sur Windows en particulier, RequestVerificationAsync
+/// peut bloquer plusieurs secondes pendant que l'utilisateur pose son doigt
+/// ou tape son PIN — la fenêtre principale doit rester réactive).
 #[tauri::command]
-pub fn authenticate_biometric(reason: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        biometric_macos::authenticate(&reason)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        biometric_windows::authenticate(&reason)
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let _ = reason;
-        Err("Biométrie non supportée sur cette plateforme.".to_string())
-    }
+pub async fn authenticate_biometric(reason: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "macos")]
+        {
+            biometric_macos::authenticate(&reason)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            biometric_windows::authenticate(&reason)
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = reason;
+            Err("Biométrie non supportée sur cette plateforme.".to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("Erreur d'exécution biométrique : {e}"))?
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
