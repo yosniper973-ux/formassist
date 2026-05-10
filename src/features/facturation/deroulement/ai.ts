@@ -22,6 +22,7 @@ interface PrefillOutput {
   objectif_general: string;
   phases: Array<{
     competence_id: string;
+    objectifs_operationnels: string;
     contenu: string;
     methodes: string;
     outils: string;
@@ -102,6 +103,7 @@ export async function prefillDeroulement(input: PrefillInput): Promise<PrefillOu
       const filled = byId.get(p.competence_id);
       return {
         competence_id: p.competence_id,
+        objectifs_operationnels: filled?.objectifs_operationnels ?? "",
         contenu: filled?.contenu ?? "",
         methodes: filled?.methodes ?? "",
         outils: filled?.outils ?? "",
@@ -124,6 +126,8 @@ export function mergePrefillResult(
       if (!r) return p;
       return {
         ...p,
+        objectifs_operationnels:
+          r.objectifs_operationnels || p.objectifs_operationnels,
         contenu: r.contenu || p.contenu,
         methodes: r.methodes || p.methodes,
         outils: r.outils || p.outils,

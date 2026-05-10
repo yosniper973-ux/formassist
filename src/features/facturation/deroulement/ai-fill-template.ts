@@ -43,6 +43,85 @@ interface ClaudeReplacement {
 /* Parsing XML                                                                */
 /* ───────────────────────────────────────────────────────────────────────── */
 
+const PHASE_LABEL_RE_GLOBAL =
+  /^(?:phase|s[ée]quence|module|[ée]tape|partie|activit[ée]|bloc|s[ée]ance|unit[ée]|section)\s+(\d+)\s*[:：\s]/i;
+
+/** Récupère tout le texte concaténé d'un élément (paragraphes, runs…). */
+function getElementText(el: Element): string {
+  const ts = el.getElementsByTagNameNS(W_NS, "t");
+  let out = "";
+  for (let i = 0; i < ts.length; i++) {
+    out += ts[i]!.textContent ?? "";
+  }
+  return out;
+}
+
+/**
+ * Trouve les lignes de tableau (<w:tr>) qui sont des "lignes de phase"
+ * (contiennent un libellé "Phase N", "Séquence N", etc.) et renvoie un
+ * mapping numéro → élément <w:tr>.
+ */
+function findPhaseRows(documentXml: Document): Map<number, Element> {
+  const rows = documentXml.getElementsByTagNameNS(W_NS, "tr");
+  const map = new Map<number, Element>();
+  for (let i = 0; i < rows.length; i++) {
+    const tr = rows[i]!;
+    const text = getElementText(tr).trim();
+    const m = text.match(PHASE_LABEL_RE_GLOBAL);
+    if (m) {
+      const num = parseInt(m[1]!, 10);
+      // On garde la PREMIÈRE occurrence de chaque numéro (au cas où le
+      // template a des doublons étranges)
+      if (!map.has(num)) map.set(num, tr);
+    }
+  }
+  return map;
+}
+
+/**
+ * Si le template a moins de lignes "Phase N" que requiredPhases, on
+ * duplique la dernière ligne de phase autant de fois que nécessaire pour
+ * atteindre le nombre requis. Le numéro "Phase N" du label est mis à jour
+ * dans les copies, le reste du texte est conservé tel quel (Claude le
+ * remplacera ensuite par les vraies données).
+ */
+function ensureEnoughPhaseRows(
+  documentXml: Document,
+  requiredPhases: number,
+): void {
+  const phaseRows = findPhaseRows(documentXml);
+  if (phaseRows.size === 0) return;
+
+  const existingNumbers = Array.from(phaseRows.keys()).sort((a, b) => a - b);
+  const maxExisting = existingNumbers[existingNumbers.length - 1]!;
+  if (maxExisting >= requiredPhases) return;
+
+  const lastRow = phaseRows.get(maxExisting)!;
+  const parent = lastRow.parentNode;
+  if (!parent) return;
+
+  let previous = lastRow;
+  for (let n = maxExisting + 1; n <= requiredPhases; n++) {
+    const cloned = lastRow.cloneNode(true) as Element;
+    // Remplace le numéro de phase dans le label cloné (ex : "Phase 3 :" → "Phase 4 :")
+    const ts = cloned.getElementsByTagNameNS(W_NS, "t");
+    for (let i = 0; i < ts.length; i++) {
+      const t = ts[i]!;
+      const txt = t.textContent ?? "";
+      if (PHASE_LABEL_RE_GLOBAL.test(txt)) {
+        t.textContent = txt.replace(/\d+/, String(n));
+      }
+    }
+    // Insertion juste après la ligne précédente
+    if (previous.nextSibling) {
+      parent.insertBefore(cloned, previous.nextSibling);
+    } else {
+      parent.appendChild(cloned);
+    }
+    previous = cloned;
+  }
+}
+
 function getParagraphText(p: Element): string {
   const ts = p.getElementsByTagNameNS(W_NS, "t");
   let out = "";
@@ -114,11 +193,9 @@ function extractCells(documentXml: Document): CellInfo[] {
   // Deuxième passe : détecte les blocs de phase et propage le numéro.
   // Gère les variantes : "Phase 1", "Séquence 2", "Module 3", "Étape 4",
   // "Partie 5", "Activité 6", "Bloc 7", "Séance 8", "Unité 9", etc.
-  const PHASE_LABEL_RE =
-    /^(?:phase|s[ée]quence|module|[ée]tape|partie|activit[ée]|bloc|s[ée]ance|unit[ée]|section)\s+(\d+)\s*[:：\s]/i;
   let currentPhase: number | null = null;
   for (const cell of cells) {
-    const m = cell.text.match(PHASE_LABEL_RE);
+    const m = cell.text.match(PHASE_LABEL_RE_GLOBAL);
     if (m) {
       currentPhase = parseInt(m[1]!, 10);
     }
@@ -250,7 +327,12 @@ export async function fillTemplateWithAI(
     throw new Error("Le template DOCX est corrompu (XML invalide).");
   }
 
-  // 3. Extraction des cellules
+  // 3. Si les données contiennent plus de phases que le template n'a de
+  // lignes "Phase N", on duplique la dernière ligne de phase pour ajouter
+  // les lignes manquantes (préserve mise en forme, polices, bordures).
+  ensureEnoughPhaseRows(xmlDoc, data.phases.length);
+
+  // 4. Extraction des cellules
   const cells = extractCells(xmlDoc);
   if (cells.length === 0) {
     throw new Error("Le template ne contient aucun paragraphe exploitable.");

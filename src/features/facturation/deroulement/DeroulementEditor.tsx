@@ -162,172 +162,93 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
     const slotDates = Array.from(new Set(det.slots.map((s) => s.date))).sort();
     const datesLabel = formatDatesLabel(slotDates);
 
-    // Mode "découpage par créneaux" (option C) :
-    // Si le planning contient des créneaux avec des titres pédagogiques
-    // distincts (ex : "Apports théoriques", "Mises en pratique", "ECF"),
-    // on crée 1 phase par groupe de créneaux ayant le même titre — quel
-    // que soit le nombre de compétences couvertes. Une même compétence
-    // peut alors apparaître dans plusieurs phases (théorie + ECF par ex.),
-    // et plusieurs compétences peuvent être regroupées dans une même phase
-    // (mises en pratique multi-compétences).
+    // STRUCTURE PÉDAGOGIQUE FIXE EN 4 PHASES :
+    // Toute fiche de déroulement suit le modèle pédagogique standard :
+    //   1. Heuristique  — découverte / représentations initiales
+    //   2. Explicative  — apports théoriques / consignes
+    //   3. Applicative  — démonstration + mise en pratique
+    //   4. Évaluative   — observation / vérification des acquis
     //
-    // Les titres de créneaux sont nettoyés des codes compétence (C1.1, CP2…)
-    // avant d'être comparés, pour que "C1.1 Apports théoriques" et
-    // "C1.2 Apports théoriques" soient regroupés dans la même phase.
-    const extractCodes = (title: string | null | undefined): string[] => {
-      if (!title) return [];
-      const matches = title.toUpperCase().match(/C{1,3}P*\s*\d+(?:\.\d+)?/g) ?? [];
-      return [...new Set(matches.map((s) => s.replace(/[\s.]/g, "")))];
-    };
-    const cleanTitle = (title: string | null | undefined): string => {
-      if (!title) return "";
-      return title
-        .replace(/\bC{1,3}P*\s*\d+(?:\.\d+)?\b/gi, "")
-        .replace(/[–—-]\s*$/g, "") // retire les tirets de fin
-        .replace(/\s+/g, " ")
-        .trim();
-    };
+    // La durée totale est répartie à parts égales par défaut (l'utilisateur
+    // peut ajuster manuellement chaque durée dans l'éditeur).
+    // Les contenus liés au planning sont tous attachés à la fiche pour que
+    // l'IA puisse répartir les détails dans les bonnes phases.
 
-    const compByCode = new Map<string, (typeof det.competences)[number]>();
-    for (const c of det.competences) {
-      const norm = c.competence.code.toUpperCase().replace(/[\s.]/g, "");
-      compByCode.set(norm, c);
-    }
+    type PedagogicalPhase = {
+      key: string;
+      intitule: string;
+      is_ecf: boolean;
+    };
+    const PEDAGOGICAL_PHASES: PedagogicalPhase[] = [
+      { key: "heuristique", intitule: "Heuristique", is_ecf: false },
+      { key: "explicative", intitule: "Explicative", is_ecf: false },
+      { key: "applicative", intitule: "Applicative", is_ecf: false },
+      { key: "evaluative", intitule: "Évaluative", is_ecf: true },
+    ];
 
-    const cleanedTitleSet = new Set(
-      det.slots
-        .map((s) => cleanTitle(s.title).toLowerCase())
-        .filter(Boolean),
+    // Récupération de TOUS les contenus liés aux créneaux du CCP
+    const allSlotContents = await Promise.all(
+      det.slots.map((s) =>
+        db
+          .getContentsForSlot(s.id)
+          .catch(() => [] as Array<Record<string, unknown>>),
+      ),
     );
-    const useSlotSplit = cleanedTitleSet.size >= 2;
-
-    let phases: PhaseDraft[];
-
-    if (useSlotSplit) {
-      // Groupement par titre nettoyé, ordre = première apparition chronologique
-      const orderedKeys: string[] = [];
-      const groups = new Map<string, typeof det.slots>();
-      for (const slot of det.slots) {
-        const key = cleanTitle(slot.title) || "(sans titre)";
-        if (!groups.has(key)) {
-          groups.set(key, []);
-          orderedKeys.push(key);
-        }
-        groups.get(key)!.push(slot);
+    const seenContentIds = new Set<string>();
+    const allLinkedContents: Array<{
+      id: string;
+      title: string;
+      content_markdown: string;
+    }> = [];
+    for (const arr of allSlotContents) {
+      for (const row of arr) {
+        const id = String(row.id ?? "");
+        if (!id || seenContentIds.has(id)) continue;
+        seenContentIds.add(id);
+        allLinkedContents.push({
+          id,
+          title: String(row.title ?? ""),
+          content_markdown: String(row.content_markdown ?? ""),
+        });
       }
-
-      phases = await Promise.all(
-        orderedKeys.map(async (title, i) => {
-          const slots = groups.get(title)!;
-          const totalHours = slots.reduce(
-            (acc, s) => acc + (s.duration_hours ?? 0),
-            0,
-          );
-
-          // Détermination des compétences couvertes par cette phase :
-          // on extrait les codes compétence des titres des créneaux du groupe.
-          // Si aucun code détecté → toutes les compétences du CCP s'appliquent.
-          const phaseCompIds = new Set<string>();
-          for (const slot of slots) {
-            for (const code of extractCodes(slot.title)) {
-              const comp = compByCode.get(code);
-              if (comp) phaseCompIds.add(comp.competence.id);
-            }
-          }
-          const phaseComps =
-            phaseCompIds.size > 0
-              ? det.competences.filter((c) => phaseCompIds.has(c.competence.id))
-              : det.competences;
-
-          const code = phaseComps.map((c) => c.competence.code).join(" + ");
-
-          // Récupération des cours/exercices liés aux créneaux de cette phase
-          const contentArrays = await Promise.all(
-            slots.map((s) =>
-              db
-                .getContentsForSlot(s.id)
-                .catch(() => [] as Array<Record<string, unknown>>),
-            ),
-          );
-          const seenIds = new Set<string>();
-          const linkedContents: Array<{
-            id: string;
-            title: string;
-            content_markdown: string;
-          }> = [];
-          for (const arr of contentArrays) {
-            for (const row of arr) {
-              const id = String(row.id ?? "");
-              if (!id || seenIds.has(id)) continue;
-              seenIds.add(id);
-              linkedContents.push({
-                id,
-                title: String(row.title ?? ""),
-                content_markdown: String(row.content_markdown ?? ""),
-              });
-            }
-          }
-
-          // Extraction des objectifs depuis les contenus liés
-          const objectivesFromContents = linkedContents
-            .map((c) => extractObjectivesFromMarkdown(c.content_markdown))
-            .filter((s) => s.length > 0)
-            .join("\n");
-
-          // Fallback : si aucun contenu lié ou aucune section objectifs trouvée,
-          // on retombe sur les critères d'évaluation officiels des compétences.
-          const objectifsFromCriteria = phaseComps
-            .flatMap((c) => c.criteria)
-            .map((cr) => `- ${cr.description}`)
-            .join("\n");
-          const objectifs = objectivesFromContents || objectifsFromCriteria;
-
-          const description = slots
-            .map((s) => s.description)
-            .filter(
-              (d): d is string => typeof d === "string" && d.trim().length > 0,
-            )
-            .join("\n\n");
-
-          return {
-            competence_id: `__phase_${i}__`,
-            code,
-            intitule: title,
-            duree_heures: Math.round(totalHours * 10) / 10,
-            is_ecf: /\becf\b|\bévaluation\b|\bevaluation\b/i.test(title),
-            selected_content_ids: linkedContents.map((c) => c.id),
-            objectifs_operationnels: objectifs,
-            contenu: description,
-            methodes: "",
-            outils: "",
-            evaluation: "",
-          };
-        }),
-      );
-    } else {
-      // Mode standard : 1 phase = 1 compétence
-      // (utilisé quand tous les créneaux ont le même titre ou aucun titre)
-      phases = det.competences.map((c) => {
-        const dureeCompetence =
-          det.total_duration_hours / Math.max(1, det.competences.length);
-        const objectifs = c.criteria
-          .map((cr) => `- ${cr.description}`)
-          .join("\n");
-        return {
-          competence_id: c.competence.id,
-          code: c.competence.code,
-          intitule: c.competence.title,
-          duree_heures: Math.round(dureeCompetence * 10) / 10,
-          is_ecf: false,
-          selected_content_ids: [],
-          objectifs_operationnels: objectifs,
-          contenu: "",
-          methodes: "",
-          outils: "",
-          evaluation: "",
-        };
-      });
     }
+
+    // Objectifs : union des objectifs extraits de tous les contenus liés,
+    // ou fallback sur les critères officiels des compétences du CCP.
+    const objectivesFromContents = allLinkedContents
+      .map((c) => extractObjectivesFromMarkdown(c.content_markdown))
+      .filter((s) => s.length > 0)
+      .join("\n");
+    const objectifsFromCriteria = det.competences
+      .flatMap((c) => c.criteria)
+      .map((cr) => `- ${cr.description}`)
+      .join("\n");
+    const sharedObjectifs = objectivesFromContents || objectifsFromCriteria;
+
+    // Code compétences = concat de tous les codes du CCP
+    const sharedCode = det.competences
+      .map((c) => c.competence.code)
+      .join(" + ");
+
+    // Répartition de la durée à parts égales (modifiable par l'utilisateur)
+    const totalHours = det.total_duration_hours;
+    const dureePerPhase =
+      Math.round((totalHours / PEDAGOGICAL_PHASES.length) * 10) / 10;
+    const allContentIds = allLinkedContents.map((c) => c.id);
+
+    const phases: PhaseDraft[] = PEDAGOGICAL_PHASES.map((p, i) => ({
+      competence_id: `__phase_${i}_${p.key}__`,
+      code: sharedCode,
+      intitule: p.intitule,
+      duree_heures: dureePerPhase,
+      is_ecf: p.is_ecf,
+      selected_content_ids: allContentIds,
+      objectifs_operationnels: sharedObjectifs,
+      contenu: "",
+      methodes: "",
+      outils: "",
+      evaluation: "",
+    }));
 
     return {
       invoice_id: invoice.id,

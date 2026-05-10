@@ -208,64 +208,112 @@ mod biometric_macos {
 
 #[cfg(target_os = "windows")]
 mod biometric_windows {
-    pub fn is_available() -> bool {
-        use windows::Security::Credentials::UI::{
-            UserConsentVerifier, UserConsentVerifierAvailability,
-        };
-        let op = match UserConsentVerifier::CheckAvailabilityAsync() {
-            Ok(op) => op,
-            Err(_) => return false,
-        };
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    // Sur Windows, les WinRT async (UserConsentVerifier::RequestVerificationAsync,
+    // CheckAvailabilityAsync) ne se complètent JAMAIS si on poll seulement Status()
+    // depuis un thread Tauri : le statut reste bloqué sur "Started" car la boucle
+    // de messages COM n'est pas pompée. La solution : attacher un handler de
+    // complétion (callback) qui sera appelé par WinRT quand la promesse se résout,
+    // et attendre via une Condvar côté thread appelant.
+
+    use std::sync::{Arc, Condvar, Mutex};
+    use windows::Foundation::AsyncOperationCompletedHandler;
+    use windows::Foundation::IAsyncOperation;
+    use windows::Security::Credentials::UI::{
+        UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
+    };
+    use windows::core::HSTRING;
+    use windows_future::AsyncStatus;
+
+    /// Attend la complétion d'une IAsyncOperation via un handler + Condvar.
+    /// Le handler stocke `Result<T, String>` directement pour éviter de propager
+    /// `windows::core::Result` à travers les threads.
+    fn wait_for_async<T: windows::core::RuntimeType + 'static>(
+        op: &IAsyncOperation<T>,
+        timeout: std::time::Duration,
+    ) -> Result<T, String> {
+        type Slot<T> = Mutex<Option<Result<T, String>>>;
+        let holder: Arc<(Slot<T>, Condvar)> = Arc::new((Mutex::new(None), Condvar::new()));
+        let holder_clone = holder.clone();
+
+        let handler = AsyncOperationCompletedHandler::new(
+            move |inner: windows::core::Ref<IAsyncOperation<T>>, _status: AsyncStatus| {
+                let mapped: Result<T, String> = match inner.as_ref() {
+                    Some(o) => o.GetResults().map_err(|e| e.to_string()),
+                    None => Err("Référence opération vide.".to_string()),
+                };
+                let (lock, cvar) = &*holder_clone;
+                if let Ok(mut guard) = lock.lock() {
+                    *guard = Some(mapped);
+                }
+                cvar.notify_one();
+                Ok(())
+            },
+        );
+
+        op.SetCompleted(&handler)
+            .map_err(|e| format!("Impossible d'attacher le handler WinRT : {e}"))?;
+
+        let (lock, cvar) = &*holder;
+        let mut guard = lock
+            .lock()
+            .map_err(|e| format!("Mutex empoisonné : {e}"))?;
+
+        let deadline = std::time::Instant::now() + timeout;
         loop {
-            match op.Status() {
-                Ok(windows_future::AsyncStatus::Completed) => {
-                    return op.GetResults()
-                        .map(|r| r == UserConsentVerifierAvailability::Available)
-                        .unwrap_or(false);
-                }
-                Ok(windows_future::AsyncStatus::Started) => {
-                    if std::time::Instant::now() >= deadline {
-                        return false;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-                _ => return false,
+            if let Some(r) = guard.take() {
+                return r;
+            }
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return Err("Délai d'attente dépassé.".to_string());
+            }
+            let remaining = deadline - now;
+            let (g, t) = cvar
+                .wait_timeout(guard, remaining)
+                .map_err(|e| format!("Erreur d'attente : {e}"))?;
+            guard = g;
+            if t.timed_out() && guard.is_none() {
+                return Err("Délai d'attente dépassé.".to_string());
             }
         }
     }
 
-    pub fn authenticate(reason: &str) -> Result<(), String> {
-        use windows::Security::Credentials::UI::{
-            UserConsentVerificationResult, UserConsentVerifier,
+    pub fn is_available() -> bool {
+        let op = match UserConsentVerifier::CheckAvailabilityAsync() {
+            Ok(op) => op,
+            Err(_) => return false,
         };
-        use windows::core::HSTRING;
+        match wait_for_async(&op, std::time::Duration::from_secs(10)) {
+            Ok(r) => r == UserConsentVerifierAvailability::Available,
+            Err(_) => false,
+        }
+    }
+
+    pub fn authenticate(reason: &str) -> Result<(), String> {
         let reason_h = HSTRING::from(reason);
         let op = UserConsentVerifier::RequestVerificationAsync(&reason_h)
-            .map_err(|e| e.to_string())?;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        let result = loop {
-            match op.Status() {
-                Ok(windows_future::AsyncStatus::Completed) => {
-                    break op.GetResults().map_err(|e| e.to_string())?;
-                }
-                Ok(windows_future::AsyncStatus::Started) => {
-                    if std::time::Instant::now() >= deadline {
-                        return Err("Délai d'attente dépassé.".to_string());
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-                Ok(windows_future::AsyncStatus::Canceled) => {
-                    return Err("Authentification annulée.".to_string());
-                }
-                _ => return Err("Authentification Windows Hello échouée.".to_string()),
-            }
-        };
+            .map_err(|e| format!("Échec de la demande Windows Hello : {e}"))?;
+        let result = wait_for_async(&op, std::time::Duration::from_secs(120))?;
         match result {
             UserConsentVerificationResult::Verified => Ok(()),
             UserConsentVerificationResult::Canceled => {
                 Err("Authentification annulée.".to_string())
             }
+            UserConsentVerificationResult::DeviceNotPresent => Err(
+                "Aucun capteur biométrique détecté sur cette machine.".to_string(),
+            ),
+            UserConsentVerificationResult::NotConfiguredForUser => Err(
+                "Windows Hello n'est pas configuré pour cet utilisateur. Configure une empreinte ou un PIN dans Paramètres Windows > Comptes > Options de connexion.".to_string(),
+            ),
+            UserConsentVerificationResult::DisabledByPolicy => Err(
+                "Windows Hello est désactivé par la politique du système.".to_string(),
+            ),
+            UserConsentVerificationResult::DeviceBusy => Err(
+                "Le capteur biométrique est occupé. Réessaie dans un instant.".to_string(),
+            ),
+            UserConsentVerificationResult::RetriesExhausted => Err(
+                "Trop de tentatives. Saisis ton mot de passe Windows pour réessayer.".to_string(),
+            ),
             _ => Err("Authentification Windows Hello échouée.".to_string()),
         }
     }
