@@ -223,8 +223,10 @@ export function LockScreen({ onUnlocked }: LockScreenProps) {
             {biometricLoading ? (
               <div className="flex flex-col items-center gap-4 py-4">
                 <Fingerprint className="h-12 w-12 animate-pulse text-primary" />
-                <p className="text-sm text-muted-foreground">
-                  Pose ton doigt sur le capteur…
+                <p className="text-sm text-muted-foreground text-center">
+                  {/Win/i.test(navigator.platform)
+                    ? "Suis les instructions de la fenêtre Windows Hello…"
+                    : "Pose ton doigt sur le capteur…"}
                 </p>
               </div>
             ) : isLocked ? (

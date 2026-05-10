@@ -242,7 +242,8 @@ mod biometric_windows {
     };
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
     use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+        AllowSetForegroundWindow, DispatchMessageW, PeekMessageW, TranslateMessage, MSG,
+        PM_REMOVE,
     };
     use windows::core::HSTRING;
     use windows_future::{AsyncOperationCompletedHandler, IAsyncOperation};
@@ -322,6 +323,15 @@ mod biometric_windows {
 
     pub fn authenticate(reason: &str) -> Result<(), String> {
         ensure_winrt_initialized();
+        // Autorise n'importe quel processus (en pratique, le hôte Credential
+        // Dialog de Windows) à passer au premier plan. Sans ça, la fenêtre
+        // Windows Hello s'ouvre derrière l'app et clignote dans la barre des
+        // tâches sans prendre le focus, obligeant l'utilisateur à cliquer
+        // dessus manuellement.
+        // ASFW_ANY = 0xFFFFFFFF
+        unsafe {
+            let _ = AllowSetForegroundWindow(0xFFFFFFFFu32);
+        }
         let reason_h = HSTRING::from(reason);
         let op = UserConsentVerifier::RequestVerificationAsync(&reason_h)
             .map_err(|e| format!("Échec de la demande Windows Hello : {e}"))?;
