@@ -208,92 +208,34 @@ mod biometric_macos {
 
 #[cfg(target_os = "windows")]
 mod biometric_windows {
-    // Sur Windows, les WinRT async (UserConsentVerifier::RequestVerificationAsync,
-    // CheckAvailabilityAsync) ne se complètent JAMAIS si on poll seulement Status()
-    // depuis un thread Tauri : le statut reste bloqué sur "Started" car la boucle
-    // de messages COM n'est pas pompée. La solution : attacher un handler de
-    // complétion (callback) qui sera appelé par WinRT quand la promesse se résout,
-    // et attendre via une Condvar côté thread appelant.
+    // Sur Windows, les WinRT async (RequestVerificationAsync, CheckAvailabilityAsync)
+    // ne se complètent jamais si on poll seulement Status() depuis un thread Tauri :
+    // le statut reste bloqué sur "Started" car la boucle de messages COM n'est pas
+    // pompée. On utilise donc la méthode .get() de la crate windows-future, qui
+    // attache un handler de complétion + un Waiter natif (event handle Win32),
+    // garantissant que l'opération progresse et que le thread est réveillé dès la
+    // complétion réelle.
 
-    use std::sync::{Arc, Condvar, Mutex};
     use windows::Security::Credentials::UI::{
         UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
     };
     use windows::core::HSTRING;
-    use windows_future::{
-        AsyncOperationCompletedHandler, AsyncStatus, IAsyncOperation,
-    };
-
-    /// Attend la complétion d'une IAsyncOperation via un handler + Condvar.
-    /// Le handler stocke `Result<T, String>` directement pour éviter de propager
-    /// `windows::core::Result` à travers les threads.
-    fn wait_for_async<T: windows::core::RuntimeType + Send + 'static>(
-        op: &IAsyncOperation<T>,
-        timeout: std::time::Duration,
-    ) -> Result<T, String> {
-        type Slot<T> = Mutex<Option<Result<T, String>>>;
-        let holder: Arc<(Slot<T>, Condvar)> = Arc::new((Mutex::new(None), Condvar::new()));
-        let holder_clone = holder.clone();
-
-        let handler = AsyncOperationCompletedHandler::new(
-            move |inner: windows::core::Ref<IAsyncOperation<T>>, _status: AsyncStatus| {
-                let mapped: Result<T, String> = match inner.as_ref() {
-                    Some(o) => o.GetResults().map_err(|e| e.to_string()),
-                    None => Err("Référence opération vide.".to_string()),
-                };
-                let (lock, cvar) = &*holder_clone;
-                if let Ok(mut guard) = lock.lock() {
-                    *guard = Some(mapped);
-                }
-                cvar.notify_one();
-                Ok(())
-            },
-        );
-
-        op.SetCompleted(&handler)
-            .map_err(|e| format!("Impossible d'attacher le handler WinRT : {e}"))?;
-
-        let (lock, cvar) = &*holder;
-        let mut guard = lock
-            .lock()
-            .map_err(|e| format!("Mutex empoisonné : {e}"))?;
-
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            if let Some(r) = guard.take() {
-                return r;
-            }
-            let now = std::time::Instant::now();
-            if now >= deadline {
-                return Err("Délai d'attente dépassé.".to_string());
-            }
-            let remaining = deadline - now;
-            let (g, t) = cvar
-                .wait_timeout(guard, remaining)
-                .map_err(|e| format!("Erreur d'attente : {e}"))?;
-            guard = g;
-            if t.timed_out() && guard.is_none() {
-                return Err("Délai d'attente dépassé.".to_string());
-            }
-        }
-    }
 
     pub fn is_available() -> bool {
         let op = match UserConsentVerifier::CheckAvailabilityAsync() {
             Ok(op) => op,
             Err(_) => return false,
         };
-        match wait_for_async(&op, std::time::Duration::from_secs(10)) {
-            Ok(r) => r == UserConsentVerifierAvailability::Available,
-            Err(_) => false,
-        }
+        matches!(op.get(), Ok(UserConsentVerifierAvailability::Available))
     }
 
     pub fn authenticate(reason: &str) -> Result<(), String> {
         let reason_h = HSTRING::from(reason);
         let op = UserConsentVerifier::RequestVerificationAsync(&reason_h)
             .map_err(|e| format!("Échec de la demande Windows Hello : {e}"))?;
-        let result = wait_for_async(&op, std::time::Duration::from_secs(120))?;
+        let result = op
+            .get()
+            .map_err(|e| format!("Erreur Windows Hello : {e}"))?;
         match result {
             UserConsentVerificationResult::Verified => Ok(()),
             UserConsentVerificationResult::Canceled => {

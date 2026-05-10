@@ -1,6 +1,6 @@
 [package]
 name = "formassist"
-version = "0.3.8"
+version = "0.3.9"
 description = "FormAssist — Assistant pédagogique pour formatrice indépendante"
 authors = ["FormAssist"]
 edition = "2021"
