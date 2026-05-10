@@ -216,13 +216,13 @@ mod biometric_windows {
     // et attendre via une Condvar côté thread appelant.
 
     use std::sync::{Arc, Condvar, Mutex};
-    use windows::Foundation::AsyncOperationCompletedHandler;
-    use windows::Foundation::IAsyncOperation;
     use windows::Security::Credentials::UI::{
         UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
     };
     use windows::core::HSTRING;
-    use windows_future::AsyncStatus;
+    use windows_future::{
+        AsyncOperationCompletedHandler, AsyncStatus, IAsyncOperation,
+    };
 
     /// Attend la complétion d'une IAsyncOperation via un handler + Condvar.
     /// Le handler stocke `Result<T, String>` directement pour éviter de propager
