@@ -221,34 +221,107 @@ mod biometric_macos {
 
 #[cfg(target_os = "windows")]
 mod biometric_windows {
-    // Sur Windows, les WinRT async (RequestVerificationAsync, CheckAvailabilityAsync)
-    // ne se complètent jamais si on poll seulement Status() depuis un thread Tauri :
-    // le statut reste bloqué sur "Started" car la boucle de messages COM n'est pas
-    // pompée. On utilise donc la méthode .get() de la crate windows-future, qui
-    // attache un handler de complétion + un Waiter natif (event handle Win32),
-    // garantissant que l'opération progresse et que le thread est réveillé dès la
-    // complétion réelle.
+    // UserConsentVerifier (Windows Hello) est une API WinRT UI qui exige :
+    // 1) Le thread appelant doit avoir WinRT initialisé (RoInitialize)
+    // 2) Le thread doit pomper des messages Win32 sinon l'UI Hello ne s'affiche
+    //    pas et le callback de complétion n'est jamais livré.
+    // Les threads de pool tokio n'ont ni l'un ni l'autre, ce qui explique
+    // pourquoi un simple op.get() ou un polling de Status() bloque indéfiniment.
+    //
+    // Solution : on fait l'init COM/WinRT au début, on attache un handler de
+    // complétion qui signale un AtomicBool, et on pompe les messages Win32
+    // jusqu'à la complétion. C'est exactement le pattern recommandé par MS
+    // pour les API WinRT UI utilisées hors d'un contexte UI natif.
 
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
     use windows::Security::Credentials::UI::{
         UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
     };
+    use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+    };
     use windows::core::HSTRING;
+    use windows_future::{AsyncOperationCompletedHandler, IAsyncOperation};
+
+    /// Initialise WinRT en mode multi-threadé pour le thread courant. Idempotent
+    /// (les appels suivants renvoient S_FALSE qu'on ignore).
+    fn ensure_winrt_initialized() {
+        unsafe {
+            let _ = RoInitialize(RO_INIT_MULTITHREADED);
+        }
+    }
+
+    /// Pompe les messages Win32 du thread courant jusqu'à ce que `done` soit
+    /// signalé. Indispensable pour que l'UI Windows Hello s'affiche et que le
+    /// handler de complétion soit livré.
+    fn pump_until<T: windows::core::RuntimeType + Send + Clone + 'static>(
+        op: &IAsyncOperation<T>,
+        timeout: Duration,
+    ) -> Result<T, String> {
+        let done = Arc::new(AtomicBool::new(false));
+        let done_clone = done.clone();
+        let result_slot: Arc<Mutex<Option<Result<T, String>>>> = Arc::new(Mutex::new(None));
+        let result_clone = result_slot.clone();
+
+        let handler =
+            AsyncOperationCompletedHandler::new(move |inner, _status| {
+                let mapped: Result<T, String> = match inner.as_ref() {
+                    Some(o) => o.GetResults().map_err(|e| e.to_string()),
+                    None => Err("Référence d'opération vide.".to_string()),
+                };
+                if let Ok(mut g) = result_clone.lock() {
+                    *g = Some(mapped);
+                }
+                done_clone.store(true, Ordering::SeqCst);
+                Ok(())
+            });
+
+        op.SetCompleted(&handler)
+            .map_err(|e| format!("Impossible d'attacher le handler WinRT : {e}"))?;
+
+        let deadline = Instant::now() + timeout;
+        unsafe {
+            while !done.load(Ordering::SeqCst) {
+                if Instant::now() >= deadline {
+                    return Err("Délai d'attente dépassé.".to_string());
+                }
+                let mut msg = MSG::default();
+                while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        match result_slot.lock().map_err(|e| e.to_string())?.take() {
+            Some(r) => r,
+            None => Err("Résultat WinRT vide.".to_string()),
+        }
+    }
 
     pub fn is_available() -> bool {
+        ensure_winrt_initialized();
         let op = match UserConsentVerifier::CheckAvailabilityAsync() {
             Ok(op) => op,
             Err(_) => return false,
         };
-        matches!(op.get(), Ok(UserConsentVerifierAvailability::Available))
+        match pump_until(&op, Duration::from_secs(10)) {
+            Ok(r) => r == UserConsentVerifierAvailability::Available,
+            Err(_) => false,
+        }
     }
 
     pub fn authenticate(reason: &str) -> Result<(), String> {
+        ensure_winrt_initialized();
         let reason_h = HSTRING::from(reason);
         let op = UserConsentVerifier::RequestVerificationAsync(&reason_h)
             .map_err(|e| format!("Échec de la demande Windows Hello : {e}"))?;
-        let result = op
-            .get()
-            .map_err(|e| format!("Erreur Windows Hello : {e}"))?;
+        let result = pump_until(&op, Duration::from_secs(120))?;
         match result {
             UserConsentVerificationResult::Verified => Ok(()),
             UserConsentVerificationResult::Canceled => {
