@@ -47,6 +47,8 @@ Pour un QCM, utilise un tableau :
 |:--:|----------|---|---|---|---|
 | 1 | … | … | … | … | … |
 
+⚠️ **RÈGLE STRICTE pour les QCM** : dans la zone "Questions / Tâches" visible par l'apprenant, **NE JAMAIS** marquer la bonne réponse en gras, souligné, italique, avec ✓, ou par tout autre moyen visuel. Les options A/B/C/D doivent être présentées avec le même formatage neutre. Les bonnes réponses figurent **UNIQUEMENT** dans la section TRAME FORMATEUR (corrigé) en bas du document. Si tu marques une option en gras ici, l'apprenant verra la réponse — c'est interdit.
+
 ## 6. ✅ BARÈME & CRITÈRES DE RÉUSSITE
 
 Tableau :

@@ -31,7 +31,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
 import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
-import { hasFormateurSection, stripFormateur } from "@/lib/utils";
+import { hasFormateurSection, stripFormateur, stripCorrectAnswerHints } from "@/lib/utils";
 import { DownloadToast } from "@/components/ui/download-toast";
 import { db } from "@/lib/db";
 import { request as claudeRequest, estimateCost } from "@/lib/claude";
@@ -1213,7 +1213,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                                 className="border-blue-300 text-blue-700 hover:bg-blue-50"
                                 onClick={async () => {
                                   try {
-                                    const apprenant = hasFormateur ? stripFormateur(generatedContent) : generatedContent;
+                                    const apprenant = hasFormateur ? stripFormateur(generatedContent) : stripCorrectAnswerHints(generatedContent);
                                     const blob = await markdownToDocx(apprenant);
                                     const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
                                     if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
@@ -1231,7 +1231,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                                 className="border-blue-300 text-blue-700 hover:bg-blue-50"
                                 onClick={async () => {
                                   try {
-                                    const apprenant = hasFormateur ? stripFormateur(generatedContent) : generatedContent;
+                                    const apprenant = hasFormateur ? stripFormateur(generatedContent) : stripCorrectAnswerHints(generatedContent);
                                     const blob = await markdownToPdf(apprenant);
                                     const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
                                     if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
@@ -1592,7 +1592,7 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: Genera
                         className="border-blue-300 text-blue-700 hover:bg-blue-50"
                         onClick={async () => {
                           try {
-                            const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : item.content_markdown;
+                            const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : stripCorrectAnswerHints(item.content_markdown);
                             const blob = await markdownToDocx(apprenant);
                             const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
                             if (savedPath) onDownloaded?.(savedPath);
@@ -1610,7 +1610,7 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: Genera
                         className="border-blue-300 text-blue-700 hover:bg-blue-50"
                         onClick={async () => {
                           try {
-                            const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : item.content_markdown;
+                            const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : stripCorrectAnswerHints(item.content_markdown);
                             const blob = await markdownToPdf(apprenant);
                             const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
                             if (savedPath) onDownloaded?.(savedPath);

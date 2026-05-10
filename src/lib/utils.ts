@@ -83,21 +83,73 @@ export function hasFormateurSection(markdown: string): boolean {
  * Supprime la section formateur du markdown pour produire la version apprenant.
  * Coupe à la première occurrence d'un titre formateur (## ou ###), en supprimant
  * aussi le séparateur --- éventuel qui précède immédiatement ce titre.
+ *
+ * Ensuite, supprime les indications de bonne réponse qui pourraient avoir
+ * fuité dans la zone questions (gras dans les cellules de tableau, gras sur
+ * les options de QCM en liste, ✓/✅ en début de ligne, etc.).
  */
 export function stripFormateur(markdown: string): string {
   const trameMatch = markdown.match(FORMATEUR_HEADING_REGEX);
-  if (!trameMatch || trameMatch.index === undefined) return markdown;
 
-  // Si le match commence par \n, on coupe avant ce \n pour ne pas laisser
-  // de ligne vide orpheline en fin de document.
-  const cutIndex = trameMatch[0].startsWith("\n")
-    ? trameMatch.index
-    : trameMatch.index;
+  let content = markdown;
+  if (trameMatch && trameMatch.index !== undefined) {
+    const cutIndex = trameMatch.index;
+    content = markdown.slice(0, cutIndex);
+    content = content.replace(/\n+---\s*$/, "");
+    content = content.trimEnd();
+  }
 
-  let content = markdown.slice(0, cutIndex);
+  return stripCorrectAnswerHints(content);
+}
 
-  // Supprime le séparateur --- placé juste avant la section formateur
-  content = content.replace(/\n+---\s*$/, "");
+/**
+ * Retire les indices visuels de bonne réponse dans la version apprenant :
+ *
+ * 1. Lignes de tableau (commencent par `|`) → enlève le gras des cellules.
+ *    Cas typique : `| 1 | Q ? | A | **B** | C | D |` → `| 1 | Q ? | A | B | C | D |`
+ *
+ * 2. Options de QCM en liste à puces ou numérotée, dont le marqueur est
+ *    suivi d'une lettre A/B/C/D (parenthèse ou point) → enlève le gras.
+ *    Cas typique : `- B) **Paris**` → `- B) Paris`
+ *
+ * 3. Préfixes ✓ / ✅ / ☑ en début de ligne d'option → retirés.
+ *
+ * Les autres usages du gras (titres, mises en avant pédagogiques) sont
+ * préservés.
+ */
+export function stripCorrectAnswerHints(markdown: string): string {
+  const removeBold = (s: string): string =>
+    s.replace(/\*\*([^*\n]+)\*\*/g, "$1");
 
-  return content.trimEnd();
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+
+    // Cas 1 : ligne de tableau
+    if (trimmed.startsWith("|")) {
+      out.push(removeBold(line));
+      continue;
+    }
+
+    // Cas 2 : option QCM en liste — marqueur (-, *, 1.) suivi
+    // d'une lettre A/B/C/D ou a/b/c/d et d'un séparateur ) . :
+    if (
+      /^(?:[-*•]|\d+[.)])\s+(?:\[\s?[xX✓]?\s?\]\s+)?[A-Da-d][).:]\s+/.test(trimmed)
+    ) {
+      // Retire d'éventuels ✓ ✅ ☑ après le marqueur de lettre
+      let cleaned = line.replace(
+        /([A-Da-d][).:]\s+)(?:[✓✅☑]\s*)+/,
+        "$1",
+      );
+      cleaned = removeBold(cleaned);
+      out.push(cleaned);
+      continue;
+    }
+
+    out.push(line);
+  }
+
+  return out.join("\n");
 }
