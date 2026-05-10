@@ -227,7 +227,7 @@ mod biometric_windows {
     /// Attend la complétion d'une IAsyncOperation via un handler + Condvar.
     /// Le handler stocke `Result<T, String>` directement pour éviter de propager
     /// `windows::core::Result` à travers les threads.
-    fn wait_for_async<T: windows::core::RuntimeType + 'static>(
+    fn wait_for_async<T: windows::core::RuntimeType + Send + 'static>(
         op: &IAsyncOperation<T>,
         timeout: std::time::Duration,
     ) -> Result<T, String> {
