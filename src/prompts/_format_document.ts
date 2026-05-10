@@ -104,4 +104,6 @@ Termine TOUJOURS par une section \`## N. GRILLE D'ÉVALUATION\` (même courte) a
 - N'utilise PAS de blocs de code \`\`\` sauf pour du vrai code technique.
 - Les paragraphes doivent être aérés (ligne vide entre chaque bloc).
 - Le document doit pouvoir être imprimé et envoyé tel quel à des apprenants adultes.
+- ⚠️ **N'écris JAMAIS d'entités HTML** dans ton markdown (\`&nbsp;\`, \`&amp;\`, \`&lt;\`, \`&hellip;\` etc.). Le document n'est pas du HTML : ces codes apparaîtraient en clair dans le Word/PDF. Utilise toujours les vrais caractères : un espace normal, &, <, …
+- Pour espacer des cases à cocher sur une ligne (ex : \`☐ A   ☐ B   ☐ C   ☐ D\`), utilise simplement plusieurs espaces normaux entre les options — JAMAIS de \`&nbsp;\`.
 `;

@@ -103,6 +103,33 @@ export function stripFormateur(markdown: string): string {
 }
 
 /**
+ * Décode les entités HTML les plus courantes qui peuvent traîner dans le
+ * markdown généré par l'IA (qui pense parfois écrire pour le web). Sans ce
+ * traitement, on retrouve des "&nbsp;", "&amp;" littéraux dans le docx/pdf.
+ */
+export function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#160;/g, " ")
+    .replace(/&ensp;/g, " ")
+    .replace(/&emsp;/g, " ")
+    .replace(/&thinsp;/g, " ")
+    .replace(/&#8201;/g, " ")
+    .replace(/&hellip;/g, "…")
+    .replace(/&mdash;/g, "—")
+    .replace(/&ndash;/g, "–")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&laquo;/g, "«")
+    .replace(/&raquo;/g, "»")
+    // &amp; doit être traité EN DERNIER pour éviter de double-décoder
+    .replace(/&amp;/g, "&");
+}
+
+/**
  * Retire les indices visuels de bonne réponse dans la version apprenant :
  *
  * 1. Lignes de tableau (commencent par `|`) → enlève le gras des cellules.

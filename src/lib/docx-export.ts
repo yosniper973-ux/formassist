@@ -13,6 +13,7 @@ import {
   LevelFormat,
   ExternalHyperlink,
 } from "docx";
+import { decodeHtmlEntities } from "./utils";
 
 /**
  * Exporte un document pédagogique Markdown en fichier .docx stylisé
@@ -21,6 +22,9 @@ import {
  * Renvoie un Blob prêt à être téléchargé.
  */
 export async function markdownToDocx(markdown: string): Promise<Blob> {
+  // Décode les entités HTML (&nbsp;, &amp;, etc.) que l'IA glisse parfois
+  // dans son markdown — sans ça elles apparaissent en clair dans le docx.
+  markdown = decodeHtmlEntities(markdown);
   const children: (Paragraph | Table)[] = [];
   const lines = markdown.split("\n");
   let i = 0;

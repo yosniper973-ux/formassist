@@ -9,6 +9,7 @@ import {
   Link,
 } from "@react-pdf/renderer";
 import React from "react";
+import { decodeHtmlEntities } from "./utils";
 
 /**
  * Export PDF natif (texte sélectionnable) avec rendu identique sur tout
@@ -517,6 +518,9 @@ function buildCallout(
 // API publique
 // ============================================================
 export async function markdownToPdf(markdown: string): Promise<Blob> {
+  // Décode les entités HTML (&nbsp;, &amp;, etc.) que l'IA glisse parfois
+  // dans son markdown — sans ça elles apparaissent en clair dans le PDF.
+  markdown = decodeHtmlEntities(markdown);
   const blocks = buildBlocks(markdown);
   const doc = React.createElement(
     Document,
