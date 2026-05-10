@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DownloadToast } from "@/components/ui/download-toast";
 import { DeroulementEditor } from "./deroulement/DeroulementEditor";
 import { listDeroulementSheetsForInvoice } from "./deroulement/queries";
 import type { DeroulementSheetRow } from "./deroulement/types";
@@ -800,6 +801,7 @@ function InvoiceDetailView({
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [centre, setCentre] = useState<Centre | null>(null);
   const [pdfMessage, setPdfMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const loadDeroulementSheets = useCallback(async () => {
@@ -843,7 +845,10 @@ function InvoiceDetailView({
           "UPDATE invoices SET file_path = ? WHERE id = ?",
           [path, invoice.id],
         );
-        setPdfMessage({ kind: "ok", text: `PDF enregistré : ${path}` });
+        setDownloadToast({
+          path,
+          name: path.split(/[\\/]/).pop() ?? path,
+        });
       } else {
         setPdfMessage({ kind: "ok", text: "PDF téléchargé." });
       }
@@ -1183,6 +1188,14 @@ function InvoiceDetailView({
             </button>
           </div>
         </div>
+      )}
+
+      {downloadToast && (
+        <DownloadToast
+          path={downloadToast.path}
+          name={downloadToast.name}
+          onClose={() => setDownloadToast(null)}
+        />
       )}
     </div>
   );

@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { DownloadToast } from "@/components/ui/download-toast";
 import type { Centre, Formation, Invoice } from "@/types";
 import {
   detectCcpsForInvoice,
@@ -478,6 +479,7 @@ function DraftEditor({
   const [prefilling, setPrefilling] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
   const [openPhases, setOpenPhases] = useState<Set<number>>(new Set([0]));
 
   function togglePhase(i: number) {
@@ -635,12 +637,14 @@ function DraftEditor({
         setDraft((d) => (d ? { ...d, file_path_docx: savedPath } : d));
       }
       await onSaved(id);
-      setMessage({
-        kind: "ok",
-        text: savedPath
-          ? `Fichier exporté : ${savedPath}`
-          : "Fichier téléchargé.",
-      });
+      if (savedPath) {
+        setDownloadToast({
+          path: savedPath,
+          name: savedPath.split(/[\\/]/).pop() ?? savedPath,
+        });
+      } else {
+        setMessage({ kind: "ok", text: "Fichier téléchargé." });
+      }
     } catch (err) {
       console.error(err);
       setMessage({
@@ -910,6 +914,14 @@ function DraftEditor({
           );
         })}
       </div>
+
+      {downloadToast && (
+        <DownloadToast
+          path={downloadToast.path}
+          name={downloadToast.name}
+          onClose={() => setDownloadToast(null)}
+        />
+      )}
     </div>
   );
 }

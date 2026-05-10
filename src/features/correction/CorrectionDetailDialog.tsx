@@ -9,6 +9,7 @@ import { useAppStore } from "@/stores/appStore";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
+import { DownloadToast } from "@/components/ui/download-toast";
 import type { Correction, CriteriaGrid } from "@/types/correction";
 import type { Learner } from "@/types/learner";
 
@@ -34,6 +35,7 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
   const [data, setData] = useState<FullCorrection | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [senderEmail, setSenderEmail] = useState("");
 
@@ -201,8 +203,10 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
       const blob = await markdownToDocx(md);
       const savedPath = await downloadDocx(blob, exportFilename());
       if (savedPath) {
-        setToast(`Enregistré : ${savedPath.split(/[\\/]/).pop()}`);
-        setTimeout(() => setToast(null), 5000);
+        setDownloadToast({
+          path: savedPath,
+          name: savedPath.split(/[\\/]/).pop() ?? savedPath,
+        });
       }
     } catch (err) {
       console.error(err);
@@ -218,8 +222,10 @@ export function CorrectionDetailDialog({ correctionId, onClose }: Props) {
       const blob = await markdownToPdf(md);
       const savedPath = await downloadPdf(blob, exportFilename());
       if (savedPath) {
-        setToast(`Enregistré : ${savedPath.split(/[\\/]/).pop()}`);
-        setTimeout(() => setToast(null), 5000);
+        setDownloadToast({
+          path: savedPath,
+          name: savedPath.split(/[\\/]/).pop() ?? savedPath,
+        });
       }
     } catch (err) {
       console.error(err);
@@ -524,6 +530,14 @@ Bon courage pour la suite.`;
         <div className="fixed bottom-6 right-6 z-[60] rounded-lg bg-foreground px-4 py-2 text-sm text-background shadow-lg">
           {toast}
         </div>
+      )}
+
+      {downloadToast && (
+        <DownloadToast
+          path={downloadToast.path}
+          name={downloadToast.name}
+          onClose={() => setDownloadToast(null)}
+        />
       )}
     </div>,
     document.body
