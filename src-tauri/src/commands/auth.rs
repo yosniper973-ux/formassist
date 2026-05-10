@@ -298,7 +298,11 @@ mod biometric_windows {
             }
         }
 
-        match result_slot.lock().map_err(|e| e.to_string())?.take() {
+        let taken = {
+            let mut guard = result_slot.lock().map_err(|e| e.to_string())?;
+            guard.take()
+        };
+        match taken {
             Some(r) => r,
             None => Err("Résultat WinRT vide.".to_string()),
         }
