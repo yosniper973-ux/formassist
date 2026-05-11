@@ -24,6 +24,7 @@ import {
   Download,
   CalendarPlus,
   Upload,
+  Square,
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { ImportContentDialog } from "./ImportContentDialog";
@@ -34,7 +35,7 @@ import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
 import { hasFormateurSection, stripFormateur, stripCorrectAnswerHints } from "@/lib/utils";
 import { DownloadToast } from "@/components/ui/download-toast";
 import { db } from "@/lib/db";
-import { request as claudeRequest, estimateCost } from "@/lib/claude";
+import { requestStream, estimateCost } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, CCP, Competence, GeneratedContent } from "@/types";
 import type { TaskType, ClaudeMessage } from "@/types/api";
@@ -225,6 +226,7 @@ export function GenerationPage() {
   const [planningToast, setPlanningToast] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
 
   // Editing
@@ -569,6 +571,10 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
 
   async function handleGenerate() {
     if (!selectedType || !selectedFormationId) return;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setGenerating(true);
     setError("");
     setGeneratedContent("");
@@ -578,27 +584,47 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
     setCopied(false);
     setEditing(false);
 
+    let fullContent = "";
+    let aborted = false;
+
     try {
       const messages = buildMessages();
-      const result = await claudeRequest({
-        task: selectedType.task,
-        messages,
-        context: {
-          formationId: selectedFormationId,
-          groupSize: parseInt(groupSize, 10),
+
+      for await (const chunk of requestStream(
+        {
+          task: selectedType.task,
+          messages,
+          context: {
+            formationId: selectedFormationId,
+            groupSize: parseInt(groupSize, 10),
+          },
         },
-      });
+        controller.signal,
+        (meta) => {
+          setGenerationModel(meta.model);
+          setGenerationCost(meta.costEuros);
+          addApiCost(meta.costEuros);
+        },
+      )) {
+        fullContent += chunk;
+        setGeneratedContent(fullContent);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        aborted = true;
+      } else {
+        setError(err instanceof Error ? err.message : "Erreur lors de la génération");
+      }
+    } finally {
+      setGenerating(false);
+      abortRef.current = null;
+    }
 
-      setGeneratedContent(result.content);
-      setGenerationModel(result.model);
-      setGenerationCost(result.costEuros);
-      addApiCost(result.costEuros);
-
-      // Extract title from first heading and prefix with type + competence codes
-      const titleMatch = result.content.match(/^#\s+(.+)$/m);
+    // Extraire le titre du contenu (complet ou partiel si arrêté)
+    if (fullContent.trim() || aborted) {
+      const titleMatch = fullContent.match(/^#\s+(.+)$/m);
       const rawTitle = titleMatch?.[1]?.trim() ?? "";
       const typeLabel = selectedType.label;
-      // Strip duplicate type label / generic prefixes Claude may have added
       const stripPattern = new RegExp(
         `^(?:${typeLabel}|cours|exercice|qcm|jeu|jeu de r[oô]le|cas pratique)s?\\s*(?:[—:\\-]\\s*)?`,
         "i",
@@ -610,10 +636,6 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
         ? `${typeLabel} ${compCode} - ${subject}`
         : `${typeLabel} - ${subject}`;
       setGeneratedTitle(finalTitle);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur lors de la génération");
-    } finally {
-      setGenerating(false);
     }
   }
 
@@ -1058,25 +1080,27 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                   </div>
                 )}
 
-                {/* Generate button */}
+                {/* Generate / Stop button */}
                 {costEstimate && (
-                  <Button
-                    onClick={handleGenerate}
-                    disabled={!canGenerate || generating}
-                    className="w-full"
-                  >
-                    {generating ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Génération en cours...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-4 w-4" />
-                        Générer
-                      </>
-                    )}
-                  </Button>
+                  generating ? (
+                    <Button
+                      onClick={() => abortRef.current?.abort()}
+                      variant="destructive"
+                      className="w-full"
+                    >
+                      <Square className="h-4 w-4" />
+                      Arrêter la génération
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleGenerate}
+                      disabled={!canGenerate}
+                      className="w-full"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Générer
+                    </Button>
+                  )
                 )}
               </div>
             )}
@@ -1104,7 +1128,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
               </div>
             )}
 
-            {generating && (
+            {generating && !generatedContent && (
               <div className="flex flex-col items-center justify-center rounded-xl border py-16">
                 <RefreshCw className="h-8 w-8 animate-spin text-primary" />
                 <p className="mt-4 text-sm font-medium text-foreground">
@@ -1116,9 +1140,15 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
               </div>
             )}
 
-            {generatedContent && !generating && (
+            {generatedContent && (
               <div className="space-y-3">
-                {restoredAt && !saved && (
+                {generating && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    Génération en cours — clique sur "Arrêter" si tu veux stopper ici
+                  </div>
+                )}
+                {restoredAt && !saved && !generating && (
                   <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
                     <div className="text-xs">
                       <p className="font-semibold">Brouillon récupéré</p>
@@ -1140,8 +1170,8 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                     </button>
                   </div>
                 )}
-                {/* Actions bar */}
-                <div className="flex items-center justify-between">
+                {/* Actions bar — masqué pendant la génération */}
+                {!generating && <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <h3 className="text-sm font-semibold text-foreground">{generatedTitle}</h3>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -1299,7 +1329,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                       Regénérer
                     </Button>
                   </div>
-                </div>
+                </div>}
 
                 {/* Content */}
                 {editing ? (

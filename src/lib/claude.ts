@@ -167,6 +167,122 @@ async function loadApiKey(): Promise<string> {
   return apiKey;
 }
 
+type StreamMetadata = {
+  model: string;
+  costEuros: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+/**
+ * Appel streamé à l'API Claude. Yield des chunks de texte au fur et à mesure.
+ * Appelle onMetadata avec le coût réel à la fin (ou à l'abandon).
+ * Passer un AbortSignal pour pouvoir annuler la génération mi-chemin.
+ */
+export async function* requestStream(
+  req: ClaudeRequest,
+  signal: AbortSignal,
+  onMetadata?: (meta: StreamMetadata) => void,
+): AsyncGenerator<string> {
+  const apiKey = await loadApiKey();
+  const model = await resolveModel(req.task, req.modelOverride);
+  const modelId = MODELS[model].id;
+
+  let systemPrompt = req.systemPromptOverride ?? getPromptForTask(req.task);
+  if (req.systemPromptAppend) systemPrompt += "\n\n" + req.systemPromptAppend;
+  if (req.context?.styleProfile) {
+    systemPrompt += `\n\n## Profil de style pédagogique de la formatrice\n${req.context.styleProfile}`;
+  }
+  if (req.context?.language && req.context.language !== "fr") {
+    systemPrompt += `\n\nIMPORTANT : Génère le contenu en ${req.context.language === "en" ? "anglais" : req.context.language}.`;
+  }
+
+  const maxTokens = req.maxTokens ?? ESTIMATED_OUTPUT_TOKENS[req.task] * 2;
+  const temperature = req.temperature ?? DEFAULT_TEMPERATURE[req.task];
+
+  const bodyObj: Record<string, unknown> = {
+    model: modelId,
+    max_tokens: maxTokens,
+    stream: true,
+    system: systemPrompt,
+    messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+  };
+  if (temperature !== undefined) bodyObj.temperature = temperature;
+
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": API_VERSION,
+      "anthropic-dangerous-direct-browser-access": "true",
+      "anthropic-beta": "pdfs-2024-09-25",
+    },
+    body: JSON.stringify(bodyObj),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(parseApiError(response.status, errorBody));
+  }
+
+  if (!response.body) throw new Error("Streaming non supporté");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") return;
+        try {
+          const event = JSON.parse(data) as Record<string, unknown>;
+          if (event.type === "message_start") {
+            const usage = (event.message as Record<string, unknown>)?.usage as Record<string, number>;
+            if (usage) inputTokens = usage.input_tokens ?? 0;
+          } else if (event.type === "content_block_delta") {
+            const delta = event.delta as Record<string, unknown>;
+            if (delta?.type === "text_delta" && typeof delta.text === "string") {
+              yield delta.text;
+            }
+          } else if (event.type === "message_delta") {
+            const usage = event.usage as Record<string, number>;
+            if (usage) outputTokens = usage.output_tokens ?? outputTokens;
+          }
+        } catch {
+          // ligne non-JSON, ignorée
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+    const costEuros = computeCost(model, inputTokens, outputTokens);
+    if (inputTokens > 0 || outputTokens > 0) {
+      await db.logApiUsage({
+        model: modelId,
+        task_type: req.task,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        cost_euros: costEuros,
+      }).catch(() => {});
+    }
+    onMetadata?.({ model: modelId, costEuros, inputTokens, outputTokens });
+  }
+}
+
 /** Appel principal à l'API Claude */
 export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
   const apiKey = await loadApiKey();
