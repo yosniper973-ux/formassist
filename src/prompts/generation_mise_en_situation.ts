@@ -81,6 +81,8 @@ Tableau avec colonnes Acquis / En cours / Non acquis + colonne « Observation »
 |----------------------|:------:|:--------:|:----------:|-------------|
 | … | ☐ | ☐ | ☐ | |
 
+⚠️ **RÈGLE STRICTE** : la grille d'évaluation ne contient **aucun corrigé, aucune réponse attendue, aucune indication destinée au formateur**. Tout corrigé ou contenu réservé au formateur se trouve **uniquement** dans la section `## 6. 🔒 TRAME FORMATEUR` ci-dessous, après le séparateur `---`.
+
 ---
 
 ## 6. 🔒 TRAME FORMATEUR

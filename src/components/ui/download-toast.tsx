@@ -27,7 +27,7 @@ export function DownloadToast({ path, name, onClose }: DownloadToastProps) {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 shadow-lg animate-in slide-in-from-bottom-4 max-w-sm">
+    <div className="fixed top-6 right-6 z-50 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 shadow-lg animate-in slide-in-from-top-4 max-w-sm">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
         <Check className="h-4 w-4 text-green-700" />
       </div>

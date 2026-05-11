@@ -61,6 +61,8 @@ Tableau :
 
 Tableau Acquis / En cours / Non acquis (obligatoire).
 
+⚠️ **RÈGLE STRICTE** : la grille d'évaluation ne contient **aucun corrigé, aucune réponse attendue, aucune indication destinée au formateur**. Tout corrigé ou contenu réservé au formateur se trouve **uniquement** dans la section `## 8. 🔒 TRAME FORMATEUR` ci-dessous, après le séparateur `---`.
+
 ---
 
 ## 8. 🔒 TRAME FORMATEUR (CORRIGÉ)

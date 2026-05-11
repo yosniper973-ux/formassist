@@ -65,35 +65,50 @@ export function truncate(text: string, maxLength: number): string {
 }
 
 /**
- * Détecte la section réservée au formateur.
- * Accepte tous les niveaux de titre (##, ###…), avec ou sans numéro de section,
- * avec ou sans emoji. Variantes couvertes :
+ * Détecte la section réservée au formateur via un titre markdown (##, ###…).
+ * Variantes couvertes :
  *   🔒 · TRAME FORMATEUR · CORRIGÉ(S) · RÉPONSE(S) · ANIMATION FORMATEUR
  *   NOTES FORMATEUR · GUIDE D'ANIMATION · GUIDE FORMATEUR · CONSEILS FORMATEUR
  */
 const FORMATEUR_HEADING_REGEX =
   /(?:^|\n)[ \t]*#{2,}[ \t]+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|CORRECTIONS?|R[ÉE]PONSES?\s*(?:AUX\s*\w+)?|SOLUTIONS?|CL[EÉ]S?\s*(?:DE\s*)?R[ÉE]PONSE|ANIMATION\s*FORMATEUR|NOTES?\s*FORMATEUR|GUIDE\s*(?:D['']ANIMATION|FORMATEUR)|CONSEILS?\s*FORMATEUR)/i;
 
+/**
+ * Détecte le cas où l'IA insère un corrigé en texte gras hors section formateur,
+ * ex. : `**Corrigé indicatif formateur** :` après la grille d'évaluation.
+ */
+const FORMATEUR_BOLD_REGEX =
+  /(?:^|\n)[ \t]*\*\*[^*\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?\s*(?:INDICATIF\s*)?FORMATEUR)/i;
+
 /** Retourne true si le markdown contient une section formateur. */
 export function hasFormateurSection(markdown: string): boolean {
-  return FORMATEUR_HEADING_REGEX.test(markdown);
+  return FORMATEUR_HEADING_REGEX.test(markdown) || FORMATEUR_BOLD_REGEX.test(markdown);
 }
 
 /**
  * Supprime la section formateur du markdown pour produire la version apprenant.
- * Coupe à la première occurrence d'un titre formateur (## ou ###), en supprimant
- * aussi le séparateur --- éventuel qui précède immédiatement ce titre.
+ * Coupe à la première occurrence d'un titre formateur (## ou ###) OU d'une ligne
+ * en gras contenant un mot-clé formateur (cas où l'IA génère le corrigé hors
+ * section, par ex. après la grille d'évaluation).
+ * Supprime aussi le séparateur --- éventuel qui précède immédiatement la coupe.
  *
  * Ensuite, supprime les indications de bonne réponse qui pourraient avoir
  * fuité dans la zone questions (gras dans les cellules de tableau, gras sur
  * les options de QCM en liste, ✓/✅ en début de ligne, etc.).
  */
 export function stripFormateur(markdown: string): string {
-  const trameMatch = markdown.match(FORMATEUR_HEADING_REGEX);
+  const headingMatch = markdown.match(FORMATEUR_HEADING_REGEX);
+  const boldMatch = markdown.match(FORMATEUR_BOLD_REGEX);
+
+  let cutIndex: number | undefined;
+  if (headingMatch?.index !== undefined) cutIndex = headingMatch.index;
+  if (boldMatch?.index !== undefined) {
+    cutIndex =
+      cutIndex === undefined ? boldMatch.index : Math.min(cutIndex, boldMatch.index);
+  }
 
   let content = markdown;
-  if (trameMatch && trameMatch.index !== undefined) {
-    const cutIndex = trameMatch.index;
+  if (cutIndex !== undefined) {
     content = markdown.slice(0, cutIndex);
     content = content.replace(/\n+---\s*$/, "");
     content = content.trimEnd();
