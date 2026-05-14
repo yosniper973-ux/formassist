@@ -17,7 +17,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
 import { openCompose } from "@/lib/email-compose";
-import { request as claudeRequest } from "@/lib/claude";
+import { requestStream } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Group, Learner, Correction, CriteriaGrid, GeneratedContent } from "@/types";
 import type { ClaudeContentBlock } from "@/types/api";
@@ -338,19 +338,23 @@ ${submissionText.trim()}
 ${instructions}`;
       }
 
-      const response = await claudeRequest({
-        task: "correction",
-        messages: [{ role: "user", content: messageContent }],
-      });
-
-      addApiCost(response.costEuros);
+      // Streaming pour éviter les timeouts sur les gros documents (8+ pages)
+      let fullContent = "";
+      let correctionModel = "";
+      for await (const chunk of requestStream(
+        { task: "correction", messages: [{ role: "user", content: messageContent }] },
+        new AbortController().signal,
+        (meta) => { addApiCost(meta.costEuros); correctionModel = meta.model; },
+      )) {
+        fullContent += chunk;
+      }
 
       // Parse the JSON response — 3 tentatives : bloc ```json```, regex greedy, réponse brute
-      const codeBlock = response.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/s);
+      const codeBlock = fullContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/s);
       const rawJson =
         codeBlock?.[1] ??
-        response.content.match(/\{[\s\S]*\}/)?.[0] ??
-        (response.content.trim().startsWith("{") ? response.content.trim() : undefined);
+        fullContent.match(/\{[\s\S]*\}/)?.[0] ??
+        (fullContent.trim().startsWith("{") ? fullContent.trim() : undefined);
       if (!rawJson) {
         throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
       }
@@ -387,7 +391,7 @@ ${instructions}`;
         maxGrade: 20,
         feedback: parsed.feedback,
         criteriaGrid: grid,
-        model: response.model,
+        model: correctionModel,
       });
       setAdjustedGrade(String(parsed.grade));
     } catch (err) {

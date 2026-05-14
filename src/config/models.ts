@@ -44,7 +44,7 @@ export const ESTIMATED_OUTPUT_TOKENS: Record<TaskType, number> = {
   parsing_reac: 6000,
   parsing_planning: 2000,
   parsing_repartition: 1500,
-  correction: 1500,
+  correction: 4000,
   recommandations: 2000,
   mail_redaction: 800,
   qcm_simple: 8000,
