@@ -25,6 +25,7 @@ import {
   CalendarPlus,
   Upload,
   Square,
+  X,
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { ImportContentDialog } from "./ImportContentDialog";
@@ -138,6 +139,7 @@ const DRAFT_KEY = "formassist:generation:draft:v1";
 interface Draft {
   formationId: string;
   typeValue: string | null;
+  typeValues?: string[];
   competenceIds: string[];
   bloomLevels: BloomLevel[];
   duration: string;
@@ -194,7 +196,8 @@ export function GenerationPage() {
   const [loadingFormations, setLoadingFormations] = useState(false);
 
   // Step 2: Content type
-  const [selectedType, setSelectedType] = useState<ContentTypeOption | null>(null);
+  const [selectedTypes, setSelectedTypes] = useState<ContentTypeOption[]>([]);
+  const [generationProgress, setGenerationProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Step 3: Config
   const [ccps, setCcps] = useState<(CCP & { competences: Competence[] })[]>([]);
@@ -254,9 +257,11 @@ export function GenerationPage() {
       return;
     }
     setSelectedFormationId(d.formationId || "");
-    if (d.typeValue) {
+    if (d.typeValues && d.typeValues.length > 0) {
+      setSelectedTypes(CONTENT_TYPES.filter((ct) => d.typeValues!.includes(ct.value)));
+    } else if (d.typeValue) {
       const opt = CONTENT_TYPES.find((c) => c.value === d.typeValue);
-      if (opt) setSelectedType(opt);
+      if (opt) setSelectedTypes([opt]);
     }
     setSelectedCompetenceIds(new Set(d.competenceIds || []));
     if (Array.isArray(d.bloomLevels) && d.bloomLevels.length > 0) {
@@ -296,7 +301,8 @@ export function GenerationPage() {
     }
     writeDraft({
       formationId: selectedFormationId,
-      typeValue: selectedType?.value ?? null,
+      typeValue: selectedTypes[0]?.value ?? null,
+      typeValues: selectedTypes.map((t) => t.value),
       competenceIds: Array.from(selectedCompetenceIds),
       bloomLevels,
       duration,
@@ -313,7 +319,7 @@ export function GenerationPage() {
   }, [
     saved,
     selectedFormationId,
-    selectedType,
+    selectedTypes,
     selectedCompetenceIds,
     bloomLevels,
     duration,
@@ -410,7 +416,7 @@ export function GenerationPage() {
 
   // ─── Build prompt ───
 
-  function buildMessages(): ClaudeMessage[] {
+  function buildMessages(type: ContentTypeOption): ClaudeMessage[] {
     const formation = formations.find((f) => f.id === selectedFormationId);
     const selectedComps = ccps
       .flatMap((c) => c.competences)
@@ -420,7 +426,7 @@ export function GenerationPage() {
       .map((c) => `- ${c.code} : ${c.title}${c.description ? ` (${c.description})` : ""}`)
       .join("\n");
 
-    const typeLabel = selectedType?.label ?? "contenu";
+    const typeLabel = type.label;
     const bloomLabels = bloomLevels
       .map((lvl) => BLOOM_LEVELS.find((b) => b.value === lvl)?.label ?? lvl);
     const bloomText =
@@ -442,7 +448,7 @@ Taille du groupe : ${groupSize} apprenants`;
 
     // Sizing rules per content type — ensures the generated content actually fills the requested duration
     const sizingBlock = (() => {
-      const t = selectedType?.value;
+      const t = type.value;
       if (t === "trainer_sheet") {
         // QCM : ~1 min 30 à 2 min par question (lecture + réflexion + correction collective)
         const minQ = Math.max(10, Math.round(durationMin / 2.5));
@@ -515,7 +521,7 @@ Règles strictes :
 
 Cette section est OBLIGATOIRE dès qu'une vidéo est mentionnée dans le déroulé.`;
 
-    if (selectedType?.value === "course") {
+    if (type.value === "course") {
       prompt += `
 
 EXIGENCE OBLIGATOIRE — Objectifs (à placer juste après le titre, avant tout déroulé) :
@@ -537,7 +543,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
 
     prompt += `\n\nRéponds en français. Structure le contenu en Markdown avec :
 - Un titre clair
-- Les objectifs pédagogiques${selectedType?.value === "course" ? " et opérationnels (selon les exigences ci-dessus)" : ""}
+- Les objectifs pédagogiques${type.value === "course" ? " et opérationnels (selon les exigences ci-dessus)" : ""}
 - Le déroulé détaillé
 - Les consignes pour le formateur
 - Le matériel nécessaire si applicable`;
@@ -548,15 +554,17 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
   // ─── Estimate cost ───
 
   async function handleEstimate() {
-    if (!selectedType) return;
+    if (selectedTypes.length === 0) return;
     setEstimating(true);
     setError("");
     setCostEstimate(null);
     try {
-      const messages = buildMessages();
-      const estimate = await estimateCost(selectedType.task, messages);
+      const firstType = selectedTypes[0]!;
+      const messages = buildMessages(firstType);
+      const estimate = await estimateCost(firstType.task, messages);
+      const multiplier = selectedTypes.length;
       setCostEstimate({
-        estimatedCost: estimate.estimatedCost,
+        estimatedCost: estimate.estimatedCost * multiplier,
         modelDisplayName: estimate.modelDisplayName,
         needsConfirmation: estimate.needsConfirmation,
       });
@@ -570,7 +578,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
   // ─── Generate ───
 
   async function handleGenerate() {
-    if (!selectedType || !selectedFormationId) return;
+    if (selectedTypes.length === 0 || !selectedFormationId) return;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -584,71 +592,96 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
     setCopied(false);
     setEditing(false);
 
-    let fullContent = "";
-    let aborted = false;
+    for (let i = 0; i < selectedTypes.length; i++) {
+      const currentType = selectedTypes[i]!;
+      if (selectedTypes.length > 1) {
+        setGenerationProgress({ current: i + 1, total: selectedTypes.length });
+      }
 
-    try {
-      const messages = buildMessages();
+      let fullContent = "";
+      let aborted = false;
 
-      for await (const chunk of requestStream(
-        {
-          task: selectedType.task,
-          messages,
-          context: {
-            formationId: selectedFormationId,
-            groupSize: parseInt(groupSize, 10),
+      try {
+        const messages = buildMessages(currentType);
+
+        for await (const chunk of requestStream(
+          {
+            task: currentType.task,
+            messages,
+            context: {
+              formationId: selectedFormationId,
+              groupSize: parseInt(groupSize, 10),
+            },
           },
-        },
-        controller.signal,
-        (meta) => {
-          setGenerationModel(meta.model);
-          setGenerationCost(meta.costEuros);
-          addApiCost(meta.costEuros);
-        },
-      )) {
-        fullContent += chunk;
-        setGeneratedContent(fullContent);
+          controller.signal,
+          (meta) => {
+            setGenerationModel(meta.model);
+            setGenerationCost(meta.costEuros);
+            addApiCost(meta.costEuros);
+          },
+        )) {
+          fullContent += chunk;
+          setGeneratedContent(fullContent);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          aborted = true;
+        } else {
+          setError(err instanceof Error ? err.message : "Erreur lors de la génération");
+        }
       }
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        aborted = true;
-      } else {
-        setError(err instanceof Error ? err.message : "Erreur lors de la génération");
+
+      // Extraire le titre du contenu (complet ou partiel si arrêté)
+      if (fullContent.trim() || aborted) {
+        const titleMatch = fullContent.match(/^#\s+(.+)$/m);
+        const rawTitle = titleMatch?.[1]?.trim() ?? "";
+        const typeLabel = currentType.label;
+        const stripPattern = new RegExp(
+          `^(?:${typeLabel}|cours|exercice|qcm|jeu|jeu de r[oô]le|cas pratique)s?\\s*(?:[—:\\-]\\s*)?`,
+          "i",
+        );
+        const cleanTitle = rawTitle.replace(stripPattern, "").trim();
+        const compCode = buildCompetenceCode();
+        const subject = cleanTitle || new Date().toLocaleDateString("fr-FR");
+        const finalTitle = compCode
+          ? `${typeLabel} ${compCode} - ${subject}`
+          : `${typeLabel} - ${subject}`;
+        setGeneratedTitle(finalTitle);
+
+        // Auto-save and move to next type if more types to generate
+        if (!aborted && i < selectedTypes.length - 1) {
+          await handleSave(currentType, fullContent, finalTitle);
+          setGeneratedContent("");
+          setGeneratedTitle("");
+          setSaved(false);
+          setSavedContentId(null);
+        }
       }
-    } finally {
-      setGenerating(false);
-      abortRef.current = null;
+
+      if (aborted) break;
     }
 
-    // Extraire le titre du contenu (complet ou partiel si arrêté)
-    if (fullContent.trim() || aborted) {
-      const titleMatch = fullContent.match(/^#\s+(.+)$/m);
-      const rawTitle = titleMatch?.[1]?.trim() ?? "";
-      const typeLabel = selectedType.label;
-      const stripPattern = new RegExp(
-        `^(?:${typeLabel}|cours|exercice|qcm|jeu|jeu de r[oô]le|cas pratique)s?\\s*(?:[—:\\-]\\s*)?`,
-        "i",
-      );
-      const cleanTitle = rawTitle.replace(stripPattern, "").trim();
-      const compCode = buildCompetenceCode();
-      const subject = cleanTitle || new Date().toLocaleDateString("fr-FR");
-      const finalTitle = compCode
-        ? `${typeLabel} ${compCode} - ${subject}`
-        : `${typeLabel} - ${subject}`;
-      setGeneratedTitle(finalTitle);
-    }
+    setGenerating(false);
+    setGenerationProgress(null);
+    abortRef.current = null;
   }
 
   // ─── Save ───
 
-  async function handleSave() {
-    if (!selectedFormationId || !selectedType) return;
+  async function handleSave(
+    type?: ContentTypeOption,
+    contentOverride?: string,
+    titleOverride?: string,
+  ) {
+    const effectiveType = type ?? selectedTypes[0];
+    if (!selectedFormationId || !effectiveType) return;
     try {
-      const content = editing ? editBuffer : generatedContent;
+      const content = contentOverride ?? (editing ? editBuffer : generatedContent);
+      const title = titleOverride ?? generatedTitle;
       const newId = await db.createContent({
         formation_id: selectedFormationId,
-        content_type: selectedType.value,
-        title: generatedTitle,
+        content_type: effectiveType.value,
+        title,
         content_markdown: content,
         model_used: generationModel,
         generation_cost: generationCost,
@@ -732,10 +765,25 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
     clearDraft();
   }
 
+  // ─── Close generated document ───
+
+  function handleCloseGenerated() {
+    setGeneratedContent("");
+    setGeneratedTitle("");
+    setCostEstimate(null);
+    setSaved(false);
+    setSavedContentId(null);
+    setEditing(false);
+    setEditBuffer("");
+    setRestoredAt(null);
+    setGenerationCost(0);
+    setGenerationModel("");
+  }
+
   // ─── Helpers ───
 
   const canEstimate =
-    !!selectedFormationId && !!selectedType && selectedCompetenceIds.size > 0;
+    !!selectedFormationId && selectedTypes.length > 0 && selectedCompetenceIds.size > 0;
 
   const canGenerate = canEstimate && !!costEstimate;
 
@@ -828,17 +876,30 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
             {/* Content type */}
             {selectedFormationId && (
               <div className="space-y-1.5">
-                <Label>Type de contenu</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Type de contenu</Label>
+                  {selectedTypes.length > 1 && (
+                    <Badge variant="outline" className="text-primary border-primary/40">
+                      {selectedTypes.length} types sélectionnés
+                    </Badge>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   {CONTENT_TYPES.map((ct) => (
                     <button
                       key={ct.value}
                       onClick={() => {
-                        setSelectedType(ct);
-                        setCostEstimate(null);
+                        setSelectedTypes((prev) => {
+                          const exists = prev.some((t) => t.value === ct.value);
+                          const next = exists
+                            ? prev.filter((t) => t.value !== ct.value)
+                            : [...prev, ct];
+                          setCostEstimate(null);
+                          return next;
+                        });
                       }}
                       className={`flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-colors ${
-                        selectedType?.value === ct.value
+                        selectedTypes.some((t) => t.value === ct.value)
                           ? "border-primary bg-primary/5"
                           : "border-border hover:border-primary/40"
                       }`}
@@ -855,7 +916,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
             )}
 
             {/* Competences */}
-            {selectedType && ccps.length > 0 && (
+            {selectedTypes.length > 0 && ccps.length > 0 && (
               <div className="space-y-1.5">
                 <Label>Compétences ciblées</Label>
                 <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border p-3">
@@ -942,7 +1003,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
             )}
 
             {/* Options */}
-            {selectedType && (
+            {selectedTypes.length > 0 && (
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label>Niveaux de Bloom <span className="text-xs text-muted-foreground font-normal">(plusieurs choix possibles)</span></Label>
@@ -1016,7 +1077,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
             )}
 
             {/* Additional instructions */}
-            {selectedType && (
+            {selectedTypes.length > 0 && (
               <div className="space-y-1.5">
                 <Label htmlFor="instructions">Instructions supplémentaires (optionnel)</Label>
                 <Textarea
@@ -1033,7 +1094,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
             )}
 
             {/* Cost estimate + Generate */}
-            {selectedType && (
+            {selectedTypes.length > 0 && (
               <div className="space-y-3">
                 {/* Estimate button */}
                 {!costEstimate && (
@@ -1067,6 +1128,9 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                           <span className="flex items-center gap-1">
                             <Euro className="h-3 w-3" />
                             {costEstimate.estimatedCost.toFixed(3)} EUR
+                            {selectedTypes.length > 1 && (
+                              <span className="text-primary font-medium">(× {selectedTypes.length} types)</span>
+                            )}
                           </span>
                           <span>Modèle : {costEstimate.modelDisplayName}</span>
                         </div>
@@ -1147,6 +1211,11 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                     <RefreshCw className="h-3 w-3 animate-spin" />
                     Génération en cours — clique sur "Arrêter" si tu veux stopper ici
                   </div>
+                )}
+                {generationProgress && generationProgress.total > 1 && (
+                  <p className="text-xs text-muted-foreground">
+                    Génération {generationProgress.current}/{generationProgress.total} — {selectedTypes[generationProgress.current - 1]?.label}
+                  </p>
                 )}
                 {restoredAt && !saved && !generating && (
                   <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
@@ -1297,7 +1366,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleSave}
+                      onClick={() => handleSave()}
                       disabled={saved}
                     >
                       {saved ? (
@@ -1328,6 +1397,17 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                       <RefreshCw className="h-3.5 w-3.5" />
                       Regénérer
                     </Button>
+                    {saved && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCloseGenerated}
+                        title="Fermer et générer un autre"
+                        className="ml-2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>}
 

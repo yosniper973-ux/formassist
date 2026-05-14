@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import mammoth from "mammoth";
 import {
   FileCheck,
   History,
@@ -94,6 +95,10 @@ export function CorrectionsPage() {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedLearnerIds, setSelectedLearnerIds] = useState<string[]>([]);
   const [selectedContentId, setSelectedContentId] = useState("");
+
+  // Reference mode
+  const [referenceMode, setReferenceMode] = useState<"library" | "file">("library");
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
 
   // Submission
   const [submissionText, setSubmissionText] = useState("");
@@ -261,7 +266,7 @@ export function CorrectionsPage() {
 
   async function handleCorrect() {
     if (selectedLearnerIds.length === 0) return;
-    if (!submissionFile && !submissionText.trim()) return;
+    if (!submissionFile && !submissionText.trim() && !(referenceMode === "file" && referenceFile)) return;
 
     setError("");
     setCorrecting(true);
@@ -273,9 +278,11 @@ export function CorrectionsPage() {
       const selectedLearners = learners.filter((l) => selectedLearnerIds.includes(l.id));
       const isGroup = selectedLearners.length > 1;
 
-      const exerciseContext = selectedContent
-        ? `<exercice_reference titre="${selectedContent.title}">\n${selectedContent.content_markdown}\n</exercice_reference>`
-        : "Aucun exercice de référence fourni.";
+      let exerciseContext = "Aucun exercice de référence fourni.";
+      if (referenceMode === "library" && selectedContent) {
+        exerciseContext = `<exercice_reference titre="${selectedContent.title}">\n${selectedContent.content_markdown}\n</exercice_reference>`;
+      }
+      // Pour referenceMode === "file", le document sera injecté comme bloc séparé ci-dessous
 
       const learnerContext = isGroup
         ? `Travail réalisé en groupe par les apprenants suivants :\n${selectedLearners
@@ -293,8 +300,7 @@ Corrige cette copie en respectant le format JSON défini dans tes instructions.`
 
       let messageContent: string | ClaudeContentBlock[];
 
-      if (submissionFile) {
-        const base64 = await fileToBase64(submissionFile);
+      if (submissionFile || (referenceMode === "file" && referenceFile)) {
         const preamble = `${learnerContext}
 
 ${exerciseContext}
@@ -305,23 +311,47 @@ La copie de l'apprenant est fournie en pièce jointe ci-dessous.`;
 
         const blocks: ClaudeContentBlock[] = [{ type: "text", text: preamble }];
 
-        if (submissionFile.type === "application/pdf") {
-          blocks.push({
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64 },
-          });
-        } else if (
-          submissionFile.type === "image/jpeg" ||
-          submissionFile.type === "image/png" ||
-          submissionFile.type === "image/gif" ||
-          submissionFile.type === "image/webp"
-        ) {
-          blocks.push({
-            type: "image",
-            source: { type: "base64", media_type: submissionFile.type, data: base64 },
-          });
-        } else {
-          throw new Error("Format de fichier non supporté.");
+        // Inject reference file block right after the preamble
+        if (referenceMode === "file" && referenceFile) {
+          const isDocx = referenceFile.name.toLowerCase().endsWith(".docx") ||
+            referenceFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+          if (isDocx) {
+            // Word : extraction texte via mammoth (Claude ne lit pas les .docx nativement)
+            const arrayBuffer = await referenceFile.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            blocks.push({ type: "text", text: `<document_reference>\n${result.value}\n</document_reference>` });
+          } else if (referenceFile.type === "application/pdf") {
+            const refBase64 = await fileToBase64(referenceFile);
+            blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: refBase64 } });
+          } else {
+            const refBase64 = await fileToBase64(referenceFile);
+            blocks.push({ type: "image", source: { type: "base64", media_type: referenceFile.type as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: refBase64 } });
+          }
+          blocks.push({ type: "text", text: "\n## Document de référence ci-dessus\n\n## Copie de l'apprenant" });
+        }
+
+        if (submissionFile) {
+          const base64 = await fileToBase64(submissionFile);
+          if (submissionFile.type === "application/pdf") {
+            blocks.push({
+              type: "document",
+              source: { type: "base64", media_type: "application/pdf", data: base64 },
+            });
+          } else if (
+            submissionFile.type === "image/jpeg" ||
+            submissionFile.type === "image/png" ||
+            submissionFile.type === "image/gif" ||
+            submissionFile.type === "image/webp"
+          ) {
+            blocks.push({
+              type: "image",
+              source: { type: "base64", media_type: submissionFile.type, data: base64 },
+            });
+          } else {
+            throw new Error("Format de fichier non supporté.");
+          }
+        } else if (submissionText.trim()) {
+          blocks.push({ type: "text", text: `<copie_apprenant>\n${submissionText.trim()}\n</copie_apprenant>` });
         }
 
         blocks.push({ type: "text", text: instructions });
@@ -499,7 +529,7 @@ ${instructions}`;
 
   const canCorrect = Boolean(
     selectedLearnerIds.length > 0 &&
-      (submissionText.trim().length > 0 || submissionFile) &&
+      (submissionText.trim().length > 0 || submissionFile || (referenceMode === "file" && referenceFile)) &&
       !correcting &&
       !correctionResult
   );
@@ -602,6 +632,8 @@ ${instructions}`;
           selectedGroupId={selectedGroupId}
           selectedLearnerIds={selectedLearnerIds}
           selectedContentId={selectedContentId}
+          referenceMode={referenceMode}
+          referenceFile={referenceFile}
           submissionText={submissionText}
           submissionFile={submissionFile}
           correcting={correcting}
@@ -614,6 +646,8 @@ ${instructions}`;
           onGroupChange={(id) => { setSelectedGroupId(id); setError(""); }}
           onLearnersChange={(ids) => { setSelectedLearnerIds(ids); setError(""); }}
           onContentChange={(id) => { setSelectedContentId(id); setError(""); }}
+          onReferenceModeChange={setReferenceMode}
+          onReferenceFileChange={setReferenceFile}
           onSubmissionChange={setSubmissionText}
           onFileSelect={handleFileSelect}
           onCorrect={handleCorrect}
@@ -648,6 +682,8 @@ function NewCorrectionTab({
   selectedGroupId,
   selectedLearnerIds,
   selectedContentId,
+  referenceMode,
+  referenceFile,
   submissionText,
   submissionFile,
   correcting,
@@ -660,6 +696,8 @@ function NewCorrectionTab({
   onGroupChange,
   onLearnersChange,
   onContentChange,
+  onReferenceModeChange,
+  onReferenceFileChange,
   onSubmissionChange,
   onFileSelect,
   onCorrect,
@@ -679,6 +717,8 @@ function NewCorrectionTab({
   selectedGroupId: string;
   selectedLearnerIds: string[];
   selectedContentId: string;
+  referenceMode: "library" | "file";
+  referenceFile: File | null;
   submissionText: string;
   submissionFile: File | null;
   correcting: boolean;
@@ -697,6 +737,8 @@ function NewCorrectionTab({
   onGroupChange: (id: string) => void;
   onLearnersChange: (ids: string[]) => void;
   onContentChange: (id: string) => void;
+  onReferenceModeChange: (mode: "library" | "file") => void;
+  onReferenceFileChange: (file: File | null) => void;
   onSubmissionChange: (text: string) => void;
   onFileSelect: (file: File | null) => void;
   onCorrect: () => void;
@@ -911,26 +953,81 @@ function NewCorrectionTab({
           Exercice ou cours (optionnel)
         </div>
 
-        <div className="space-y-1.5">
-          <Label>Contenu de référence</Label>
-          <Select
-            value={selectedContentId}
-            onChange={(e) => onContentChange(e.target.value)}
-            disabled={!selectedFormationId}
+        {/* Toggle mode */}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => { onReferenceModeChange("library"); onReferenceFileChange(null); }}
+            className={`flex-1 rounded-lg border-2 p-2.5 text-sm font-medium transition-colors ${referenceMode === "library" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-primary/40"}`}
           >
-            <option value="">-- Aucun contenu sélectionné --</option>
-            {contents.map((c) => (
-              <option key={c.id} value={c.id}>
-                [{labelForContentType(c.content_type)}] {c.title}
-              </option>
-            ))}
-          </Select>
-          {contents.length === 0 && selectedFormationId && (
-            <p className="text-xs text-muted-foreground">
-              Aucun contenu généré pour cette formation.
-            </p>
-          )}
+            De la bibliothèque
+          </button>
+          <button
+            type="button"
+            onClick={() => onReferenceModeChange("file")}
+            className={`flex-1 rounded-lg border-2 p-2.5 text-sm font-medium transition-colors ${referenceMode === "file" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-primary/40"}`}
+          >
+            Fichier externe
+          </button>
         </div>
+
+        {referenceMode === "library" && (
+          <div className="space-y-1.5">
+            <Label>Contenu de référence</Label>
+            <Select
+              value={selectedContentId}
+              onChange={(e) => onContentChange(e.target.value)}
+              disabled={!selectedFormationId}
+            >
+              <option value="">-- Aucun contenu sélectionné --</option>
+              {contents.map((c) => (
+                <option key={c.id} value={c.id}>
+                  [{labelForContentType(c.content_type)}] {c.title}
+                </option>
+              ))}
+            </Select>
+            {contents.length === 0 && selectedFormationId && (
+              <p className="text-xs text-muted-foreground">
+                Aucun contenu généré pour cette formation.
+              </p>
+            )}
+          </div>
+        )}
+
+        {referenceMode === "file" && (
+          <div className="space-y-1.5">
+            <Label>Document de référence (PDF, Word ou image)</Label>
+            {referenceFile ? (
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileTextIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-sm font-medium">{referenceFile.name}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onReferenceFileChange(null)}
+                  className="ml-2 shrink-0 text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center hover:border-primary/40">
+                <Upload className="h-6 w-6 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Importer un PDF, Word ou une image</span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,image/*"
+                  className="hidden"
+                  onChange={(e) => onReferenceFileChange(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Claude lira directement ce document comme base de correction.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Etape 3 : Copie */}
