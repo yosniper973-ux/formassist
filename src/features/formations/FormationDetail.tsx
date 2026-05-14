@@ -13,6 +13,7 @@ import {
   ClipboardList,
   AlertTriangle,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { request as claudeRequest } from "@/lib/claude";
@@ -44,6 +45,11 @@ export function FormationDetail({ formation, onBack }: Props) {
   // Parsing
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState("");
+
+  // Extraction des savoirs
+  const [extractingSavoirs, setExtractingSavoirs] = useState(false);
+  const [savoirsError, setSavoirsError] = useState("");
+  const [savoirsSuccess, setSavoirsSuccess] = useState(false);
 
   // Nouvelle activité hors-REAC
   const [newActivityName, setNewActivityName] = useState("");
@@ -229,6 +235,137 @@ export function FormationDetail({ formation, onBack }: Props) {
     }
   }
 
+  // ─── Extraction des savoirs pour REAC existant ───
+
+  async function handleExtractSavoirsFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setExtractingSavoirs(true);
+    setSavoirsError("");
+    setSavoirsSuccess(false);
+
+    try {
+      const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+      let messageContent: string | ClaudeContentBlock[];
+
+      if (isPdf) {
+        const arrayBuffer = await file.arrayBuffer();
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error("Le fichier PDF semble vide ou illisible.");
+        }
+        const bytes = new Uint8Array(arrayBuffer);
+        const chunks: string[] = [];
+        for (let i = 0; i < bytes.length; i += 8192) {
+          chunks.push(String.fromCharCode(...bytes.subarray(i, i + 8192)));
+        }
+        const base64 = btoa(chunks.join(""));
+        messageContent = [
+          {
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: base64 },
+          },
+          {
+            type: "text",
+            text: `Voici le REAC pour la formation "${formation.title}".\n\nExtrais **uniquement les savoirs et savoir-faire** de chaque compétence (sf_techniques, sf_organisationnels, sf_relationnels, savoirs). Retourne le même format JSON que d'habitude, avec les critères vides si tu ne les trouves pas — l'important c'est les savoirs.`,
+          },
+        ];
+      } else if (file.name.toLowerCase().endsWith(".docx")) {
+        const mammoth = await import("mammoth");
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        if (!result.value.trim()) {
+          throw new Error("Impossible de lire ce fichier Word. Essaie de l'exporter en PDF.");
+        }
+        messageContent = `Voici le REAC pour la formation "${formation.title}".\n\nExtrais uniquement les savoirs et savoir-faire de chaque compétence.\n\n---\n\n${result.value}`;
+      } else {
+        const text = await file.text();
+        messageContent = `Voici le REAC pour la formation "${formation.title}".\n\nExtrais uniquement les savoirs et savoir-faire de chaque compétence.\n\n---\n\n${text}`;
+      }
+
+      const result = await claudeRequest({
+        task: "parsing_reac",
+        messages: [{ role: "user", content: messageContent }],
+      });
+
+      const codeBlock = result.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      const rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
+      if (!rawJson) {
+        throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
+      }
+
+      let parsed: {
+        ccps: Array<{
+          competences: Array<{
+            code: string;
+            savoirs?: {
+              sf_techniques: string[];
+              sf_organisationnels: string[];
+              sf_relationnels: string[];
+              savoirs: string[];
+            };
+          }>;
+        }>;
+      };
+      try {
+        parsed = JSON.parse(rawJson) as typeof parsed;
+      } catch {
+        throw new Error("Claude n'a pas renvoyé un JSON valide. Réessaie.");
+      }
+
+      // Construire la liste des savoirs par compétence
+      const competencesSavoirs: Array<{
+        code: string;
+        savoirs: {
+          sf_techniques: string[];
+          sf_organisationnels: string[];
+          sf_relationnels: string[];
+          savoirs: string[];
+        };
+      }> = [];
+      for (const ccp of parsed.ccps) {
+        for (const comp of ccp.competences) {
+          if (comp.savoirs) {
+            competencesSavoirs.push({
+              code: comp.code,
+              savoirs: {
+                sf_techniques: comp.savoirs.sf_techniques ?? [],
+                sf_organisationnels: comp.savoirs.sf_organisationnels ?? [],
+                sf_relationnels: comp.savoirs.sf_relationnels ?? [],
+                savoirs: comp.savoirs.savoirs ?? [],
+              },
+            });
+          }
+        }
+      }
+
+      if (competencesSavoirs.length === 0) {
+        throw new Error("Aucun savoir trouvé dans ce document. Vérifie que le PDF contient bien les fiches compétences.");
+      }
+
+      await invoke("save_savoirs_for_formation", {
+        formationId: formation.id,
+        competencesSavoirs,
+      });
+
+      setSavoirsSuccess(true);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : JSON.stringify(err) !== "{}"
+              ? JSON.stringify(err)
+              : String(err);
+      setSavoirsError(`Erreur : ${msg}`);
+      console.error(err);
+    } finally {
+      setExtractingSavoirs(false);
+      e.target.value = "";
+    }
+  }
+
   // ─── Suppression du REAC ───
 
   async function handleDeleteReac() {
@@ -372,12 +509,31 @@ export function FormationDetail({ formation, onBack }: Props) {
                 />
               ) : (
                 <>
-                  {/* Bouton réimporter + supprimer */}
+                  {/* Bouton réimporter + extraire savoirs + supprimer */}
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
                       {ccps.length} CCP — {totalCompetences} compétences
                     </p>
                     <div className="flex items-center gap-2">
+                      {/* Extraire les savoirs */}
+                      <label className={extractingSavoirs ? "cursor-not-allowed opacity-60" : "cursor-pointer"}>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.docx,.txt"
+                          disabled={extractingSavoirs}
+                          onChange={handleExtractSavoirsFile}
+                        />
+                        <span className="flex items-center gap-1.5 rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-primary/5">
+                          {extractingSavoirs ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          {extractingSavoirs ? "Extraction…" : "Extraire les savoirs"}
+                        </span>
+                      </label>
+                      {/* Réimporter */}
                       <label className="cursor-pointer">
                         <input
                           type="file"
@@ -405,6 +561,22 @@ export function FormationDetail({ formation, onBack }: Props) {
                     <Alert variant="warning">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription>{parseError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  {savoirsSuccess && (
+                    <Alert className="border-green-500/30 bg-green-500/5">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-green-700">
+                        Savoirs extraits et enregistrés avec succès ! Ils sont maintenant disponibles dans Générer.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {savoirsError && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>{savoirsError}</AlertDescription>
                     </Alert>
                   )}
 
