@@ -197,34 +197,51 @@ export async function* requestStream(
     systemPrompt += `\n\nIMPORTANT : Génère le contenu en ${req.context.language === "en" ? "anglais" : req.context.language}.`;
   }
 
-  const maxTokens = req.maxTokens ?? ESTIMATED_OUTPUT_TOKENS[req.task] * 2;
+  // max_tokens : 16 000 par défaut (plafond pratique de Sonnet/Opus),
+  // bien au-dessus de l'estimation utilisée pour l'affichage du coût.
+  const maxTokens = req.maxTokens ?? 16000;
   const temperature = req.temperature ?? DEFAULT_TEMPERATURE[req.task];
 
-  const bodyObj: Record<string, unknown> = {
-    model: modelId,
-    max_tokens: maxTokens,
-    stream: true,
-    system: systemPrompt,
-    messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
-  };
-  if (temperature !== undefined) bodyObj.temperature = temperature;
+  function buildBody(omitTemperature: boolean) {
+    const b: Record<string, unknown> = {
+      model: modelId,
+      max_tokens: maxTokens,
+      stream: true,
+      system: systemPrompt,
+      messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+    };
+    if (!omitTemperature && temperature !== undefined) b.temperature = temperature;
+    return b;
+  }
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": API_VERSION,
-      "anthropic-dangerous-direct-browser-access": "true",
-      "anthropic-beta": "pdfs-2024-09-25",
-    },
-    body: JSON.stringify(bodyObj),
-    signal,
-  });
+  let omitTemperature = false;
+  let response: Response;
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(parseApiError(response.status, errorBody));
+  // Retry sans temperature si le modèle ne l'accepte plus
+  while (true) {
+    response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": API_VERSION,
+        "anthropic-dangerous-direct-browser-access": "true",
+        "anthropic-beta": "pdfs-2024-09-25",
+      },
+      body: JSON.stringify(buildBody(omitTemperature)),
+      signal,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      if (response.status === 400 && !omitTemperature &&
+          /temperature.*deprecated|unsupported.*temperature/i.test(errorBody)) {
+        omitTemperature = true;
+        continue;
+      }
+      throw new Error(parseApiError(response.status, errorBody));
+    }
+    break;
   }
 
   if (!response.body) throw new Error("Streaming non supporté");
