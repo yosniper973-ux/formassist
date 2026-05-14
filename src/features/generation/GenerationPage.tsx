@@ -36,6 +36,7 @@ import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
 import { hasFormateurSection, stripFormateur, stripCorrectAnswerHints } from "@/lib/utils";
 import { DownloadToast } from "@/components/ui/download-toast";
 import { db } from "@/lib/db";
+import type { Savoir } from "@/lib/db";
 import { requestStream, estimateCost } from "@/lib/claude";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, CCP, Competence, GeneratedContent } from "@/types";
@@ -203,6 +204,9 @@ export function GenerationPage() {
   const [ccps, setCcps] = useState<(CCP & { competences: Competence[] })[]>([]);
   const [selectedCompetenceIds, setSelectedCompetenceIds] = useState<Set<string>>(new Set());
   const [expandedCcps, setExpandedCcps] = useState<Set<string>>(new Set());
+  const [savoirs, setSavoirs] = useState<Savoir[]>([]);
+  const [selectedSavoirIds, setSelectedSavoirIds] = useState<Set<string>>(new Set());
+  const [expandedCompetences, setExpandedCompetences] = useState<Set<string>>(new Set());
   const [bloomLevels, setBloomLevels] = useState<BloomLevel[]>(["apply"]);
   const [duration, setDuration] = useState("60");
   const [groupSize, setGroupSize] = useState("12");
@@ -351,6 +355,9 @@ export function GenerationPage() {
   useEffect(() => {
     if (!selectedFormationId) {
       setCcps([]);
+      setSavoirs([]);
+      setSelectedSavoirIds(new Set());
+      setExpandedCompetences(new Set());
       return;
     }
     loadCompetences(selectedFormationId);
@@ -373,6 +380,10 @@ export function GenerationPage() {
       setCcps(result);
       // Expand all CCPs by default
       setExpandedCcps(new Set(result.map((c) => c.id)));
+
+      // Load savoirs for this formation
+      const savoirsData = await db.getSavoirsForFormation(formationId);
+      setSavoirs(savoirsData);
     } catch (err) {
       console.error("Erreur chargement compétences :", err);
     }
@@ -490,6 +501,31 @@ La durée demandée est de **${durationMin} minutes (${durationHoursDecimal}h)**
 - Inclus toujours : présentation/consigne, déroulement, mise en commun, débriefing pédagogique.`;
     })();
     prompt += sizingBlock;
+
+    // Savoirs sélectionnés (si applicable)
+    const selectedSavoirs = savoirs.filter((s) => selectedSavoirIds.has(s.id));
+    if (selectedSavoirs.length > 0) {
+      const CATEGORY_LABELS_PROMPT = {
+        sf_technique: 'Savoir-faire techniques',
+        sf_organisationnel: 'Savoir-faire organisationnels',
+        sf_relationnel: 'Savoir-faire relationnels',
+        savoir: 'Savoirs',
+      };
+      const grouped = new Map<string, typeof selectedSavoirs>();
+      for (const s of selectedSavoirs) {
+        const arr = grouped.get(s.category) ?? [];
+        arr.push(s);
+        grouped.set(s.category, arr);
+      }
+      let savoirsBlock = "\n\nSavoirs et savoir-faire spécifiques à couvrir (OBLIGATOIRE — cibler exclusivement ces éléments) :";
+      for (const cat of ['sf_technique', 'sf_organisationnel', 'sf_relationnel', 'savoir'] as const) {
+        const items = grouped.get(cat);
+        if (items?.length) {
+          savoirsBlock += `\n\n**${CATEGORY_LABELS_PROMPT[cat]}** :\n${items.map((s) => `- ${s.content}`).join('\n')}`;
+        }
+      }
+      prompt += savoirsBlock;
+    }
 
     if (additionalInstructions.trim()) {
       prompt += `\n\nInstructions supplémentaires :\n${additionalInstructions.trim()}`;
@@ -726,12 +762,25 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
   // ─── Toggle competence ───
 
   function toggleCompetence(id: string) {
+    const adding = !selectedCompetenceIds.has(id);
     setSelectedCompetenceIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (adding) next.add(id);
+      else next.delete(id);
       return next;
     });
+    // Auto-select / deselect savoirs of this competence
+    const compSavoirs = savoirs.filter((s) => s.competence_id === id);
+    if (compSavoirs.length > 0) {
+      setSelectedSavoirIds((prev) => {
+        const next = new Set(prev);
+        for (const s of compSavoirs) {
+          if (adding) next.add(s.id);
+          else next.delete(s.id);
+        }
+        return next;
+      });
+    }
     setCostEstimate(null);
   }
 
@@ -739,11 +788,24 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
     const ccp = ccps.find((c) => c.id === ccpId);
     if (!ccp) return;
     const allSelected = ccp.competences.every((c) => selectedCompetenceIds.has(c.id));
+    const adding = !allSelected;
     setSelectedCompetenceIds((prev) => {
       const next = new Set(prev);
       for (const comp of ccp.competences) {
-        if (allSelected) next.delete(comp.id);
-        else next.add(comp.id);
+        if (adding) next.add(comp.id);
+        else next.delete(comp.id);
+      }
+      return next;
+    });
+    // Auto-select / deselect savoirs for all competences in this CCP
+    setSelectedSavoirIds((prev) => {
+      const next = new Set(prev);
+      for (const comp of ccp.competences) {
+        const compSavoirs = savoirs.filter((s) => s.competence_id === comp.id);
+        for (const s of compSavoirs) {
+          if (adding) next.add(s.id);
+          else next.delete(s.id);
+        }
       }
       return next;
     });
@@ -778,6 +840,8 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
     setRestoredAt(null);
     setGenerationCost(0);
     setGenerationModel("");
+    setSelectedSavoirIds(new Set());
+    setExpandedCompetences(new Set());
   }
 
   // ─── Helpers ───
@@ -966,23 +1030,99 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                         </div>
                         {isExpanded && (
                           <div className="ml-9 space-y-1 py-1">
-                            {ccp.competences.map((comp) => (
-                              <label
-                                key={comp.id}
-                                className="flex cursor-pointer items-center gap-2 text-sm"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedCompetenceIds.has(comp.id)}
-                                  onChange={() => toggleCompetence(comp.id)}
-                                  className="rounded"
-                                />
-                                <span className="text-xs text-muted-foreground">
-                                  {comp.code}
-                                </span>
-                                <span className="text-muted-foreground">{comp.title}</span>
-                              </label>
-                            ))}
+                            {ccp.competences.map((comp) => {
+                              const compSavoirs = savoirs.filter((s) => s.competence_id === comp.id);
+                              const isCompExpanded = expandedCompetences.has(comp.id);
+                              const selectedCount = compSavoirs.filter((s) => selectedSavoirIds.has(s.id)).length;
+                              const CATEGORY_LABELS = {
+                                sf_technique: 'Savoir-faire techniques',
+                                sf_organisationnel: 'Savoir-faire organisationnels',
+                                sf_relationnel: 'Savoir-faire relationnels',
+                                savoir: 'Savoirs',
+                              };
+                              return (
+                                <div key={comp.id}>
+                                  <label
+                                    className="flex cursor-pointer items-center gap-2 text-sm"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedCompetenceIds.has(comp.id)}
+                                      onChange={() => toggleCompetence(comp.id)}
+                                      className="rounded"
+                                    />
+                                    <span className="text-xs text-muted-foreground">
+                                      {comp.code}
+                                    </span>
+                                    <span className="text-muted-foreground">{comp.title}</span>
+                                  </label>
+                                  {compSavoirs.length > 0 && selectedCompetenceIds.has(comp.id) && (
+                                    <div className="ml-6 mt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedCompetences((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(comp.id)) next.delete(comp.id);
+                                          else next.add(comp.id);
+                                          return next;
+                                        })}
+                                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                                      >
+                                        {isCompExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                        <span>{selectedCount}/{compSavoirs.length} savoirs sélectionnés</span>
+                                      </button>
+                                      {isCompExpanded && (
+                                        <div className="mt-2 space-y-3 rounded-lg border bg-muted/30 p-3">
+                                          {(['sf_technique', 'sf_organisationnel', 'sf_relationnel', 'savoir'] as const).map((cat) => {
+                                            const items = compSavoirs.filter((s) => s.category === cat);
+                                            if (items.length === 0) return null;
+                                            const allChecked = items.every((s) => selectedSavoirIds.has(s.id));
+                                            return (
+                                              <div key={cat}>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                  <input
+                                                    type="checkbox"
+                                                    className="h-3.5 w-3.5 rounded"
+                                                    checked={allChecked}
+                                                    onChange={() => {
+                                                      setSelectedSavoirIds((prev) => {
+                                                        const next = new Set(prev);
+                                                        if (allChecked) items.forEach((s) => next.delete(s.id));
+                                                        else items.forEach((s) => next.add(s.id));
+                                                        return next;
+                                                      });
+                                                    }}
+                                                  />
+                                                  <span className="text-xs font-medium text-foreground">{CATEGORY_LABELS[cat]}</span>
+                                                </div>
+                                                <div className="ml-5 space-y-0.5">
+                                                  {items.map((s) => (
+                                                    <label key={s.id} className="flex items-start gap-2 cursor-pointer">
+                                                      <input
+                                                        type="checkbox"
+                                                        className="mt-0.5 h-3.5 w-3.5 rounded shrink-0"
+                                                        checked={selectedSavoirIds.has(s.id)}
+                                                        onChange={() => setSelectedSavoirIds((prev) => {
+                                                          const next = new Set(prev);
+                                                          if (next.has(s.id)) next.delete(s.id);
+                                                          else next.add(s.id);
+                                                          return next;
+                                                        })}
+                                                      />
+                                                      <span className="text-xs text-muted-foreground leading-relaxed">{s.content}</span>
+                                                    </label>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>

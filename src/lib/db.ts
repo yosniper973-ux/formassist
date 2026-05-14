@@ -223,6 +223,12 @@ async function saveParsedReac(
       title: string;
       description?: string;
       criteria: string[];
+      savoirs?: {
+        sf_techniques?: string[];
+        sf_organisationnels?: string[];
+        sf_relationnels?: string[];
+        savoirs?: string[];
+      };
     }>;
   }>,
 ): Promise<void> {
@@ -252,6 +258,25 @@ async function saveParsedReac(
             "INSERT INTO evaluation_criteria (id, competence_id, description, sort_order) VALUES (?, ?, ?, ?)",
             [generateId(), compId, comp.criteria[k], k],
           );
+        }
+
+        // Savoirs
+        if (comp.savoirs) {
+          const categoryMap: Array<['sf_technique' | 'sf_organisationnel' | 'sf_relationnel' | 'savoir', string[]]> = [
+            ['sf_technique', comp.savoirs.sf_techniques ?? []],
+            ['sf_organisationnel', comp.savoirs.sf_organisationnels ?? []],
+            ['sf_relationnel', comp.savoirs.sf_relationnels ?? []],
+            ['savoir', comp.savoirs.savoirs ?? []],
+          ];
+          let savoirOrder = 0;
+          for (const [cat, items] of categoryMap) {
+            for (const item of items) {
+              await execute(
+                "INSERT INTO competence_savoirs (id, competence_id, category, content, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                [generateId(), compId, cat, item, savoirOrder++, now()],
+              );
+            }
+          }
         }
       }
     }
@@ -351,6 +376,29 @@ async function copyReacToFormation(
     now(),
     targetFormationId,
   ]);
+}
+
+// ============================================================
+// Savoirs
+// ============================================================
+
+export type Savoir = {
+  id: string;
+  competence_id: string;
+  category: 'sf_technique' | 'sf_organisationnel' | 'sf_relationnel' | 'savoir';
+  content: string;
+  sort_order: number;
+};
+
+async function getSavoirsForFormation(formationId: string): Promise<Savoir[]> {
+  return query<Savoir>(
+    `SELECT cs.* FROM competence_savoirs cs
+     JOIN competences c ON cs.competence_id = c.id
+     JOIN ccps ON c.ccp_id = ccps.id
+     WHERE ccps.formation_id = ?
+     ORDER BY c.sort_order, cs.category, cs.sort_order`,
+    [formationId],
+  );
 }
 
 // ============================================================
@@ -919,6 +967,8 @@ export const db = {
   // REAC
   saveParsedReac,
   copyReacToFormation,
+  // Savoirs
+  getSavoirsForFormation,
   // RC/RE
   saveRcre,
   getRcre,

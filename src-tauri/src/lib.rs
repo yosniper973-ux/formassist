@@ -94,6 +94,7 @@ pub fn run() {
             commands::export_database,
             // REAC
             commands::save_reac,
+            commands::save_savoirs_for_formation,
             // DOCX → PDF (LibreOffice)
             commands::docx_to_pdf,
             commands::is_libreoffice_available,
