@@ -69,9 +69,10 @@ export function truncate(text: string, maxLength: number): string {
  * Variantes couvertes :
  *   🔒 · TRAME FORMATEUR · CORRIGÉ(S) · RÉPONSE(S) · ANIMATION FORMATEUR
  *   NOTES FORMATEUR · GUIDE D'ANIMATION · GUIDE FORMATEUR · CONSEILS FORMATEUR
+ *   CONSIGNES POUR L'ACCOMPAGNATEUR · ACCOMPAGNATEUR
  */
 const FORMATEUR_HEADING_REGEX =
-  /(?:^|\n)[ \t]*#{2,}[ \t]+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|CORRECTIONS?|R[ÉE]PONSES?\s*(?:AUX\s*\w+)?|SOLUTIONS?|CL[EÉ]S?\s*(?:DE\s*)?R[ÉE]PONSE|ANIMATION\s*FORMATEUR|NOTES?\s*FORMATEUR|GUIDE\s*(?:D['']ANIMATION|FORMATEUR)|CONSEILS?\s*FORMATEUR)/i;
+  /(?:^|\n)[ \t]*#{2,}[ \t]+[^\n]*(🔒|TRAME\s*FORMATEUR|CORRIG[ÉE]S?|CORRECTIONS?|R[ÉE]PONSES?\s*(?:AUX\s*\w+)?|SOLUTIONS?|CL[EÉ]S?\s*(?:DE\s*)?R[ÉE]PONSE|ANIMATION\s*FORMATEUR|NOTES?\s*FORMATEUR|GUIDE\s*(?:D['']ANIMATION|FORMATEUR)|CONSEILS?\s*FORMATEUR|CONSIGNES?\s*(?:POUR\s*L[''])?ACCOMPAGNATEUR)/i;
 
 /**
  * Détecte le cas où l'IA insère un corrigé en texte gras hors section formateur,
