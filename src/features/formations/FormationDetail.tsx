@@ -24,6 +24,41 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+/**
+ * Extrait le premier objet JSON valide d'un texte quelconque.
+ * - Cherche d'abord un bloc ```json … ```
+ * - Sinon, trouve le premier { et suit les accolades imbriquées pour trouver
+ *   le } correspondant (robuste même si Claude ajoute du texte après le JSON).
+ * Retourne null si aucun objet JSON complet n'est trouvé.
+ */
+function extractJsonObject(text: string): string | null {
+  // 1. Bloc de code markdown
+  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlock?.[1]?.trim().startsWith("{")) return codeBlock[1];
+
+  // 2. Comptage d'accolades — évite que la regex greedy capture du texte parasite
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!;
+    if (escape) { escape = false; continue; }
+    if (inString && ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null; // JSON tronqué (depth > 0 jusqu'à la fin)
+}
+
 type Tab = "reac" | "perimetre" | "activites";
 
 interface ReacTreeCCP extends CCP {
@@ -173,14 +208,13 @@ export function FormationDetail({ formation, onBack }: Props) {
         reacFullText += chunk;
       }
 
-      // Extraire le JSON — préférer le bloc ```json```, fallback sur regex greedy
-      const codeBlock = reacFullText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      let rawJson = codeBlock ? codeBlock[1] : reacFullText.match(/\{[\s\S]*\}/)?.[0];
+      // Extraire le JSON avec comptage d'accolades (robuste face au texte parasite)
+      let rawJson = extractJsonObject(reacFullText);
       if (!rawJson) {
         setParseError("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
         return;
       }
-      // Supprimer les trailing commas (erreur fréquente de Claude)
+      // Nettoyer les trailing commas (erreur fréquente de Claude)
       rawJson = rawJson.replace(/,(\s*[}\]])/g, "$1");
 
       let parsed: {
@@ -301,13 +335,12 @@ export function FormationDetail({ formation, onBack }: Props) {
         savoirsFullText += chunk;
       }
 
-      // Nettoyage robuste : extraire le JSON même si Claude ajoute du texte autour
-      const codeBlock = savoirsFullText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      let rawJson = codeBlock ? codeBlock[1] : savoirsFullText.match(/\{[\s\S]*\}/)?.[0];
+      // Extraire le JSON avec comptage d'accolades (robuste face au texte parasite)
+      let rawJson = extractJsonObject(savoirsFullText);
       if (!rawJson) {
         throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
       }
-      // Supprimer les trailing commas (erreur fréquente de Claude)
+      // Nettoyer les trailing commas (erreur fréquente de Claude)
       rawJson = rawJson.replace(/,(\s*[}\]])/g, "$1");
 
       let parsed: {
