@@ -164,16 +164,19 @@ export function FormationDetail({ formation, onBack }: Props) {
 
       const result = await claudeRequest({
         task: "parsing_reac",
+        maxTokens: 16000,
         messages: [{ role: "user", content: messageContent }],
       });
 
       // Extraire le JSON — préférer le bloc ```json```, fallback sur regex greedy
       const codeBlock = result.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      const rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
+      let rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
       if (!rawJson) {
         setParseError("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
         return;
       }
+      // Supprimer les trailing commas (erreur fréquente de Claude)
+      rawJson = rawJson.replace(/,(\s*[}\]])/g, "$1");
 
       let parsed: {
         ccps: Array<{
@@ -285,14 +288,18 @@ export function FormationDetail({ formation, onBack }: Props) {
 
       const result = await claudeRequest({
         task: "parsing_reac",
+        maxTokens: 16000,
         messages: [{ role: "user", content: messageContent }],
       });
 
+      // Nettoyage robuste : extraire le JSON même si Claude ajoute du texte autour
       const codeBlock = result.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      const rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
+      let rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
       if (!rawJson) {
         throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
       }
+      // Supprimer les trailing commas (erreur fréquente de Claude)
+      rawJson = rawJson.replace(/,(\s*[}\]])/g, "$1");
 
       let parsed: {
         ccps: Array<{
