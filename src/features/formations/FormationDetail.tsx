@@ -59,6 +59,87 @@ function extractJsonObject(text: string): string | null {
   return null; // JSON tronqué (depth > 0 jusqu'à la fin)
 }
 
+/** Prompt dédié extraction savoirs — format texte, pas JSON */
+const SAVOIRS_EXTRACTION_PROMPT = `Tu es un expert des REAC (Référentiels Emploi Activités Compétences) du Ministère du Travail français.
+
+Analyse le REAC fourni et extrais les savoirs et savoir-faire de chaque fiche compétence professionnelle.
+
+FORMAT DE SORTIE OBLIGATOIRE — texte brut uniquement, sans JSON, sans markdown :
+
+=== CP1 ===
+TECHNIQUE | item savoir-faire technique
+ORGANISATIONNEL | item savoir-faire organisationnel
+RELATIONNEL | item savoir-faire relationnel
+SAVOIR | item savoir théorique
+
+=== CP2 ===
+...
+
+RÈGLES STRICTES :
+- CODE entre === === = code exact de la compétence (CP1, CP2, C1, C2, etc.)
+- Une ligne par item, préfixée par sa catégorie et le caractère |
+- Catégories autorisées : TECHNIQUE, ORGANISATIONNEL, RELATIONNEL, SAVOIR
+- Pour les REAC sans séparation explicite des catégories :
+  * Items commençant par "Connaissance" → SAVOIR
+  * Items décrivant des actions concrètes ou gestuelles → TECHNIQUE (si doute → TECHNIQUE)
+  * Items sur l'organisation du travail → ORGANISATIONNEL
+  * Items sur les relations humaines → RELATIONNEL
+- Copie les items EXACTEMENT tels qu'ils apparaissent dans le document (guillemets compris)
+- Ne saute aucune fiche compétence professionnelle`;
+
+/** Parse le format texte pipe-séparé retourné par Claude pour les savoirs */
+function parseSavoirsText(text: string): Array<{
+  code: string;
+  savoirs: {
+    sf_techniques: string[];
+    sf_organisationnels: string[];
+    sf_relationnels: string[];
+    savoirs: string[];
+  };
+}> {
+  const result: ReturnType<typeof parseSavoirsText> = [];
+
+  // Découpe par marqueurs === CODE ===
+  const parts = text.split(/\n?===\s*(.+?)\s*===\n?/);
+
+  for (let i = 1; i < parts.length; i += 2) {
+    const code = parts[i]!.trim();
+    const content = parts[i + 1] ?? "";
+
+    const savoirs = {
+      sf_techniques: [] as string[],
+      sf_organisationnels: [] as string[],
+      sf_relationnels: [] as string[],
+      savoirs: [] as string[],
+    };
+
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.includes("|")) continue;
+
+      const pipeIdx = trimmed.indexOf("|");
+      const category = trimmed.slice(0, pipeIdx).trim().toUpperCase();
+      const item = trimmed.slice(pipeIdx + 1).trim();
+      if (!item) continue;
+
+      if (category === "TECHNIQUE") savoirs.sf_techniques.push(item);
+      else if (category === "ORGANISATIONNEL") savoirs.sf_organisationnels.push(item);
+      else if (category === "RELATIONNEL") savoirs.sf_relationnels.push(item);
+      else if (category === "SAVOIR") savoirs.savoirs.push(item);
+    }
+
+    const total =
+      savoirs.sf_techniques.length +
+      savoirs.sf_organisationnels.length +
+      savoirs.sf_relationnels.length +
+      savoirs.savoirs.length;
+
+    if (total > 0) result.push({ code, savoirs });
+  }
+
+  return result;
+}
+
 type Tab = "reac" | "perimetre" | "activites";
 
 interface ReacTreeCCP extends CCP {
@@ -293,9 +374,7 @@ export function FormationDetail({ formation, onBack }: Props) {
 
       if (isPdf) {
         const arrayBuffer = await file.arrayBuffer();
-        if (arrayBuffer.byteLength === 0) {
-          throw new Error("Le fichier PDF semble vide ou illisible.");
-        }
+        if (arrayBuffer.byteLength === 0) throw new Error("Le fichier PDF semble vide ou illisible.");
         const bytes = new Uint8Array(arrayBuffer);
         const chunks: string[] = [];
         for (let i = 0; i < bytes.length; i += 8192) {
@@ -303,93 +382,41 @@ export function FormationDetail({ formation, onBack }: Props) {
         }
         const base64 = btoa(chunks.join(""));
         messageContent = [
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64 },
-          },
-          {
-            type: "text",
-            text: `Voici le REAC pour la formation "${formation.title}".\n\nExtrais **uniquement les savoirs et savoir-faire** de chaque compétence (sf_techniques, sf_organisationnels, sf_relationnels, savoirs). Retourne le même format JSON que d'habitude, avec les critères vides si tu ne les trouves pas — l'important c'est les savoirs.`,
-          },
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+          { type: "text", text: `Voici le REAC pour la formation "${formation.title}". Extrais les savoirs et savoir-faire de chaque fiche compétence selon le format demandé.` },
         ];
       } else if (file.name.toLowerCase().endsWith(".docx")) {
         const mammoth = await import("mammoth");
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.extractRawText({ arrayBuffer });
-        if (!result.value.trim()) {
-          throw new Error("Impossible de lire ce fichier Word. Essaie de l'exporter en PDF.");
-        }
-        messageContent = `Voici le REAC pour la formation "${formation.title}".\n\nExtrais uniquement les savoirs et savoir-faire de chaque compétence.\n\n---\n\n${result.value}`;
+        if (!result.value.trim()) throw new Error("Impossible de lire ce fichier Word. Essaie de l'exporter en PDF.");
+        messageContent = `Voici le REAC pour la formation "${formation.title}".\n\n---\n\n${result.value}`;
       } else {
         const text = await file.text();
-        messageContent = `Voici le REAC pour la formation "${formation.title}".\n\nExtrais uniquement les savoirs et savoir-faire de chaque compétence.\n\n---\n\n${text}`;
+        messageContent = `Voici le REAC pour la formation "${formation.title}".\n\n---\n\n${text}`;
       }
 
-      // Streaming : collecte tous les chunks puis parse le JSON
-      let savoirsFullText = "";
-      const savoirsAbort = new AbortController();
+      // Collecte le texte streamé — format pipe, pas JSON
+      let fullText = "";
+      const abortCtrl = new AbortController();
       for await (const chunk of requestStream(
-        { task: "parsing_reac", maxTokens: 16000, messages: [{ role: "user", content: messageContent }] },
-        savoirsAbort.signal,
+        {
+          task: "parsing_reac",
+          systemPromptOverride: SAVOIRS_EXTRACTION_PROMPT,
+          maxTokens: 16000,
+          messages: [{ role: "user", content: messageContent }],
+        },
+        abortCtrl.signal,
       )) {
-        savoirsFullText += chunk;
+        fullText += chunk;
       }
 
-      // Extraire le JSON avec comptage d'accolades (robuste face au texte parasite)
-      let rawJson = extractJsonObject(savoirsFullText);
-      if (!rawJson) {
-        throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
-      }
-      // Nettoyer les trailing commas (erreur fréquente de Claude)
-      rawJson = rawJson.replace(/,(\s*[}\]])/g, "$1");
-
-      let parsed: {
-        ccps: Array<{
-          competences: Array<{
-            code: string;
-            savoirs?: {
-              sf_techniques: string[];
-              sf_organisationnels: string[];
-              sf_relationnels: string[];
-              savoirs: string[];
-            };
-          }>;
-        }>;
-      };
-      try {
-        parsed = JSON.parse(rawJson) as typeof parsed;
-      } catch {
-        throw new Error("Claude n'a pas renvoyé un JSON valide. Réessaie.");
-      }
-
-      // Construire la liste des savoirs par compétence
-      const competencesSavoirs: Array<{
-        code: string;
-        savoirs: {
-          sf_techniques: string[];
-          sf_organisationnels: string[];
-          sf_relationnels: string[];
-          savoirs: string[];
-        };
-      }> = [];
-      for (const ccp of parsed.ccps) {
-        for (const comp of ccp.competences) {
-          if (comp.savoirs) {
-            competencesSavoirs.push({
-              code: comp.code,
-              savoirs: {
-                sf_techniques: comp.savoirs.sf_techniques ?? [],
-                sf_organisationnels: comp.savoirs.sf_organisationnels ?? [],
-                sf_relationnels: comp.savoirs.sf_relationnels ?? [],
-                savoirs: comp.savoirs.savoirs ?? [],
-              },
-            });
-          }
-        }
-      }
+      const competencesSavoirs = parseSavoirsText(fullText);
 
       if (competencesSavoirs.length === 0) {
-        throw new Error("Aucun savoir trouvé dans ce document. Vérifie que le PDF contient bien les fiches compétences.");
+        throw new Error(
+          "Aucun savoir trouvé dans ce document. Vérifie que le PDF contient bien les fiches compétences.",
+        );
       }
 
       await invoke("save_savoirs_for_formation", {
