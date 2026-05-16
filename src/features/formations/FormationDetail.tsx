@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { db } from "@/lib/db";
-import { request as claudeRequest } from "@/lib/claude";
+import { requestStream } from "@/lib/claude";
 import type { Formation, CCP, Competence, EvaluationCriterion, ExtraActivity } from "@/types";
 import type { ClaudeContentBlock } from "@/types/api";
 import { Button } from "@/components/ui/button";
@@ -162,15 +162,20 @@ export function FormationDetail({ formation, onBack }: Props) {
         messageContent = `Voici le contenu d'un document REAC pour la formation "${formation.title}".\n\nExtrais la structure hiérarchique complète (CCP, compétences, critères d'évaluation, activités-types).\n\n---\n\n${text}`;
       }
 
-      const result = await claudeRequest({
-        task: "parsing_reac",
-        maxTokens: 16000,
-        messages: [{ role: "user", content: messageContent }],
-      });
+      // Streaming : collecte tous les chunks puis parse le JSON
+      // (plus fiable que tauriFetch pour les grandes réponses)
+      let reacFullText = "";
+      const reacAbort = new AbortController();
+      for await (const chunk of requestStream(
+        { task: "parsing_reac", maxTokens: 16000, messages: [{ role: "user", content: messageContent }] },
+        reacAbort.signal,
+      )) {
+        reacFullText += chunk;
+      }
 
       // Extraire le JSON — préférer le bloc ```json```, fallback sur regex greedy
-      const codeBlock = result.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      let rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
+      const codeBlock = reacFullText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      let rawJson = codeBlock ? codeBlock[1] : reacFullText.match(/\{[\s\S]*\}/)?.[0];
       if (!rawJson) {
         setParseError("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
         return;
@@ -286,15 +291,19 @@ export function FormationDetail({ formation, onBack }: Props) {
         messageContent = `Voici le REAC pour la formation "${formation.title}".\n\nExtrais uniquement les savoirs et savoir-faire de chaque compétence.\n\n---\n\n${text}`;
       }
 
-      const result = await claudeRequest({
-        task: "parsing_reac",
-        maxTokens: 16000,
-        messages: [{ role: "user", content: messageContent }],
-      });
+      // Streaming : collecte tous les chunks puis parse le JSON
+      let savoirsFullText = "";
+      const savoirsAbort = new AbortController();
+      for await (const chunk of requestStream(
+        { task: "parsing_reac", maxTokens: 16000, messages: [{ role: "user", content: messageContent }] },
+        savoirsAbort.signal,
+      )) {
+        savoirsFullText += chunk;
+      }
 
       // Nettoyage robuste : extraire le JSON même si Claude ajoute du texte autour
-      const codeBlock = result.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      let rawJson = codeBlock ? codeBlock[1] : result.content.match(/\{[\s\S]*\}/)?.[0];
+      const codeBlock = savoirsFullText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      let rawJson = codeBlock ? codeBlock[1] : savoirsFullText.match(/\{[\s\S]*\}/)?.[0];
       if (!rawJson) {
         throw new Error("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
       }
