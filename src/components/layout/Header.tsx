@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
-import { Lock, Wifi, WifiOff, ExternalLink } from "lucide-react";
+import { Lock, Wifi, WifiOff, ExternalLink, Sun, Moon } from "lucide-react";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/stores/appStore";
 import { db } from "@/lib/db";
 import { formatEuros } from "@/lib/utils";
+import { applyTheme } from "@/lib/theme";
 import { CentreSelector } from "./CentreSelector";
 
 const ANTHROPIC_USAGE_URL = "https://console.anthropic.com/settings/usage";
 const DEFAULT_BUDGET = 25;
 
 export function Header() {
-  const { isOnline, monthlyApiCost, setUnlocked } = useAppStore();
+  const { isOnline, monthlyApiCost, setUnlocked, theme, setTheme } = useAppStore();
   const [budget, setBudget] = useState<number>(DEFAULT_BUDGET);
 
   // Charger le budget depuis la DB et écouter ses mises à jour
@@ -48,6 +49,13 @@ export function Header() {
     over: { bar: "bg-red-500", text: "text-red-700", hoverBg: "hover:bg-red-50" },
   } as const;
   const c = colorByStatus[status];
+
+  async function toggleTheme() {
+    const newTheme = theme === "light" ? "dark" : "light";
+    applyTheme(newTheme);
+    setTheme(newTheme);
+    await db.setConfig("theme", newTheme);
+  }
 
   async function openConsole() {
     try {
@@ -102,6 +110,20 @@ export function Header() {
         ) : (
           <WifiOff className="h-4 w-4 text-orange-500" aria-label="Hors ligne" />
         )}
+
+        {/* Bouton thème clair/sombre */}
+        <button
+          onClick={toggleTheme}
+          className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          aria-label={theme === "light" ? "Passer en mode sombre" : "Passer en mode clair"}
+          title={theme === "light" ? "Mode sombre" : "Mode clair"}
+        >
+          {theme === "light" ? (
+            <Moon className="h-4 w-4" />
+          ) : (
+            <Sun className="h-4 w-4" />
+          )}
+        </button>
 
         {/* Bouton verrouiller */}
         <button

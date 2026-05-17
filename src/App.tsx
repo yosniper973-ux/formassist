@@ -8,6 +8,7 @@ import { SetupPassword } from "@/features/auth/SetupPassword";
 import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
 import { ErrorToast } from "@/components/ErrorToast";
 import { logError, classifyError } from "@/lib/errorHandler";
+import { initTheme } from "@/lib/theme";
 
 type AppPhase =
   | "loading"
@@ -18,7 +19,7 @@ type AppPhase =
 
 export function App() {
   const [phase, setPhase] = useState<AppPhase>("loading");
-  const { isUnlocked, setUnlocked, setOnboardingComplete, setPasswordConfigured } =
+  const { isUnlocked, setUnlocked, setOnboardingComplete, setPasswordConfigured, setTheme } =
     useAppStore();
 
   useEffect(() => {
@@ -26,6 +27,10 @@ export function App() {
       try {
         // Lancer les migrations SQLite au premier lancement
         await db.runMigrations();
+
+        // Appliquer le thème sauvegardé dès le démarrage
+        const savedTheme = await initTheme(db.getConfig);
+        setTheme(savedTheme);
         db.backfillSlotCompetences().catch((err: unknown) => {
           console.error("Erreur backfill compétences :", err);
         });

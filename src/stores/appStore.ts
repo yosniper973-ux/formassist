@@ -25,6 +25,10 @@ interface AppState {
   // Mot de passe configuré
   passwordConfigured: boolean;
   setPasswordConfigured: (value: boolean) => void;
+
+  // Thème
+  theme: "light" | "dark";
+  setTheme: (t: "light" | "dark") => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -47,4 +51,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   passwordConfigured: false,
   setPasswordConfigured: (value) => set({ passwordConfigured: value }),
+
+  theme: "light",
+  setTheme: (t) => set({ theme: t }),
 }));
