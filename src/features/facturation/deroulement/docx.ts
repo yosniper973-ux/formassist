@@ -46,16 +46,13 @@ function bulletParas(raw: string): Paragraph[] {
 
 /** Construction d'un docx "FormAssist" par défaut (pas de template utilisateur) */
 async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
+  const border = { style: BorderStyle.SINGLE, size: 4, color: "888888" };
+  const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
+
   const headerTitle = new Paragraph({
     alignment: AlignmentType.CENTER,
     heading: HeadingLevel.HEADING_1,
-    children: [
-      new TextRun({
-        text: "FICHE DE DEROULEMENT DE SEANCE DE FORMATION",
-        bold: true,
-        size: 28,
-      }),
-    ],
+    children: [new TextRun({ text: "FICHE DE DEROULEMENT DE SEANCE DE FORMATION", bold: true, size: 28 })],
   });
 
   const metaLine = new Paragraph({
@@ -73,22 +70,16 @@ async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
   const titleLine = new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { before: 100, after: 200 },
-    children: [
-      new TextRun({
-        text: `TITRE DE LA SEANCE : ${data.titre_seance}`,
-        bold: true,
-        size: 24,
-      }),
-    ],
+    children: [new TextRun({ text: `TITRE DE LA SEANCE : ${data.titre_seance}`, bold: true, size: 24 })],
   });
 
-  // En-tête tableau : durée / objectif général
+  // En-tête méta (dates + objectif général) — commun à toutes les tables
   const headerMetaRow = new TableRow({
     children: [
       new TableCell({
         width: { size: 35, type: WidthType.PERCENTAGE },
         children: [
-          para(`Date et durée d'intervention :`, true),
+          para("Date et durée d'intervention :", true),
           para(`${data.dates_label} — Durée totale : ${data.total_duration_hours} h`),
         ],
       }),
@@ -99,111 +90,89 @@ async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
     ],
   });
 
-  const colHeaderRow = new TableRow({
-    tableHeader: true,
-    children: [
-      ["Phases", 12],
-      ["Objectifs opérationnels\n(compétences attendues)", 18],
-      ["Contenu", 22],
-      ["Méthodes pédagogiques (1)", 14],
-      ["Outils et techniques (2)", 14],
-      ["Evaluation prévue", 20],
-    ].map(
-      ([label, pct]) =>
+  function colHeader(): TableRow {
+    return new TableRow({
+      tableHeader: true,
+      children: (
+        [["Phases", 12], ["Objectifs opérationnels\n(compétences attendues)", 18],
+         ["Contenu", 22], ["Méthodes pédagogiques (1)", 14],
+         ["Outils et techniques (2)", 14], ["Evaluation prévue", 20]] as [string, number][]
+      ).map(([label, pct]) =>
         new TableCell({
-          width: { size: pct as number, type: WidthType.PERCENTAGE },
+          width: { size: pct, type: WidthType.PERCENTAGE },
           shading: { fill: "E8EAF6" },
-          children: [
-            new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [
-                new TextRun({ text: label as string, bold: true, size: 18 }),
-              ],
-            }),
-          ],
+          children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: label, bold: true, size: 18 })] })],
         }),
-    ),
-  });
+      ),
+    });
+  }
 
-  const phaseRows = data.phases.map(
-    (phase, idx) =>
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: 12, type: WidthType.PERCENTAGE },
-            children: [
-              para(
-                `Phase ${idx + 1}${phase.is_ecf ? " (ECF)" : ""} : ${phase.duree_heures} h`,
-                true,
-              ),
-              para(phase.intitule),
-            ],
-          }),
-          new TableCell({
-            width: { size: 18, type: WidthType.PERCENTAGE },
-            children: bulletParas(phase.objectifs_operationnels),
-          }),
-          new TableCell({
-            width: { size: 22, type: WidthType.PERCENTAGE },
-            children: bulletParas(phase.contenu),
-          }),
-          new TableCell({
-            width: { size: 14, type: WidthType.PERCENTAGE },
-            children: bulletParas(phase.methodes),
-          }),
-          new TableCell({
-            width: { size: 14, type: WidthType.PERCENTAGE },
-            children: bulletParas(phase.outils),
-          }),
-          new TableCell({
-            width: { size: 20, type: WidthType.PERCENTAGE },
-            children: bulletParas(phase.evaluation),
-          }),
-        ],
-      }),
+  function phaseRow(phase: (typeof data.phases)[number], idx: number): TableRow {
+    return new TableRow({
+      children: [
+        new TableCell({ width: { size: 12, type: WidthType.PERCENTAGE }, children: [para(`Phase ${idx + 1}${phase.is_ecf ? " (ECF)" : ""} : ${phase.duree_heures} h`, true), para(phase.intitule)] }),
+        new TableCell({ width: { size: 18, type: WidthType.PERCENTAGE }, children: bulletParas(phase.objectifs_operationnels) }),
+        new TableCell({ width: { size: 22, type: WidthType.PERCENTAGE }, children: bulletParas(phase.contenu) }),
+        new TableCell({ width: { size: 14, type: WidthType.PERCENTAGE }, children: bulletParas(phase.methodes) }),
+        new TableCell({ width: { size: 14, type: WidthType.PERCENTAGE }, children: bulletParas(phase.outils) }),
+        new TableCell({ width: { size: 20, type: WidthType.PERCENTAGE }, children: bulletParas(phase.evaluation) }),
+      ],
+    });
+  }
+
+  // Grouper les phases par compétence (dans l'ordre d'apparition)
+  const groups = new Map<string, { code: string; phases: typeof data.phases }>();
+  const groupOrder: string[] = [];
+  for (const phase of data.phases) {
+    if (!groups.has(phase.competence_id)) {
+      groups.set(phase.competence_id, { code: phase.code, phases: [] });
+      groupOrder.push(phase.competence_id);
+    }
+    groups.get(phase.competence_id)!.phases.push(phase);
+  }
+
+  const multipleGroups = groupOrder.length > 1;
+  const docChildren: Array<Paragraph | Table> = [headerTitle, metaLine, titleLine];
+
+  // En-tête méta une seule fois en haut (dates + objectif général)
+  docChildren.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerMetaRow], borders }));
+
+  for (let i = 0; i < groupOrder.length; i++) {
+    const cid = groupOrder[i]!;
+    const group = groups.get(cid)!;
+
+    // Titre de la compétence si plusieurs groupes
+    if (multipleGroups) {
+      docChildren.push(new Paragraph({
+        spacing: { before: 300, after: 80 },
+        children: [new TextRun({ text: `Compétence : ${group.code}`, bold: true, size: 22 })],
+      }));
+    }
+
+    // Table de déroulement pour cette compétence
+    docChildren.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [colHeader(), ...group.phases.map((p, idx) => phaseRow(p, idx))],
+      borders,
+    }));
+
+    if (i < groupOrder.length - 1) {
+      docChildren.push(new Paragraph({ spacing: { before: 200 } }));
+    }
+  }
+
+  docChildren.push(
+    new Paragraph({
+      spacing: { before: 200 },
+      children: [new TextRun({ text: "(1) Méthodes pédagogiques : Active, Interrogative, Expositive, Transmissive, Participative, Évaluative, Interactive.", size: 16, italics: true })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "(2) Outils et techniques : Travail en groupe, étude de cas, questionnaire, questions orales, diaporama, animation-information descendante, etc.", size: 16, italics: true })],
+    }),
   );
 
-  const border = { style: BorderStyle.SINGLE, size: 4, color: "888888" };
-  const table = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [headerMetaRow, colHeaderRow, ...phaseRows],
-    borders: {
-      top: border,
-      bottom: border,
-      left: border,
-      right: border,
-      insideHorizontal: border,
-      insideVertical: border,
-    },
-  });
-
-  const legend1 = new Paragraph({
-    spacing: { before: 200 },
-    children: [
-      new TextRun({
-        text: "(1) Méthodes pédagogiques : Active, Interrogative, Expositive, Transmissive, Participative, Évaluative, Interactive.",
-        size: 16,
-        italics: true,
-      }),
-    ],
-  });
-  const legend2 = new Paragraph({
-    children: [
-      new TextRun({
-        text: "(2) Outils et techniques : Travail en groupe, étude de cas, questionnaire, questions orales, diaporama, animation-information descendante, etc.",
-        size: 16,
-        italics: true,
-      }),
-    ],
-  });
-
   const doc = new Document({
-    sections: [
-      {
-        properties: { page: { margin: { top: 500, bottom: 500, left: 500, right: 500 } } },
-        children: [headerTitle, metaLine, titleLine, table, legend1, legend2],
-      },
-    ],
+    sections: [{ properties: { page: { margin: { top: 500, bottom: 500, left: 500, right: 500 } } }, children: docChildren }],
   });
 
   return Packer.toBlob(doc);
@@ -221,6 +190,17 @@ async function fillUserTemplate(
     linebreaks: true,
   });
 
+  // Grouper les phases par compétence pour le template
+  const compGroups = new Map<string, { code: string; phases: typeof data.phases }>();
+  const compOrder: string[] = [];
+  for (const phase of data.phases) {
+    if (!compGroups.has(phase.competence_id)) {
+      compGroups.set(phase.competence_id, { code: phase.code, phases: [] });
+      compOrder.push(phase.competence_id);
+    }
+    compGroups.get(phase.competence_id)!.phases.push(phase);
+  }
+
   const payload = {
     formation: data.formation_title,
     dates: data.dates_label,
@@ -228,6 +208,7 @@ async function fillUserTemplate(
     redacteur: data.redacteur,
     titre_seance: data.titre_seance,
     objectif_general: data.objectif_general,
+    // Rétrocompatibilité : phases à plat (anciens templates)
     phases: data.phases.map((p, idx) => ({
       numero: `${idx + 1}${p.is_ecf ? " (ECF)" : ""}`,
       duree: `${p.duree_heures} h`,
@@ -238,6 +219,23 @@ async function fillUserTemplate(
       outils: p.outils,
       evaluation: p.evaluation,
     })),
+    // Nouveau : phases groupées par compétence — {#competences}...{/competences}
+    competences: compOrder.map((cid) => {
+      const g = compGroups.get(cid)!;
+      return {
+        code: g.code,
+        phases: g.phases.map((p, i) => ({
+          numero: `${i + 1}${p.is_ecf ? " (ECF)" : ""}`,
+          duree: `${p.duree_heures} h`,
+          intitule: p.intitule,
+          objectifs_operationnels: p.objectifs_operationnels,
+          contenu: p.contenu,
+          methodes: p.methodes,
+          outils: p.outils,
+          evaluation: p.evaluation,
+        })),
+      };
+    }),
   };
 
   templater.render(payload);

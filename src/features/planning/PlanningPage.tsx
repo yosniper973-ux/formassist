@@ -1215,6 +1215,9 @@ interface LinkableItem {
   duration_minutes?: number;
   /** Si présent : le contenu est déjà rattaché à un autre créneau (date) */
   attached_to_date?: string | null;
+  /** Compétence principale liée à ce contenu (pour auto-remplissage du titre) */
+  competence_code?: string;
+  competence_title?: string;
 }
 
 function SlotFormDialog({
@@ -1266,22 +1269,45 @@ function SlotFormDialog({
       ]);
       if (cancelled) return;
 
-      const toItem = (r: Record<string, unknown>): LinkableItem => ({
-        id: String(r.id),
-        title: String(r.title ?? "(sans titre)"),
-        formation_id: String(r.formation_id),
-        content_type: r.content_type ? String(r.content_type) : undefined,
-        duration_minutes:
-          typeof r.estimated_duration === "number"
-            ? r.estimated_duration
-            : typeof r.duration_minutes === "number"
-              ? r.duration_minutes
-              : undefined,
-        attached_to_date:
-          r.slot_id && (!slot || r.slot_id !== slot.id)
-            ? (r.slot_date ? String(r.slot_date) : null)
-            : null,
-      });
+      // Charger la compétence principale de chaque contenu pour l'auto-remplissage du titre
+      const contentIds = allContentsRows.map((r) => String((r as Record<string, unknown>).id ?? "")).filter(Boolean);
+      const compMap = new Map<string, { code: string; title: string }>();
+      if (contentIds.length > 0) {
+        const compRows = await db.query<{ content_id: string; code: string; title: string }>(
+          `SELECT cc.content_id, c.code, c.title
+             FROM content_competences cc
+             JOIN competences c ON c.id = cc.competence_id
+            WHERE cc.content_id IN (${contentIds.map(() => "?").join(",")})
+            ORDER BY c.sort_order`,
+          contentIds,
+        );
+        for (const row of compRows) {
+          if (!compMap.has(row.content_id)) compMap.set(row.content_id, { code: row.code, title: row.title });
+        }
+      }
+
+      const toItem = (r: Record<string, unknown>): LinkableItem => {
+        const id = String(r.id);
+        const comp = compMap.get(id);
+        return {
+          id,
+          title: String(r.title ?? "(sans titre)"),
+          formation_id: String(r.formation_id),
+          content_type: r.content_type ? String(r.content_type) : undefined,
+          duration_minutes:
+            typeof r.estimated_duration === "number"
+              ? r.estimated_duration
+              : typeof r.duration_minutes === "number"
+                ? r.duration_minutes
+                : undefined,
+          attached_to_date:
+            r.slot_id && (!slot || r.slot_id !== slot.id)
+              ? (r.slot_date ? String(r.slot_date) : null)
+              : null,
+          competence_code: comp?.code,
+          competence_title: comp?.title,
+        };
+      };
 
       const seenC = new Set<string>();
       const contents = allContentsRows
@@ -1311,12 +1337,20 @@ function SlotFormDialog({
   const linkableSheets = allSheets.filter((s) => s.formation_id === formationId);
 
   function toggleContent(id: string) {
+    const isChecking = !selectedContentIds.has(id);
     setSelectedContentIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    // Auto-remplissage du titre si le champ est vide et qu'on coche un contenu
+    if (isChecking && !title.trim()) {
+      const item = allContents.find((c) => c.id === id);
+      if (item?.competence_code && item?.competence_title) {
+        setTitle(`${item.competence_code} — ${item.competence_title}`);
+      }
+    }
   }
   function toggleSheet(id: string) {
     setSelectedSheetIds((prev) => {

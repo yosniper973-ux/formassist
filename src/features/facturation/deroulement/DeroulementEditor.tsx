@@ -214,42 +214,48 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
       }
     }
 
-    // Objectifs : union des objectifs extraits de tous les contenus liés,
-    // ou fallback sur les critères officiels des compétences du CCP.
-    const objectivesFromContents = allLinkedContents
-      .map((c) => extractObjectivesFromMarkdown(c.content_markdown))
-      .filter((s) => s.length > 0)
-      .join("\n");
-    const objectifsFromCriteria = det.competences
-      .flatMap((c) => c.criteria)
-      .map((cr) => `- ${cr.description}`)
-      .join("\n");
-    const sharedObjectifs = objectivesFromContents || objectifsFromCriteria;
-
-    // Code compétences = concat de tous les codes du CCP
-    const sharedCode = det.competences
-      .map((c) => c.competence.code)
-      .join(" + ");
-
-    // Répartition de la durée à parts égales (modifiable par l'utilisateur)
+    // Répartition de la durée à parts égales entre compétences puis entre phases
     const totalHours = det.total_duration_hours;
+    const numComps = det.competences.length || 1;
+    const hoursPerComp = Math.round((totalHours / numComps) * 10) / 10;
     const dureePerPhase =
-      Math.round((totalHours / PEDAGOGICAL_PHASES.length) * 10) / 10;
-    const allContentIds = allLinkedContents.map((c) => c.id);
+      Math.round((hoursPerComp / PEDAGOGICAL_PHASES.length) * 10) / 10;
 
-    const phases: PhaseDraft[] = PEDAGOGICAL_PHASES.map((p, i) => ({
-      competence_id: `__phase_${i}_${p.key}__`,
-      code: sharedCode,
-      intitule: p.intitule,
-      duree_heures: dureePerPhase,
-      is_ecf: p.is_ecf,
-      selected_content_ids: allContentIds,
-      objectifs_operationnels: sharedObjectifs,
-      contenu: "",
-      methodes: "",
-      outils: "",
-      evaluation: "",
-    }));
+    // Une série de 4 phases pédagogiques par compétence du CCP
+    const phases: PhaseDraft[] = det.competences.flatMap((compEntry) => {
+      const { competence, criteria, availableContents: compContents } = compEntry;
+
+      // Objectifs : depuis les contenus liés à cette compétence, ou fallback critères
+      const objectivesFromContents = allLinkedContents
+        .map((c) => extractObjectivesFromMarkdown(c.content_markdown))
+        .filter((s) => s.length > 0)
+        .join("\n");
+      const objectifsFromCriteria = criteria
+        .map((cr) => `- ${cr.description}`)
+        .join("\n");
+      const objectifs = objectivesFromContents || objectifsFromCriteria;
+
+      // Contenus rattachés à cette compétence, sinon tous les contenus liés
+      const compContentIds = compContents.map((c) => c.id);
+      const contentIds =
+        compContentIds.length > 0
+          ? compContentIds
+          : allLinkedContents.map((c) => c.id);
+
+      return PEDAGOGICAL_PHASES.map((p) => ({
+        competence_id: competence.id,
+        code: competence.code,
+        intitule: p.intitule,
+        duree_heures: dureePerPhase,
+        is_ecf: p.is_ecf,
+        selected_content_ids: contentIds,
+        objectifs_operationnels: objectifs,
+        contenu: "",
+        methodes: "",
+        outils: "",
+        evaluation: "",
+      }));
+    });
 
     return {
       invoice_id: invoice.id,
@@ -739,16 +745,41 @@ function DraftEditor({
         </div>
       </div>
 
-      {/* Phases */}
-      <div className="space-y-3">
-        {draft.phases.map((phase, idx) => {
+      {/* Phases groupées par compétence */}
+      <div className="space-y-5">
+        {/* Calcul des groupes de compétences */}
+        {(() => {
+          const groups: Array<{ competence_id: string; code: string; title: string; indices: number[] }> = [];
+          const seen = new Map<string, number>();
+          draft.phases.forEach((phase, idx) => {
+            const cid = phase.competence_id;
+            if (!seen.has(cid)) {
+              const compEntry = detected?.competences.find((c) => c.competence.id === cid);
+              seen.set(cid, groups.length);
+              groups.push({ competence_id: cid, code: phase.code, title: compEntry?.competence.title ?? phase.code, indices: [idx] });
+            } else {
+              groups[seen.get(cid)!]!.indices.push(idx);
+            }
+          });
+          const multipleGroups = groups.length > 1;
+          return groups.map((group) => (
+            <div key={group.competence_id} className="space-y-2">
+              {multipleGroups && (
+                <div className="flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2">
+                  <Badge className="bg-primary/10 text-primary shrink-0">{group.code}</Badge>
+                  <span className="font-semibold text-sm truncate">{group.title}</span>
+                </div>
+              )}
+              <div className="space-y-2">
+              {group.indices.map((idx) => {
+          const phase = draft.phases[idx]!;
           const open = openPhases.has(idx);
           const compAvailable = detected?.competences.find(
             (c) => c.competence.id === phase.competence_id,
           );
           const options = compAvailable?.availableContents ?? [];
           return (
-            <div key={phase.competence_id} className="rounded-xl border bg-card">
+            <div key={`${phase.competence_id}-${idx}`} className="rounded-xl border bg-card">
               <button
                 type="button"
                 onClick={() => togglePhase(idx)}
@@ -913,6 +944,10 @@ function DraftEditor({
             </div>
           );
         })}
+              </div>
+            </div>
+          ));
+        })()}
       </div>
 
       {downloadToast && (

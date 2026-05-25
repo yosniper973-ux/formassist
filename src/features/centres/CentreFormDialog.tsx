@@ -55,6 +55,7 @@ interface FormData {
   referent_email: string;
   referent_phone: string;
   siret: string;
+  tva_intracom: string;
   hourly_rate: string;
   billing_unit: string;
   payment_delay_days: string;
@@ -76,6 +77,7 @@ const EMPTY_FORM: FormData = {
   referent_email: "",
   referent_phone: "",
   siret: "",
+  tva_intracom: "",
   hourly_rate: "",
   billing_unit: "hour",
   payment_delay_days: "30",
@@ -109,6 +111,7 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         referent_email: centre.referent_email ?? "",
         referent_phone: centre.referent_phone ?? "",
         siret: centre.siret ?? "",
+        tva_intracom: centre.tva_intracom ?? "",
         hourly_rate: centre.hourly_rate?.toString() ?? "",
         billing_unit: centre.billing_unit,
         payment_delay_days: centre.payment_delay_days.toString(),
@@ -197,6 +200,7 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
         referent_email: form.referent_email || null,
         referent_phone: form.referent_phone || null,
         siret: form.siret.replace(/\s+/g, "") || null,
+        tva_intracom: form.tva_intracom.trim() || null,
         hourly_rate: form.hourly_rate ? parseFloat(form.hourly_rate) : null,
         billing_unit: form.billing_unit,
         payment_delay_days: parseInt(form.payment_delay_days, 10),
@@ -538,18 +542,33 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="siret">SIRET du centre</Label>
-                  <Input
-                    id="siret"
-                    value={form.siret}
-                    onChange={(e) => update("siret", e.target.value)}
-                    placeholder="123 456 789 00012"
-                    maxLength={20}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Apparaîtra automatiquement comme SIRET du destinataire sur les factures.
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="siret">SIRET du centre</Label>
+                    <Input
+                      id="siret"
+                      value={form.siret}
+                      onChange={(e) => update("siret", e.target.value)}
+                      placeholder="123 456 789 00012"
+                      maxLength={20}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Apparaît comme SIRET du destinataire sur les factures.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="tva_intracom">N° TVA Intracommunautaire</Label>
+                    <Input
+                      id="tva_intracom"
+                      value={form.tva_intracom}
+                      onChange={(e) => update("tva_intracom", e.target.value)}
+                      placeholder="FR 12 345678901"
+                      maxLength={20}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Facultatif — apparaîtra sur les factures si renseigné.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}

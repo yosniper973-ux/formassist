@@ -11,6 +11,7 @@ export interface Centre {
   referent_email: string | null;
   referent_phone: string | null;
   siret: string | null;
+  tva_intracom: string | null;
   legal_mentions: string | null;
   pdf_header: string | null;
   smtp_host: string | null;
