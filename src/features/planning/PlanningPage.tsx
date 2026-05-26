@@ -1348,12 +1348,30 @@ function SlotFormDialog({
       return next;
     });
     // Auto-remplissage du titre si le champ est vide et qu'on coche un contenu
-    if (isChecking && !title.trim()) {
-      const item = allContents.find((c) => c.id === id);
-      if (item?.competence_code && item?.competence_title) {
-        setTitle(`${item.competence_code} — ${item.competence_title}`);
+    if (!isChecking || title.trim()) return;
+    const item = allContents.find((c) => c.id === id);
+    if (!item) return;
+
+    // 1. Essayer via content_competences (peuplé pour les futurs contenus)
+    if (item.competence_code && item.competence_title) {
+      setTitle(`${item.competence_code} — ${item.competence_title}`);
+      return;
+    }
+
+    // 2. Fallback : extraire le code compétence du titre du contenu lui-même
+    //    (ex : "Cours CP1 - Accueillir le public" → cherche CP1 dans la formation)
+    const codes = extractCompetenceCodes(item.title);
+    if (codes.length > 0) {
+      const formationComps = competencesByFormation.get(formationId) ?? [];
+      const match = formationComps.find((c) => codes.includes(normalizeCode(c.code)));
+      if (match) {
+        setTitle(`${match.code} — ${match.title}`);
+        return;
       }
     }
+
+    // 3. Dernier recours : utiliser le titre du contenu directement
+    setTitle(item.title);
   }
   function toggleSheet(id: string) {
     setSelectedSheetIds((prev) => {

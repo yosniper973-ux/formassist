@@ -51,6 +51,12 @@ pub fn run() {
             sql: include_str!("../migrations/007_savoirs.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "tva_intracom",
+            sql: include_str!("../migrations/008_tva_intracom.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
