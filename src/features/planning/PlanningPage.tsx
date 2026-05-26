@@ -1270,20 +1270,23 @@ function SlotFormDialog({
       if (cancelled) return;
 
       // Charger la compétence principale de chaque contenu pour l'auto-remplissage du titre
-      const contentIds = allContentsRows.map((r) => String((r as Record<string, unknown>).id ?? "")).filter(Boolean);
+      // (jointure directe sans IN clause pour éviter la limite SQLite de 999 paramètres)
       const compMap = new Map<string, { code: string; title: string }>();
-      if (contentIds.length > 0) {
+      try {
         const compRows = await db.query<{ content_id: string; code: string; title: string }>(
           `SELECT cc.content_id, c.code, c.title
              FROM content_competences cc
              JOIN competences c ON c.id = cc.competence_id
-            WHERE cc.content_id IN (${contentIds.map(() => "?").join(",")})
+             JOIN generated_contents gc ON gc.id = cc.content_id
+            WHERE gc.archived_at IS NULL
             ORDER BY c.sort_order`,
-          contentIds,
+          [],
         );
         for (const row of compRows) {
           if (!compMap.has(row.content_id)) compMap.set(row.content_id, { code: row.code, title: row.title });
         }
+      } catch (e) {
+        console.warn("Impossible de charger les compétences des contenus :", e);
       }
 
       const toItem = (r: Record<string, unknown>): LinkableItem => {
@@ -1512,12 +1515,20 @@ function SlotFormDialog({
 
           {/* Titre */}
           <div>
-            <Label>Titre (optionnel)</Label>
+            <Label>
+              Titre du créneau
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                — rempli automatiquement si tu coches un contenu ci-dessous
+              </span>
+            </Label>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex : Module 3 — Les bases de la communication"
+              placeholder="Ex : CP1 — Accueillir et orienter le public"
             />
+            <p className="mt-1 text-xs text-amber-600">
+              ⚠️ Nécessaire pour générer la fiche de déroulement de séance.
+            </p>
           </div>
 
           {/* Modalité + type */}
