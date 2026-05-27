@@ -809,10 +809,16 @@ function InvoiceDetailView({
     setDeroulementSheets(rows);
   }, [invoice.id]);
 
+  const [formationTitle, setFormationTitle] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     (async () => {
       const rows = await db.query<InvoiceLine>(
-        "SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order",
+        `SELECT il.*, s.date as slot_date
+         FROM invoice_lines il
+         LEFT JOIN slots s ON s.id = il.slot_id
+         WHERE il.invoice_id = ?
+         ORDER BY il.sort_order`,
         [invoice.id],
       );
       setLines(rows);
@@ -823,8 +829,16 @@ function InvoiceDetailView({
         [invoice.centre_id],
       );
       if (centres[0]) setCentre(centres[0]);
+      // Charge le titre de la formation
+      if (invoice.formation_id) {
+        const formations = await db.query<{ title: string }>(
+          "SELECT title FROM formations WHERE id = ?",
+          [invoice.formation_id],
+        );
+        if (formations[0]) setFormationTitle(formations[0].title);
+      }
     })();
-  }, [invoice.id, invoice.centre_id, loadDeroulementSheets]);
+  }, [invoice.id, invoice.centre_id, invoice.formation_id, loadDeroulementSheets]);
 
   async function handleDownloadPdf() {
     if (!centre) return;
@@ -839,7 +853,7 @@ function InvoiceDetailView({
         });
         return;
       }
-      const path = await downloadInvoicePdf(invoice, lines, centre, pro);
+      const path = await downloadInvoicePdf(invoice, lines, centre, pro, formationTitle);
       if (path) {
         await db.execute(
           "UPDATE invoices SET file_path = ? WHERE id = ?",
@@ -1162,6 +1176,7 @@ function InvoiceDetailView({
           centre={centre}
           lines={lines}
           deroulementSheets={deroulementSheets}
+          formationTitle={formationTitle}
           onClose={() => setShowSendDialog(false)}
           onSent={() => {
             setShowSendDialog(false);

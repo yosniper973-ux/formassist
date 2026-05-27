@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   invoiceDate: {
     fontSize: 10,
     color: TEXT_LIGHT,
-    marginTop: 3,
+    marginTop: 10,
   },
 
   // ── Tableau ───────────────────────────────────────────────────
@@ -142,8 +142,15 @@ const styles = StyleSheet.create({
   thTva:         { flex: 0.8, textAlign: "right" },
   thAmount:      { flex: 1.4, textAlign: "right", borderRightWidth: 0 },
 
-  tr:    { flexDirection: "row", borderTopWidth: 0.3, borderTopColor: BORDER },
-  trAlt: { backgroundColor: "#FAFBFC" },
+  tr:      { flexDirection: "row", borderTopWidth: 0.3, borderTopColor: BORDER },
+  trAlt:   { backgroundColor: "#FAFBFC" },
+  trSummary: {
+    flexDirection: "row",
+    borderTopWidth: 1.5,
+    borderTopColor: NAVY,
+    backgroundColor: "#E8F0F7",
+    paddingVertical: 2,
+  },
   td: {
     fontSize: 10,
     padding: 6,
@@ -151,7 +158,14 @@ const styles = StyleSheet.create({
     borderRightColor: BORDER,
   },
   tdRef:         { flex: 1.2, fontSize: 9, color: TEXT_LIGHT },
-  tdDescription: { flex: 3.8 },
+  tdDescription: { flex: 3.8, flexDirection: "column" },
+  tdDescText:    { fontSize: 9 },
+  tdDescDate:    { fontSize: 7.5, color: ACCENT, fontStyle: "italic", marginTop: 2 },
+  tdSummaryRef:  { flex: 1.2, fontSize: 9, color: NAVY, fontWeight: "bold" },
+  tdSummaryDesc: { flex: 3.8, flexDirection: "column" },
+  tdSummaryDescTitle: { fontSize: 9, color: NAVY, fontWeight: "bold" },
+  tdSummaryDescDates: { fontSize: 7.5, color: ACCENT, fontStyle: "italic", marginTop: 2 },
+  tdSummaryNum:  { fontSize: 9, color: NAVY, fontWeight: "bold" },
   tdQty:         { flex: 1,   textAlign: "right" },
   tdRate:        { flex: 1.2, textAlign: "right" },
   tdTva:         { flex: 0.8, textAlign: "right" },
@@ -330,14 +344,36 @@ function computeDueDate(invoice: Invoice, fallbackDays = 30): string {
 // Document
 // ─────────────────────────────────────────────────────────────────────────────
 
+function formatWorkedDates(dates: string[]): string {
+  if (dates.length === 0) return "";
+  const MONTHS = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+  const parsed = dates
+    .map(d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d); return m ? { y: +m[1]!, mo: +m[2]!, d: +m[3]! } : null; })
+    .filter(Boolean)
+    .sort((a, b) => a!.y !== b!.y ? a!.y - b!.y : a!.mo !== b!.mo ? a!.mo - b!.mo : a!.d - b!.d) as { y: number; mo: number; d: number }[];
+  const groups = new Map<string, number[]>();
+  for (const p of parsed) {
+    const key = `${p.y}-${p.mo}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(p.d);
+  }
+  return Array.from(groups.entries())
+    .map(([key, days]) => {
+      const [y, mo] = key.split("-").map(Number);
+      return `${days.map(d => String(d).padStart(2, "0")).join("-")} ${MONTHS[mo! - 1]} ${y}`;
+    })
+    .join(", ");
+}
+
 interface InvoiceDocProps {
   invoice: Invoice;
   lines: InvoiceLine[];
   centre: Centre;
   pro: ProfessionalInfo;
+  formationTitle?: string;
 }
 
-function InvoiceDoc({ invoice, lines, centre, pro }: InvoiceDocProps) {
+function InvoiceDoc({ invoice, lines, centre, pro, formationTitle }: InvoiceDocProps) {
   const adjustments: InvoiceAdjustment[] =
     typeof invoice.adjustments === "string"
       ? (() => { try { return JSON.parse(invoice.adjustments) as InvoiceAdjustment[]; } catch { return []; } })()
@@ -351,6 +387,12 @@ function InvoiceDoc({ invoice, lines, centre, pro }: InvoiceDocProps) {
   const totalTTC = totalHT + tvaAmount;
 
   const dueDate = computeDueDate(invoice, centre.payment_delay_days || 30);
+
+  // Ligne récap : dates uniques triées + totaux
+  const slotDates = [...new Set(lines.map(l => l.slot_date).filter(Boolean) as string[])];
+  const workedDatesStr = formatWorkedDates(slotDates);
+  const summaryHours = lines.reduce((s, l) => s + l.hours, 0);
+  const summaryRate = lines[0]?.rate ?? 0;
 
   const paymentLabel = centre.payment_delay_days === 0
     ? "paiement comptant"
@@ -403,11 +445,6 @@ function InvoiceDoc({ invoice, lines, centre, pro }: InvoiceDocProps) {
                 SIRET : {formatSiret(centre.siret)}
               </Text>
             )}
-            {centre.referent_name && (
-              <Text style={[styles.headerLineSmallRight, { marginTop: 4 }]}>
-                À l'attention de : {centre.referent_name}
-              </Text>
-            )}
           </View>
         </View>
 
@@ -435,7 +472,12 @@ function InvoiceDoc({ invoice, lines, centre, pro }: InvoiceDocProps) {
               wrap={false}
             >
               <Text style={[styles.td, styles.tdRef]}>{lineRef}</Text>
-              <Text style={[styles.td, styles.tdDescription]}>{l.description}</Text>
+              <View style={[styles.td, styles.tdDescription]}>
+                <Text style={styles.tdDescText}>{l.description}</Text>
+                {l.slot_date && (
+                  <Text style={styles.tdDescDate}>{formatDate(l.slot_date)}</Text>
+                )}
+              </View>
               <Text style={[styles.td, styles.tdQty]}>
                 {l.hours.toFixed(2).replace(".", ",")} h
               </Text>
@@ -446,6 +488,29 @@ function InvoiceDoc({ invoice, lines, centre, pro }: InvoiceDocProps) {
               <Text style={[styles.td, styles.tdAmount]}>{eur(l.amount_ht)}</Text>
             </View>
           ))}
+
+          {/* Ligne récap : total heures + tous les jours travaillés */}
+          {workedDatesStr && (
+            <View style={styles.trSummary} wrap={false}>
+              <Text style={[styles.td, styles.tdSummaryRef]}>{lineRef}</Text>
+              <View style={[styles.td, styles.tdSummaryDesc]}>
+                {formationTitle && (
+                  <Text style={styles.tdSummaryDescTitle}>
+                    {"Formation : "}{formationTitle}
+                  </Text>
+                )}
+                <Text style={styles.tdSummaryDescDates}>{"dates : "}{workedDatesStr}</Text>
+              </View>
+              <Text style={[styles.td, styles.tdQty, styles.tdSummaryNum]}>
+                {summaryHours.toFixed(2).replace(".", ",")} h
+              </Text>
+              <Text style={[styles.td, styles.tdRate, styles.tdSummaryNum]}>{eur(summaryRate)}</Text>
+              <Text style={[styles.td, styles.tdTva, styles.tdSummaryNum]}>
+                {pro.tva_exempt ? "—" : `${tvaRate.toString().replace(".", ",")} %`}
+              </Text>
+              <Text style={[styles.td, styles.tdAmount, styles.tdSummaryNum]}>{eur(totalHT)}</Text>
+            </View>
+          )}
 
           {adjustments.map((a, idx) => (
             <View
@@ -574,9 +639,10 @@ export async function invoiceToPdf(
   lines: InvoiceLine[],
   centre: Centre,
   pro: ProfessionalInfo,
+  formationTitle?: string,
 ): Promise<Blob> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const doc = (<InvoiceDoc invoice={invoice} lines={lines} centre={centre} pro={pro} />) as any;
+  const doc = (<InvoiceDoc invoice={invoice} lines={lines} centre={centre} pro={pro} formationTitle={formationTitle} />) as any;
   return await pdf(doc).toBlob();
 }
 
@@ -585,8 +651,9 @@ export async function downloadInvoicePdf(
   lines: InvoiceLine[],
   centre: Centre,
   pro: ProfessionalInfo,
+  formationTitle?: string,
 ): Promise<string | null> {
-  const blob = await invoiceToPdf(invoice, lines, centre, pro);
+  const blob = await invoiceToPdf(invoice, lines, centre, pro, formationTitle);
   const safeNumber = invoice.invoice_number.replace(/[\\/:*?"<>|]/g, "_");
   return downloadPdf(blob, `Facture_${safeNumber}.pdf`);
 }

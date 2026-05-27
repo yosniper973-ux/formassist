@@ -33,6 +33,7 @@ export interface InvoiceLine {
   rate: number;
   amount_ht: number;
   sort_order: number;
+  slot_date?: string;
 }
 
 export interface InvoiceAdjustment {

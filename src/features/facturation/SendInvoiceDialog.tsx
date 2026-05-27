@@ -20,6 +20,7 @@ interface Props {
   centre: Centre;
   lines: InvoiceLine[];
   deroulementSheets: DeroulementSheetRow[];
+  formationTitle?: string;
   onClose: () => void;
   onSent: () => void;
 }
@@ -37,6 +38,7 @@ export function SendInvoiceDialog({
   centre,
   lines,
   deroulementSheets,
+  formationTitle,
   onClose,
   onSent,
 }: Props) {
@@ -130,7 +132,7 @@ export function SendInvoiceDialog({
     try {
       // 1. Génère le PDF de la facture
       const pro = await getProfessionalInfo();
-      const invoicePdfPath = await downloadInvoicePdf(invoice, lines, centre, pro);
+      const invoicePdfPath = await downloadInvoicePdf(invoice, lines, centre, pro, formationTitle);
       if (invoicePdfPath) pdfPaths.push(invoicePdfPath);
 
       // 2. Convertit chaque déroulement sélectionné en PDF
