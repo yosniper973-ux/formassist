@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { Eye, EyeOff, Fingerprint, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User, Briefcase, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, Fingerprint, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, FolderOpen, User, Briefcase, ShieldCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { encryptValue, decryptValue } from "@/lib/crypto";
 import { testConnection } from "@/lib/claude";
@@ -1276,6 +1276,39 @@ function BackupSection() {
     }
   }
 
+  async function handleImport() {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const filePath = await open({
+        multiple: false,
+        filters: [{ name: "Base FormAssist", extensions: ["db"] }],
+        title: "Sélectionner la base FormAssist à importer",
+      });
+      if (!filePath) return;
+
+      const confirmed = confirm(
+        "Importer cette base de données ?\n\n" +
+        "⚠️ Toutes les données actuelles seront remplacées par celles du fichier importé.\n\n" +
+        "Une sauvegarde de sécurité sera créée automatiquement avant l'import.\n\n" +
+        "Après l'import, redémarre l'application et utilise TON ANCIEN MOT DE PASSE " +
+        "(celui du PC d'origine).",
+      );
+      if (!confirmed) return;
+
+      setRestoring(true);
+      setMessage(null);
+      await invoke("restore_backup", { backupPath: filePath });
+      setMessage({
+        type: "success",
+        text: "✅ Import réussi ! Redémarre FormAssist et connecte-toi avec ton ancien mot de passe.",
+      });
+    } catch (err) {
+      setMessage({ type: "error", text: `Erreur import : ${err}` });
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} o`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
@@ -1293,7 +1326,7 @@ function BackupSection() {
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={handleCreate} disabled={creating}>
             {creating ? (
               <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -1302,9 +1335,13 @@ function BackupSection() {
             )}
             {creating ? "Création..." : "Nouvelle sauvegarde"}
           </Button>
-          <Button variant="outline" onClick={handleExport}>
+          <Button variant="outline" onClick={handleExport} disabled={restoring}>
             <Upload className="mr-2 h-4 w-4" />
             Exporter la BDD
+          </Button>
+          <Button variant="outline" onClick={handleImport} disabled={restoring}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            Importer depuis un fichier
           </Button>
         </div>
 
@@ -1359,12 +1396,22 @@ function BackupSection() {
           )}
         </div>
 
-        {/* Avertissement */}
-        <div className="rounded-lg bg-muted p-4 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">💡 Conseil</p>
-          <p className="mt-1">
+        {/* Conseil */}
+        <div className="rounded-lg bg-muted p-4 text-xs text-muted-foreground space-y-2">
+          <p className="font-medium text-foreground">💡 Conseils</p>
+          <p>
             Crée une sauvegarde régulièrement, surtout avant de mettre à jour l'application.
             Les sauvegardes sont stockées localement dans le dossier de données de l'app.
+          </p>
+          <p className="font-medium text-foreground">🖥️ Changer de PC ?</p>
+          <p>
+            1. Sur l'ancien PC : clique sur <strong>Exporter la BDD</strong> et copie le fichier
+            sur une clé USB ou dans le cloud.<br />
+            2. Sur le nouveau PC : installe FormAssist, saisis ta clé de licence, configure
+            n'importe quel mot de passe temporaire.<br />
+            3. Reviens ici et clique sur <strong>Importer depuis un fichier</strong>.<br />
+            4. Redémarre l'app et connecte-toi avec <strong>ton ancien mot de passe</strong>.
+            Toutes tes données (formations, factures, apprenants) seront là.
           </p>
         </div>
       </CardContent>
