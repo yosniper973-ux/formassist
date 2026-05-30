@@ -27,6 +27,7 @@ import { DeroulementEditor } from "./deroulement/DeroulementEditor";
 import { listDeroulementSheetsForInvoice } from "./deroulement/queries";
 import type { DeroulementSheetRow } from "./deroulement/types";
 import { FinancesDashboard } from "./FinancesDashboard";
+import { LivreRecettesPanel } from "./LivreRecettesPanel";
 import { SendInvoiceDialog } from "./SendInvoiceDialog";
 import { downloadInvoicePdf } from "./invoice-pdf";
 import { getProfessionalInfo, isProfessionalInfoComplete } from "@/lib/professional-info";
@@ -236,6 +237,11 @@ export function FacturationPage() {
           centres={centres}
           onOpenInvoice={openDetail}
         />
+      )}
+
+      {/* Livre des recettes */}
+      {!loading && !search && !filterStatus && (
+        <LivreRecettesPanel />
       )}
 
       {/* Liste */}
@@ -804,6 +810,10 @@ function InvoiceDetailView({
   const [downloadToast, setDownloadToast] = useState<{ path: string; name: string } | null>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
+  // Sélecteur de mode de paiement (avant de marquer payée)
+  const [showPaymentPicker, setShowPaymentPicker] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<string>("Virement bancaire");
+
   const loadDeroulementSheets = useCallback(async () => {
     const rows = await listDeroulementSheetsForInvoice(invoice.id);
     setDeroulementSheets(rows);
@@ -889,21 +899,64 @@ function InvoiceDetailView({
     return invoice.adjustments;
   })();
 
-  async function updateStatus(newStatus: "sent" | "paid") {
+  async function updateStatus(newStatus: "sent") {
     setUpdating(true);
     try {
       const now = new Date().toISOString().replace("T", " ").substring(0, 19);
-      if (newStatus === "sent") {
-        await db.execute(
-          "UPDATE invoices SET status = ?, sent_at = ?, updated_at = ? WHERE id = ?",
-          [newStatus, now, now, invoice.id],
-        );
-      } else {
-        await db.execute(
-          "UPDATE invoices SET status = ?, paid_date = ?, updated_at = ? WHERE id = ?",
-          [newStatus, now.substring(0, 10), now, invoice.id],
-        );
+      await db.execute(
+        "UPDATE invoices SET status = ?, sent_at = ?, updated_at = ? WHERE id = ?",
+        [newStatus, now, now, invoice.id],
+      );
+      onUpdated();
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function confirmPayment() {
+    if (!paymentMode) return;
+    setUpdating(true);
+    setShowPaymentPicker(false);
+    try {
+      const today = new Date();
+      const paidDate = today.toISOString().substring(0, 10);
+      const nowStr = today.toISOString().replace("T", " ").substring(0, 19);
+
+      // 1. Marquer la facture payée
+      await db.execute(
+        "UPDATE invoices SET status = ?, paid_date = ?, payment_mode = ?, updated_at = ? WHERE id = ?",
+        ["paid", paidDate, paymentMode, nowStr, invoice.id],
+      );
+
+      // 2. Ajouter une ligne dans le livre des recettes
+      const year = today.getFullYear();
+      const designation = formationTitle
+        ? `Formation : ${formationTitle}`
+        : `Facture ${invoice.invoice_number}`;
+
+      await db.addLivreRecette({
+        year,
+        date_encaissement: paidDate,
+        numero_facture: invoice.invoice_number,
+        client: centre?.name ?? invoice.centre_name ?? "Client inconnu",
+        designation,
+        montant_ttc: invoice.total_ttc,
+        mode_reglement: paymentMode,
+        invoice_id: invoice.id,
+      });
+
+      // 3. Générer/mettre à jour le XLSX automatiquement
+      try {
+        const { exportLivreRecettesXlsx } = await import("@/lib/livre-recettes-xlsx");
+        const { getProfessionalInfo } = await import("@/lib/professional-info");
+        const entries = await db.getLivreRecettes(year);
+        const proInfo = await getProfessionalInfo();
+        const path = await exportLivreRecettesXlsx(year, entries, proInfo);
+        setDownloadToast({ path, name: `Livre_des_recettes_${year}.xlsx` });
+      } catch (e) {
+        console.warn("Export XLSX livre des recettes échoué :", e);
       }
+
       onUpdated();
     } finally {
       setUpdating(false);
@@ -980,11 +1033,32 @@ function InvoiceDetailView({
               Marquer envoyée
             </Button>
           )}
-          {invoice.status === "sent" && (
-            <Button onClick={() => updateStatus("paid")} disabled={updating}>
+          {invoice.status === "sent" && !showPaymentPicker && (
+            <Button onClick={() => setShowPaymentPicker(true)} disabled={updating}>
               <CheckCircle2 className="h-4 w-4" />
               Marquer payée
             </Button>
+          )}
+          {invoice.status === "sent" && showPaymentPicker && (
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+              <span className="text-sm font-medium whitespace-nowrap">Mode de règlement :</span>
+              <select
+                className="rounded-md border bg-background px-2 py-1 text-sm"
+                value={paymentMode}
+                onChange={(e) => setPaymentMode(e.target.value)}
+              >
+                {["Virement bancaire", "Chèque", "Espèces", "Carte bancaire"].map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <Button size="sm" onClick={confirmPayment} disabled={updating}>
+                {updating ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-foreground border-t-transparent" /> : <CheckCircle2 className="h-3 w-3" />}
+                Confirmer
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowPaymentPicker(false)}>
+                Annuler
+              </Button>
+            </div>
           )}
           <Button
             variant="outline"
