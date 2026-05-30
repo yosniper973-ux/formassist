@@ -6,12 +6,15 @@ import { db } from "@/lib/db";
 import { LockScreen } from "@/features/auth/LockScreen";
 import { SetupPassword } from "@/features/auth/SetupPassword";
 import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
+import { LicenseScreen } from "@/features/license/LicenseScreen";
 import { ErrorToast } from "@/components/ErrorToast";
 import { logError, classifyError } from "@/lib/errorHandler";
 import { initTheme } from "@/lib/theme";
+import { getLicenseStatus } from "@/lib/license";
 
 type AppPhase =
   | "loading"
+  | "license"      // pas de licence valide ni d'essai actif
   | "onboarding"   // premier lancement : assistant Claude
   | "setup_pwd"    // onboarding terminé, pas encore de mot de passe
   | "locked"       // mot de passe configuré, app verrouillée
@@ -19,6 +22,7 @@ type AppPhase =
 
 export function App() {
   const [phase, setPhase] = useState<AppPhase>("loading");
+  const [licenseInitialScreen, setLicenseInitialScreen] = useState<"offer" | "expired">("offer");
   const { isUnlocked, setUnlocked, setOnboardingComplete, setPasswordConfigured, setTheme } =
     useAppStore();
 
@@ -34,6 +38,20 @@ export function App() {
         db.backfillSlotCompetences().catch((err: unknown) => {
           console.error("Erreur backfill compétences :", err);
         });
+
+        // ── Vérification licence ──────────────────────────────────
+        const licStatus = await getLicenseStatus();
+        if (licStatus.kind === "no_license") {
+          setLicenseInitialScreen("offer");
+          setPhase("license");
+          return;
+        }
+        if (licStatus.kind === "expired_trial" || licStatus.kind === "expired_key") {
+          setLicenseInitialScreen("expired");
+          setPhase("license");
+          return;
+        }
+        // active ou trial → on continue normalement
 
         const onboardingDone = await db.getConfig("onboarding_complete");
         const passwordHash = await db.getConfig("password_hash");
@@ -73,6 +91,28 @@ export function App() {
     }
   }, [isUnlocked, phase]);
 
+  // Après activation ou démarrage essai, reprendre le flux normal
+  async function continueAfterLicense() {
+    try {
+      const onboardingDone = await db.getConfig("onboarding_complete");
+      const passwordHash = await db.getConfig("password_hash");
+      if (!onboardingDone) {
+        setPhase("onboarding");
+        return;
+      }
+      setOnboardingComplete(true);
+      if (!passwordHash) {
+        setPhase("setup_pwd");
+        return;
+      }
+      setPasswordConfigured(true);
+      setPhase("locked");
+    } catch {
+      setPhase("ready");
+      setUnlocked(true);
+    }
+  }
+
   if (phase === "loading") {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -81,6 +121,18 @@ export function App() {
           <p className="text-sm text-muted-foreground">Chargement…</p>
         </div>
       </div>
+    );
+  }
+
+  if (phase === "license") {
+    return (
+      <>
+        <LicenseScreen
+          initialScreen={licenseInitialScreen}
+          onActivated={continueAfterLicense}
+        />
+        <ErrorToast />
+      </>
     );
   }
 

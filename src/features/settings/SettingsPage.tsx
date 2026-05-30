@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { Eye, EyeOff, Fingerprint, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User, Briefcase } from "lucide-react";
+import { Eye, EyeOff, Fingerprint, RefreshCw, Check, Key, Sliders, DollarSign, Lock, Info, HardDrive, Download, Upload, User, Briefcase, ShieldCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { encryptValue, decryptValue } from "@/lib/crypto";
 import { testConnection } from "@/lib/claude";
@@ -17,6 +17,8 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatEuros } from "@/lib/utils";
 import { PRESET_LABELS, MODELS } from "@/config/models";
+import { getLicenseStatus, activateKey } from "@/lib/license";
+import type { LicenseStatus } from "@/lib/license";
 import type { TaskType, ModelTier } from "@/types/api";
 import type { ProfessionalInfo } from "@/types/invoice";
 
@@ -96,6 +98,12 @@ export function SettingsPage() {
   // Infos pro émetteur
   const [proInfo, setProInfo] = useState<ProfessionalInfo>(EMPTY_PRO_INFO);
 
+  // Licence
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [newKey, setNewKey] = useState("");
+  const [keyActivationStatus, setKeyActivationStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [keyActivationError, setKeyActivationError] = useState("");
+
   useEffect(() => {
     loadSettings();
   }, []);
@@ -134,6 +142,10 @@ export function SettingsPage() {
       setCreditAmount(credit.amount);
       const spent = await db.getMonthlyApiCost(credit.since);
       setCreditSpent(spent);
+
+      // Statut licence
+      const ls = await getLicenseStatus();
+      setLicenseStatus(ls);
 
       // Charger les overrides personnalisés
       const overrides = await db.getConfig("model_overrides");
@@ -347,6 +359,29 @@ export function SettingsPage() {
     setProInfo((p) => ({ ...p, [field]: value }));
   }
 
+  async function handleActivateKey() {
+    const trimmed = newKey.trim();
+    if (!trimmed) return;
+    setKeyActivationStatus("loading");
+    setKeyActivationError("");
+    try {
+      const result = await activateKey(trimmed);
+      if (result.valid) {
+        setKeyActivationStatus("ok");
+        setNewKey("");
+        const ls = await getLicenseStatus();
+        setLicenseStatus(ls);
+        setTimeout(() => setKeyActivationStatus("idle"), 3000);
+      } else {
+        setKeyActivationStatus("error");
+        setKeyActivationError(result.reason);
+      }
+    } catch (err) {
+      setKeyActivationStatus("error");
+      setKeyActivationError(err instanceof Error ? err.message : "Erreur inattendue.");
+    }
+  }
+
   async function saveFirstName() {
     setSaveStatus("saving");
     try {
@@ -367,6 +402,7 @@ export function SettingsPage() {
     { id: "modeles", label: "Modèles IA", icon: <Sliders className="h-4 w-4" /> },
     { id: "budget", label: "Budget", icon: <DollarSign className="h-4 w-4" /> },
     { id: "securite", label: "Sécurité", icon: <Lock className="h-4 w-4" /> },
+    { id: "licence", label: "Licence", icon: <ShieldCheck className="h-4 w-4" /> },
     { id: "sauvegardes", label: "Sauvegardes", icon: <HardDrive className="h-4 w-4" /> },
     { id: "apropos", label: "À propos", icon: <Info className="h-4 w-4" /> },
   ];
@@ -959,6 +995,145 @@ export function SettingsPage() {
               <Button onClick={saveLockSettings} disabled={saveStatus === "saving"}>
                 Enregistrer
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ─── Licence ─── */}
+        {activeSection === "licence" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Licence</CardTitle>
+              <CardDescription>
+                Statut de ton accès à FormAssist.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+
+              {/* Statut courant */}
+              <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+                {licenseStatus === null && (
+                  <p className="text-sm text-muted-foreground">Chargement…</p>
+                )}
+                {licenseStatus?.kind === "active" && licenseStatus.type === "dev" && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-primary" />
+                    <div>
+                      <p className="text-sm font-semibold text-primary">Licence développeur</p>
+                      <p className="text-xs text-muted-foreground">Accès permanent — aucune expiration.</p>
+                    </div>
+                  </div>
+                )}
+                {licenseStatus?.kind === "active" && licenseStatus.type === "test" && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-green-600" />
+                    <div>
+                      <p className="text-sm font-semibold text-green-700 dark:text-green-400">Clé de test active</p>
+                      <p className="text-xs text-muted-foreground">
+                        Expire le{" "}
+                        {licenseStatus.expiresAt
+                          ? new Date(licenseStatus.expiresAt).toLocaleDateString("fr-FR")
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {licenseStatus?.kind === "active" && licenseStatus.type === "pro" && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-green-600" />
+                    <div>
+                      <p className="text-sm font-semibold text-green-700 dark:text-green-400">Licence Pro active</p>
+                      {licenseStatus.expiresAt && (
+                        <p className="text-xs text-muted-foreground">
+                          Expire le {new Date(licenseStatus.expiresAt).toLocaleDateString("fr-FR")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {licenseStatus?.kind === "trial" && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-amber-500" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                        Essai gratuit en cours
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {licenseStatus.daysLeft} jour{licenseStatus.daysLeft > 1 ? "s" : ""} restant{licenseStatus.daysLeft > 1 ? "s" : ""}.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {(licenseStatus?.kind === "expired_trial" || licenseStatus?.kind === "expired_key") && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-destructive" />
+                    <div>
+                      <p className="text-sm font-semibold text-destructive">Accès expiré</p>
+                      <p className="text-xs text-muted-foreground">
+                        Active une nouvelle clé pour continuer.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {licenseStatus?.kind === "no_license" && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-semibold">Aucune licence</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Activer une nouvelle clé */}
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label htmlFor="new-license-key" className="text-sm font-medium">
+                    Entrer une clé d'activation
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Pour changer ou renouveler ta licence, saisis ta nouvelle clé ci-dessous.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    id="new-license-key"
+                    value={newKey}
+                    onChange={(e) => {
+                      setNewKey(e.target.value);
+                      setKeyActivationStatus("idle");
+                      setKeyActivationError("");
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleActivateKey()}
+                    placeholder="FA-TEST-202606-XXXXXX"
+                    className="font-mono text-sm uppercase flex-1"
+                    spellCheck={false}
+                  />
+                  <Button
+                    onClick={handleActivateKey}
+                    disabled={!newKey.trim() || keyActivationStatus === "loading"}
+                  >
+                    {keyActivationStatus === "loading" ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : keyActivationStatus === "ok" ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      "Activer"
+                    )}
+                  </Button>
+                </div>
+                {keyActivationStatus === "ok" && (
+                  <p className="flex items-center gap-1.5 text-sm text-green-600">
+                    <Check className="h-3.5 w-3.5" /> Clé activée avec succès.
+                  </p>
+                )}
+                {keyActivationStatus === "error" && (
+                  <p className="text-sm text-destructive">{keyActivationError}</p>
+                )}
+              </div>
+
             </CardContent>
           </Card>
         )}
