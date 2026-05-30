@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Lock, Wifi, WifiOff, ExternalLink, Sun, Moon } from "lucide-react";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/stores/appStore";
@@ -8,36 +7,11 @@ import { applyTheme } from "@/lib/theme";
 import { CentreSelector } from "./CentreSelector";
 
 const ANTHROPIC_USAGE_URL = "https://console.anthropic.com/settings/usage";
-const DEFAULT_BUDGET = 25;
 
 export function Header() {
-  const { isOnline, monthlyApiCost, setUnlocked, theme, setTheme } = useAppStore();
-  const [budget, setBudget] = useState<number>(DEFAULT_BUDGET);
+  const { isOnline, monthlyApiCost, creditTotal, setUnlocked, theme, setTheme } = useAppStore();
 
-  // Charger le budget depuis la DB et écouter ses mises à jour
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const value = await db.getConfig("budget_monthly");
-        if (cancelled) return;
-        const parsed = value ? parseFloat(value) : DEFAULT_BUDGET;
-        setBudget(Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_BUDGET);
-      } catch {
-        // DB pas prête — garde la valeur par défaut
-      }
-    }
-    void load();
-
-    const onUpdate = () => void load();
-    window.addEventListener("budget-updated", onUpdate);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("budget-updated", onUpdate);
-    };
-  }, []);
-
-  const percent = budget > 0 ? Math.min(999, (monthlyApiCost / budget) * 100) : 0;
+  const percent = creditTotal > 0 ? Math.min(999, (monthlyApiCost / creditTotal) * 100) : 0;
   const displayPercent = Math.min(100, percent);
   // Vert sous 80%, orange entre 80 et 100%, rouge au-delà
   const status: "ok" | "warn" | "over" =
@@ -67,10 +41,10 @@ export function Header() {
 
   const tooltip =
     status === "over"
-      ? `Budget dépassé (${Math.round(percent)} %). Pense à recharger sur console.anthropic.com.`
+      ? `Solde épuisé (${Math.round(percent)} %). Recharge ta clé API puis mets à jour le solde dans Paramètres.`
       : status === "warn"
-        ? `Tu as consommé ${Math.round(percent)} % du budget. Surveille la suite.`
-        : `Tu as consommé ${Math.round(percent)} % du budget mensuel. Clique pour ouvrir la console Anthropic.`;
+        ? `Tu as consommé ${Math.round(percent)} % de ton crédit. Surveille la suite.`
+        : `Tu as consommé ${Math.round(percent)} % de ton crédit API. Clique pour ouvrir la console Anthropic.`;
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-card px-4">
@@ -91,7 +65,7 @@ export function Header() {
           <span className={`font-medium ${c.text}`}>
             {formatEuros(monthlyApiCost)}
           </span>
-          <span className="text-muted-foreground">/ {formatEuros(budget)}</span>
+          <span className="text-muted-foreground">/ {formatEuros(creditTotal)}</span>
           <span className="relative h-1.5 w-20 overflow-hidden rounded-full bg-muted">
             <span
               className={`absolute left-0 top-0 h-full transition-all ${c.bar}`}

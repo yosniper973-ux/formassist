@@ -100,6 +100,30 @@ async function getMonthlyApiCost(monthStart: string): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
+async function getApiCredit(): Promise<{ amount: number; since: string }> {
+  const [amountStr, since] = await Promise.all([
+    getConfig("api_credit_amount"),
+    getConfig("api_credit_since"),
+  ]);
+  if (!since) {
+    // Migration depuis budget_monthly : on part du début du mois courant
+    const budgetStr = await getConfig("budget_monthly");
+    const parsed = budgetStr ? parseFloat(budgetStr) : NaN;
+    const amount = Number.isFinite(parsed) && parsed > 0 ? parsed : 25;
+    const d = new Date();
+    const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01 00:00:00`;
+    return { amount, since: monthStart };
+  }
+  const parsed = amountStr ? parseFloat(amountStr) : NaN;
+  const amount = Number.isFinite(parsed) && parsed > 0 ? parsed : 25;
+  return { amount, since };
+}
+
+async function setApiCredit(amount: number, since: string): Promise<void> {
+  await setConfig("api_credit_amount", String(amount));
+  await setConfig("api_credit_since", since);
+}
+
 // ============================================================
 // Centres
 // ============================================================
@@ -953,6 +977,8 @@ export const db = {
   // API Usage
   logApiUsage,
   getMonthlyApiCost,
+  getApiCredit,
+  setApiCredit,
   // Centres
   getCentres,
   getCentre,

@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { formatEuros } from "@/lib/utils";
 import { PRESET_LABELS, MODELS } from "@/config/models";
 import type { TaskType, ModelTier } from "@/types/api";
 import type { ProfessionalInfo } from "@/types/invoice";
@@ -72,9 +73,12 @@ export function SettingsPage() {
   const [preset, setPreset] = useState("quality");
   const [customOverrides, setCustomOverrides] = useState<Partial<Record<TaskType, ModelTier>>>({});
 
-  // Budget
-  const [budget, setBudget] = useState("25");
+  // Crédit API
+  const [creditAmount, setCreditAmount] = useState(25);
+  const [creditSpent, setCreditSpent] = useState(0);
   const [alertThreshold, setAlertThreshold] = useState("0.50");
+  const [creditMode, setCreditMode] = useState<null | "recharge" | "set">(null);
+  const [creditInput, setCreditInput] = useState("");
 
   // Verrouillage
   const [autoLockMinutes, setAutoLockMinutes] = useState("15");
@@ -98,15 +102,15 @@ export function SettingsPage() {
 
   async function loadSettings() {
     try {
-      const [encKey, presetVal, budgetVal, thresholdVal, lockVal, version, firstName, pro] = await Promise.all([
+      const [encKey, presetVal, thresholdVal, lockVal, version, firstName, pro, credit] = await Promise.all([
         db.getConfig("api_key"),
         db.getConfig("model_preset"),
-        db.getConfig("budget_monthly"),
         db.getConfig("cost_alert_threshold"),
         db.getConfig("auto_lock_minutes"),
         invoke<string>("get_app_version").catch(() => "0.1.0"),
         db.getConfig("user_first_name"),
         getProfessionalInfo(),
+        db.getApiCredit(),
       ]);
 
       setProInfo(pro);
@@ -123,10 +127,13 @@ export function SettingsPage() {
       }
 
       if (presetVal) setPreset(presetVal);
-      if (budgetVal) setBudget(budgetVal);
       if (thresholdVal) setAlertThreshold(thresholdVal);
       if (lockVal) setAutoLockMinutes(lockVal);
       setAppVersion(version as string);
+
+      setCreditAmount(credit.amount);
+      const spent = await db.getMonthlyApiCost(credit.since);
+      setCreditSpent(spent);
 
       // Charger les overrides personnalisés
       const overrides = await db.getConfig("model_overrides");
@@ -272,18 +279,45 @@ export function SettingsPage() {
     }
   }
 
-  async function saveBudgetSettings() {
+  async function saveAlertThreshold() {
     setSaveStatus("saving");
     try {
-      await db.setConfig("budget_monthly", budget);
       await db.setConfig("cost_alert_threshold", alertThreshold);
-      // Notifier le Header (et autres composants) que le budget a changé
-      window.dispatchEvent(new Event("budget-updated"));
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {
       setSaveStatus("error");
     }
+  }
+
+  function nowStr(): string {
+    return new Date().toISOString().replace("T", " ").substring(0, 19);
+  }
+
+  async function handleRecharge() {
+    const added = parseFloat(creditInput);
+    if (!Number.isFinite(added) || added <= 0) return;
+    const remaining = Math.max(0, creditAmount - creditSpent);
+    const newAmount = remaining + added;
+    const since = nowStr();
+    await db.setApiCredit(newAmount, since);
+    setCreditAmount(newAmount);
+    setCreditSpent(0);
+    setCreditInput("");
+    setCreditMode(null);
+    window.dispatchEvent(new Event("budget-updated"));
+  }
+
+  async function handleSetBalance() {
+    const newAmount = parseFloat(creditInput);
+    if (!Number.isFinite(newAmount) || newAmount <= 0) return;
+    const since = nowStr();
+    await db.setApiCredit(newAmount, since);
+    setCreditAmount(newAmount);
+    setCreditSpent(0);
+    setCreditInput("");
+    setCreditMode(null);
+    window.dispatchEvent(new Event("budget-updated"));
   }
 
   async function saveLockSettings() {
@@ -684,31 +718,124 @@ export function SettingsPage() {
         {activeSection === "budget" && (
           <Card>
             <CardHeader>
-              <CardTitle>Budget API</CardTitle>
+              <CardTitle>Crédit API</CardTitle>
               <CardDescription>
-                Définis tes limites de dépenses. FormAssist t'alertera avant de les dépasser.
+                Suis ton solde Anthropic et recharge-le quand tu recharges ta clé API.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-1.5">
-                <Label htmlFor="budget">Budget mensuel (€)</Label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    id="budget"
-                    type="number"
-                    min={1}
-                    max={500}
-                    value={budget}
-                    onChange={(e) => setBudget(e.target.value)}
-                    className="w-28"
-                  />
-                  <span className="text-sm text-muted-foreground">euros / mois</span>
+            <CardContent className="space-y-6">
+
+              {/* Solde actuel */}
+              <div className="space-y-3">
+                <Label>Solde actuel</Label>
+                <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-2xl font-semibold">
+                      {formatEuros(Math.max(0, creditAmount - creditSpent))}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      / {formatEuros(creditAmount)} chargés
+                    </span>
+                  </div>
+                  {creditAmount > 0 && (
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={`h-full transition-all ${
+                          creditSpent / creditAmount >= 1
+                            ? "bg-red-500"
+                            : creditSpent / creditAmount >= 0.8
+                              ? "bg-amber-500"
+                              : "bg-emerald-500"
+                        }`}
+                        style={{ width: `${Math.min(100, (creditSpent / creditAmount) * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {formatEuros(creditSpent)} dépensés depuis la dernière mise à jour du solde.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Tu recevras une alerte à 80% puis à 100% du budget.
-                </p>
+
+                {/* Actions crédit */}
+                {creditMode === null && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setCreditMode("recharge"); setCreditInput(""); }}
+                    >
+                      + Recharger
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setCreditMode("set"); setCreditInput(""); }}
+                    >
+                      Corriger le solde
+                    </Button>
+                  </div>
+                )}
+
+                {creditMode === "recharge" && (
+                  <div className="space-y-2 rounded-lg border p-4">
+                    <p className="text-sm font-medium">Montant rechargé sur Anthropic (€)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Il te reste {formatEuros(Math.max(0, creditAmount - creditSpent))}. Ce montant s'y ajoutera.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        placeholder="ex : 10"
+                        value={creditInput}
+                        onChange={(e) => setCreditInput(e.target.value)}
+                        className="w-32"
+                        autoFocus
+                      />
+                      <span className="text-sm text-muted-foreground">€</span>
+                      <Button size="sm" onClick={handleRecharge} disabled={!creditInput || parseFloat(creditInput) <= 0}>
+                        Confirmer
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setCreditMode(null)}>
+                        Annuler
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {creditMode === "set" && (
+                  <div className="space-y-2 rounded-lg border p-4">
+                    <p className="text-sm font-medium">Solde actuel sur console.anthropic.com (€)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Utilise cette option si tu veux recaler le solde affichée sur ton solde réel.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        placeholder="ex : 15"
+                        value={creditInput}
+                        onChange={(e) => setCreditInput(e.target.value)}
+                        className="w-32"
+                        autoFocus
+                      />
+                      <span className="text-sm text-muted-foreground">€</span>
+                      <Button size="sm" onClick={handleSetBalance} disabled={!creditInput || parseFloat(creditInput) <= 0}>
+                        Confirmer
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setCreditMode(null)}>
+                        Annuler
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
+              <Separator />
+
+              {/* Seuil d'alerte par génération */}
               <div className="space-y-1.5">
                 <Label htmlFor="threshold">Seuil d'alerte par génération (€)</Label>
                 <div className="flex items-center gap-3">
@@ -729,9 +856,10 @@ export function SettingsPage() {
                 </p>
               </div>
 
-              <Button onClick={saveBudgetSettings} disabled={saveStatus === "saving"}>
-                Enregistrer
+              <Button onClick={saveAlertThreshold} disabled={saveStatus === "saving"}>
+                Enregistrer le seuil
               </Button>
+
             </CardContent>
           </Card>
         )}

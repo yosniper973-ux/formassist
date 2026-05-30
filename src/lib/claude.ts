@@ -102,24 +102,19 @@ export async function estimateCost(
   };
 }
 
-/** Vérifie le budget mensuel avant un appel */
+/** Vérifie le solde de crédit API avant un appel */
 export async function checkBudget(estimatedCost: number): Promise<{
   allowed: boolean;
   currentSpent: number;
   budget: number;
 }> {
-  const budgetStr = await db.getConfig("budget_monthly");
-  const parsedBudget = budgetStr ? parseFloat(budgetStr) : NaN;
-  const budget = Number.isFinite(parsedBudget) && parsedBudget > 0 ? parsedBudget : 25;
-
-  const now = new Date();
-  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  const currentSpent = await db.getMonthlyApiCost(monthStart);
+  const credit = await db.getApiCredit();
+  const currentSpent = await db.getMonthlyApiCost(credit.since);
 
   return {
-    allowed: currentSpent + estimatedCost <= budget,
+    allowed: currentSpent + estimatedCost <= credit.amount,
     currentSpent,
-    budget,
+    budget: credit.amount,
   };
 }
 

@@ -102,6 +102,7 @@ export function AppShell() {
 
   const location = useLocation();
   const setMonthlyApiCost = useAppStore((s) => s.setMonthlyApiCost);
+  const setCreditTotal = useAppStore((s) => s.setCreditTotal);
   const [pending, setPending] = useState<PendingUpdate | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -148,19 +149,31 @@ export function AppShell() {
     };
   }, []);
 
-  // Synchronise le coût API mensuel (header) depuis la DB à chaque navigation
+  // Synchronise le solde de crédit API depuis la DB à chaque navigation et après une mise à jour
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    async function syncCredit() {
+      if (cancelled) return;
       try {
-        const now = new Date();
-        const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-        const cost = await db.getMonthlyApiCost(monthStart);
-        setMonthlyApiCost(cost);
+        const credit = await db.getApiCredit();
+        if (cancelled) return;
+        const spent = await db.getMonthlyApiCost(credit.since);
+        if (cancelled) return;
+        setMonthlyApiCost(spent);
+        setCreditTotal(credit.amount);
       } catch {
         // Silencieux si DB pas prête
       }
-    })();
-  }, [location.pathname, setMonthlyApiCost]);
+    }
+
+    void syncCredit();
+    window.addEventListener("budget-updated", syncCredit);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("budget-updated", syncCredit);
+    };
+  }, [location.pathname, setMonthlyApiCost, setCreditTotal]);
 
   async function handleInstall() {
     if (!pending) return;

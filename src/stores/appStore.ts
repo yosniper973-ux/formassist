@@ -13,10 +13,14 @@ interface AppState {
   isOnline: boolean;
   setOnline: (value: boolean) => void;
 
-  // Coût API cumulé du mois
+  // Coût API dépensé depuis le dernier snapshot de crédit
   monthlyApiCost: number;
   setMonthlyApiCost: (cost: number) => void;
   addApiCost: (cost: number) => void;
+
+  // Montant total chargé au dernier snapshot de crédit
+  creditTotal: number;
+  setCreditTotal: (t: number) => void;
 
   // Onboarding terminé
   onboardingComplete: boolean;
@@ -45,6 +49,9 @@ export const useAppStore = create<AppState>((set) => ({
   setMonthlyApiCost: (cost) => set({ monthlyApiCost: cost }),
   addApiCost: (cost) =>
     set((state) => ({ monthlyApiCost: state.monthlyApiCost + cost })),
+
+  creditTotal: 25,
+  setCreditTotal: (t) => set({ creditTotal: t }),
 
   onboardingComplete: false,
   setOnboardingComplete: (value) => set({ onboardingComplete: value }),
