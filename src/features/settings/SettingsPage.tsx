@@ -17,7 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatEuros } from "@/lib/utils";
 import { PRESET_LABELS, MODELS } from "@/config/models";
-import { getLicenseStatus, activateKey } from "@/lib/license";
+import { getLicenseStatus, activateKey, deactivateLicenseOnThisDevice } from "@/lib/license";
 import type { LicenseStatus } from "@/lib/license";
 import type { TaskType, ModelTier } from "@/types/api";
 import type { ProfessionalInfo } from "@/types/invoice";
@@ -103,6 +103,8 @@ export function SettingsPage() {
   const [newKey, setNewKey] = useState("");
   const [keyActivationStatus, setKeyActivationStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [keyActivationError, setKeyActivationError] = useState("");
+  const [deactivating, setDeactivating] = useState(false);
+  const [deactivateError, setDeactivateError] = useState("");
 
   useEffect(() => {
     loadSettings();
@@ -357,6 +359,26 @@ export function SettingsPage() {
 
   function updatePro<K extends keyof ProfessionalInfo>(field: K, value: ProfessionalInfo[K]) {
     setProInfo((p) => ({ ...p, [field]: value }));
+  }
+
+  async function handleDeactivate() {
+    const confirmed = confirm(
+      "Désactiver FormAssist sur cet appareil ?\n\n" +
+      "Ta clé de licence sera libérée et pourra être utilisée sur un autre PC.\n\n" +
+      "⚠️ L'application passera en mode « sans licence » sur cet ordinateur. " +
+      "Pense à exporter ta base de données avant si tu veux récupérer tes données.",
+    );
+    if (!confirmed) return;
+    setDeactivating(true);
+    setDeactivateError("");
+    const result = await deactivateLicenseOnThisDevice();
+    setDeactivating(false);
+    if (result.ok) {
+      const ls = await getLicenseStatus();
+      setLicenseStatus(ls);
+    } else {
+      setDeactivateError(result.error ?? "Erreur inattendue.");
+    }
   }
 
   async function handleActivateKey() {
@@ -1084,6 +1106,33 @@ export function SettingsPage() {
                   </div>
                 )}
               </div>
+
+              {/* Bouton transfert PC — uniquement si licence active */}
+              {licenseStatus?.kind === "active" && (
+                <div className="rounded-lg border border-dashed p-4 space-y-2">
+                  <p className="text-sm font-medium">Changer de PC ?</p>
+                  <p className="text-xs text-muted-foreground">
+                    Désactive FormAssist sur cet ordinateur pour libérer ta licence
+                    et l'activer sur ton nouveau PC. Exporte d'abord ta base de données
+                    (Sauvegardes → Exporter la BDD) pour récupérer toutes tes données.
+                  </p>
+                  {deactivateError && (
+                    <p className="text-xs text-destructive">{deactivateError}</p>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeactivate}
+                    disabled={deactivating}
+                    className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/5"
+                  >
+                    {deactivating ? (
+                      <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : null}
+                    {deactivating ? "Désactivation…" : "Désactiver sur cet appareil"}
+                  </Button>
+                </div>
+              )}
 
               <Separator />
 

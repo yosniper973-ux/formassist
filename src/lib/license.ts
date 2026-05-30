@@ -220,6 +220,67 @@ export async function activateKey(key: string): Promise<KeyValidationResult> {
   return result;
 }
 
+// ─── Désactivation Lemon Squeezy (transfert de PC) ───────────
+
+async function lsDeactivate(key: string, instanceId: string): Promise<boolean> {
+  try {
+    const resp = await fetch("https://api.lemonsqueezy.com/v1/licenses/deactivate", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ license_key: key, instance_id: instanceId }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    const data = (await resp.json()) as { deactivated?: boolean };
+    return data.deactivated === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Désactive la licence PRO sur cet appareil.
+ * À appeler AVANT de changer de PC pour libérer un slot d'activation.
+ * La clé reste valide — elle pourra être re-saisie sur le nouveau PC.
+ */
+export async function deactivateLicenseOnThisDevice(): Promise<{ ok: boolean; error?: string }> {
+  const [licenseKey, licenseType, instanceId] = await Promise.all([
+    db.getConfig("license_key"),
+    db.getConfig("license_type"),
+    db.getConfig("license_instance_id"),
+  ]);
+
+  // DEV / TEST : pas d'instance LS, rien à faire côté serveur
+  if (licenseType !== "pro" || !licenseKey) {
+    await clearLicenseLocally();
+    return { ok: true };
+  }
+
+  if (instanceId) {
+    const ok = await lsDeactivate(licenseKey, instanceId);
+    if (!ok) {
+      return {
+        ok: false,
+        error:
+          "Impossible de joindre le serveur Lemon Squeezy. " +
+          "Vérifie ta connexion internet et réessaie.",
+      };
+    }
+  }
+
+  await clearLicenseLocally();
+  return { ok: true };
+}
+
+async function clearLicenseLocally(): Promise<void> {
+  await Promise.all([
+    db.setConfig("license_key", ""),
+    db.setConfig("license_type", ""),
+    db.setConfig("license_expires", ""),
+    db.setConfig("license_instance_id", ""),
+    db.setConfig("license_last_validated_at", ""),
+  ]);
+}
+
 // ─── Démarrer l'essai gratuit ─────────────────────────────────
 
 export async function startTrial(): Promise<void> {
