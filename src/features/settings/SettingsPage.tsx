@@ -18,6 +18,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatEuros } from "@/lib/utils";
 import { PRESET_LABELS, MODELS } from "@/config/models";
 import { getLicenseStatus, activateKey, deactivateLicenseOnThisDevice } from "@/lib/license";
+import { performCloudBackup, getLastCloudBackupAt } from "@/lib/cloud-backup";
 import type { LicenseStatus } from "@/lib/license";
 import type { TaskType, ModelTier } from "@/types/api";
 import type { ProfessionalInfo } from "@/types/invoice";
@@ -1258,6 +1259,11 @@ function BackupSection() {
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // Cloud backup
+  const [lastCloudBackup, setLastCloudBackup] = useState<string | null>(null);
+  const [cloudState, setCloudState] = useState<"idle" | "running" | "ok" | "error">("idle");
+  const [cloudError, setCloudError] = useState("");
+
   useEffect(() => {
     loadBackups();
   }, []);
@@ -1265,15 +1271,34 @@ function BackupSection() {
   async function loadBackups() {
     setLoading(true);
     try {
-      const result = await invoke<string>("list_backups");
+      const [result, lastCloud] = await Promise.all([
+        invoke<string>("list_backups"),
+        getLastCloudBackupAt(),
+      ]);
       const parsed = JSON.parse(result) as BackupEntry[];
       // Trier par nom décroissant (plus récent en premier)
       parsed.sort((a, b) => b.name.localeCompare(a.name));
       setBackups(parsed);
+      setLastCloudBackup(lastCloud);
     } catch (err) {
       console.error("Erreur chargement sauvegardes:", err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleCloudBackupNow() {
+    setCloudState("running");
+    setCloudError("");
+    try {
+      await performCloudBackup();
+      const lastCloud = await getLastCloudBackupAt();
+      setLastCloudBackup(lastCloud);
+      setCloudState("ok");
+      setTimeout(() => setCloudState("idle"), 3000);
+    } catch (err) {
+      setCloudError(err instanceof Error ? err.message : String(err));
+      setCloudState("error");
     }
   }
 
@@ -1364,6 +1389,18 @@ function BackupSection() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
   }
 
+  function formatCloudDate(iso: string | null): string {
+    if (!iso) return "jamais";
+    const d = new Date(iso);
+    const diffMs = Date.now() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60_000);
+    if (diffMin < 2) return "à l'instant";
+    if (diffMin < 60) return `il y a ${diffMin} min`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `il y a ${diffH} h`;
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -1374,6 +1411,49 @@ function BackupSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+
+        {/* ─── Sauvegarde cloud ─── */}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-900">☁️ Sauvegarde cloud automatique</p>
+              <p className="text-xs text-blue-700">
+                Dernière sauvegarde : <strong>{formatCloudDate(lastCloudBackup)}</strong>
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleCloudBackupNow()}
+              disabled={cloudState === "running"}
+              className="border-blue-300 text-blue-700 hover:bg-blue-100"
+            >
+              {cloudState === "running" ? (
+                <>
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  En cours…
+                </>
+              ) : cloudState === "ok" ? (
+                <>
+                  <Check className="mr-1.5 h-3.5 w-3.5 text-green-600" />
+                  Sauvegardé !
+                </>
+              ) : (
+                "Sauvegarder maintenant"
+              )}
+            </Button>
+          </div>
+          {cloudState === "error" && (
+            <p className="text-xs text-red-600">{cloudError}</p>
+          )}
+          <p className="text-xs text-blue-600">
+            Sauvegarde automatique à chaque ouverture (si &gt; 1h depuis la dernière).
+            Le chemin de stockage est anonymisé via SHA-256.
+          </p>
+        </div>
+
+        <Separator />
+
         {/* Actions */}
         <div className="flex flex-wrap gap-2">
           <Button onClick={handleCreate} disabled={creating}>

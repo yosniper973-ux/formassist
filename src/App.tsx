@@ -7,22 +7,27 @@ import { LockScreen } from "@/features/auth/LockScreen";
 import { SetupPassword } from "@/features/auth/SetupPassword";
 import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
 import { LicenseScreen } from "@/features/license/LicenseScreen";
+import { CloudRestoreScreen } from "@/features/cloud/CloudRestoreScreen";
 import { ErrorToast } from "@/components/ErrorToast";
 import { logError, classifyError } from "@/lib/errorHandler";
 import { initTheme } from "@/lib/theme";
 import { getLicenseStatus } from "@/lib/license";
+import { findOtherDeviceBackups } from "@/lib/cloud-backup";
+import type { OtherDeviceBackup } from "@/lib/cloud-backup";
 
 type AppPhase =
   | "loading"
-  | "license"      // pas de licence valide ni d'essai actif
-  | "onboarding"   // premier lancement : assistant Claude
-  | "setup_pwd"    // onboarding terminé, pas encore de mot de passe
-  | "locked"       // mot de passe configuré, app verrouillée
-  | "ready";       // tout ok, app principale
+  | "license"        // pas de licence valide ni d'essai actif
+  | "cloud_restore"  // nouveau PC : sauvegarde cloud détectée
+  | "onboarding"     // premier lancement : assistant Claude
+  | "setup_pwd"      // onboarding terminé, pas encore de mot de passe
+  | "locked"         // mot de passe configuré, app verrouillée
+  | "ready";         // tout ok, app principale
 
 export function App() {
   const [phase, setPhase] = useState<AppPhase>("loading");
   const [licenseInitialScreen, setLicenseInitialScreen] = useState<"offer" | "expired">("offer");
+  const [cloudBackups, setCloudBackups] = useState<OtherDeviceBackup[]>([]);
   const { isUnlocked, setUnlocked, setOnboardingComplete, setPasswordConfigured, setTheme } =
     useAppStore();
 
@@ -57,6 +62,19 @@ export function App() {
         const passwordHash = await db.getConfig("password_hash");
 
         if (!onboardingDone) {
+          // Nouveau PC — chercher des sauvegardes cloud pour cette licence
+          if (navigator.onLine) {
+            try {
+              const others = await findOtherDeviceBackups();
+              if (others.length > 0) {
+                setCloudBackups(others);
+                setPhase("cloud_restore");
+                return;
+              }
+            } catch {
+              // Silencieux — on passe à l'onboarding normal
+            }
+          }
           setPhase("onboarding");
           return;
         }
@@ -97,6 +115,19 @@ export function App() {
       const onboardingDone = await db.getConfig("onboarding_complete");
       const passwordHash = await db.getConfig("password_hash");
       if (!onboardingDone) {
+        // Chercher des sauvegardes cloud pour cette licence (nouveau PC)
+        if (navigator.onLine) {
+          try {
+            const others = await findOtherDeviceBackups();
+            if (others.length > 0) {
+              setCloudBackups(others);
+              setPhase("cloud_restore");
+              return;
+            }
+          } catch {
+            // Silencieux
+          }
+        }
         setPhase("onboarding");
         return;
       }
@@ -130,6 +161,18 @@ export function App() {
         <LicenseScreen
           initialScreen={licenseInitialScreen}
           onActivated={continueAfterLicense}
+        />
+        <ErrorToast />
+      </>
+    );
+  }
+
+  if (phase === "cloud_restore") {
+    return (
+      <>
+        <CloudRestoreScreen
+          backups={cloudBackups}
+          onSkip={() => setPhase("onboarding")}
         />
         <ErrorToast />
       </>

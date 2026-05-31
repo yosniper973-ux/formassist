@@ -1,0 +1,21 @@
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # Tous les lundis à 8h UTC — suffit pour éviter la mise en pause (7 jours d'inactivité)
+    - cron: '0 8 * * 1'
+  workflow_dispatch: # Déclenchement manuel depuis GitHub si besoin
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Storage
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "apikey: sb_publishable_Vh3sSsMrwYENShX-5moeBA_Gu4a2Elr" \
+            -H "Authorization: Bearer sb_publishable_Vh3sSsMrwYENShX-5moeBA_Gu4a2Elr" \
+            -H "Content-Type: application/json" \
+            -d '{"prefix":"","limit":1}' \
+            "https://aacqzpvuavugsvxretso.supabase.co/storage/v1/object/list/backups"

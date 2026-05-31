@@ -10,6 +10,7 @@ import { useAutoLock } from "@/hooks/useAutoLock";
 import { useOnline } from "@/hooks/useOnline";
 import { useAppStore } from "@/stores/appStore";
 import { db } from "@/lib/db";
+import { autoBackupIfNeeded } from "@/lib/cloud-backup";
 import { Download, X, Loader2 } from "lucide-react";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,6 +107,11 @@ export function AppShell() {
   const [pending, setPending] = useState<PendingUpdate | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
+
+  // Sauvegarde cloud automatique (silencieuse, throttlée à 1h)
+  useEffect(() => {
+    void autoBackupIfNeeded();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
