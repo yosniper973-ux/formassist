@@ -18,6 +18,7 @@
     "fs:allow-download-write-recursive",
     "fs:allow-download-read-recursive",
     "fs:allow-download-meta-recursive",
+    "fs:scope-appdata-recursive",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
