@@ -446,7 +446,35 @@ function CreateInvoiceView({
     setAdjustments((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function generateInvoiceNumber(): Promise<string> {
+  /** Incrémente le dernier bloc numérique d'une chaîne (ex: "26-04-46" → "26-04-47") */
+  function incrementLastNumber(s: string): string {
+    return s.replace(/(\d+)(?=\D*$)/, (match) =>
+      String(parseInt(match, 10) + 1).padStart(match.length, "0"),
+    );
+  }
+
+  async function generateInvoiceNumber(centre: Centre): Promise<string> {
+    const template = centre.invoice_numbering?.trim();
+    if (template) {
+      if (template.includes("{NUM}")) {
+        // Mode template : {NUM}, {YYYY}, {MM}
+        const now = new Date();
+        const year = String(now.getFullYear());
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const rows = await db.query<{ cnt: number }>(
+          "SELECT COUNT(*) as cnt FROM invoices WHERE centre_id = ?",
+          [centre.id],
+        );
+        const num = (rows[0]?.cnt ?? 0) + 1;
+        return template
+          .replace(/\{YYYY\}/g, year)
+          .replace(/\{MM\}/g, month)
+          .replace(/\{NUM\}/g, String(num).padStart(4, "0"));
+      }
+      // Mode numéro brut : incrémenter le dernier segment numérique
+      return incrementLastNumber(template);
+    }
+    // Fallback par défaut
     const year = new Date().getFullYear();
     const rows = await db.query<{ cnt: number }>(
       "SELECT COUNT(*) as cnt FROM invoices WHERE invoice_number LIKE ?",
@@ -477,9 +505,9 @@ function CreateInvoiceView({
 
     setSaving(true);
     try {
-      const invoiceNumber = await generateInvoiceNumber();
       const centre = await db.getCentre(centreId);
       const c = centre as unknown as Centre;
+      const invoiceNumber = await generateInvoiceNumber(c);
       const paymentDelay = c?.payment_delay_days ?? 30;
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + paymentDelay);
@@ -519,6 +547,11 @@ function CreateInvoiceView({
             i,
           ],
         );
+      }
+
+      // Mémoriser le numéro généré comme dernier numéro du centre
+      if (c?.invoice_numbering !== undefined) {
+        await db.updateCentre(centreId, { invoice_numbering: invoiceNumber });
       }
 
       onCreated();

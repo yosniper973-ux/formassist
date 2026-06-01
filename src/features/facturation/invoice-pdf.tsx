@@ -398,8 +398,9 @@ function InvoiceDoc({ invoice, lines, centre, pro, formationTitle }: InvoiceDocP
     ? "paiement comptant"
     : `délai de ${centre.payment_delay_days} jours`;
 
-  // Référence = bon de commande du centre si dispo, sinon numéro de facture
-  const lineRef = centre.purchase_order ?? invoice.invoice_number;
+  // Référence = extrait des notes ("REFERENCE : W26007A"), sinon bon de commande, sinon n° facture
+  const noteRefMatch = invoice.notes?.match(/REFERENCE\s*:\s*(\S+)/i);
+  const lineRef = noteRefMatch?.[1] ?? centre.purchase_order ?? invoice.invoice_number;
 
   return (
     <Document>
