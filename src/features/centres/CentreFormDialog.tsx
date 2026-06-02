@@ -674,10 +674,12 @@ export function CentreFormDialog({ centre, onClose, onSaved }: Props) {
                       <div><code className="text-primary">{"{#phases}"}</code> … <code className="text-primary">{"{/phases}"}</code></div>
                       <div className="pl-3 mt-1 space-y-1">
                         <div><code className="text-primary">{"{numero}"}</code>, <code className="text-primary">{"{duree}"}</code>, <code className="text-primary">{"{intitule}"}</code></div>
-                        <div><code className="text-primary">{"{objectifs_operationnels}"}</code></div>
-                        <div><code className="text-primary">{"{contenu}"}</code></div>
-                        <div><code className="text-primary">{"{methodes}"}</code></div>
-                        <div><code className="text-primary">{"{outils}"}</code></div>
+                        <div><code className="text-primary">{"{objectifs_operationnels}"}</code> — liste numérotée</div>
+                        <div><code className="text-primary">{"{contenu}"}</code> — Savoirs / Savoir-faire / Savoir-être</div>
+                        <div><code className="text-primary">{"{activite_formateur}"}</code> — ce que fait le formateur</div>
+                        <div><code className="text-primary">{"{activite_apprenants}"}</code> — ce que font les apprenants</div>
+                        <div><code className="text-primary">{"{methodes}"}</code> — Démarche + Méthode</div>
+                        <div><code className="text-primary">{"{outils}"}</code> — outils + techniques</div>
                         <div><code className="text-primary">{"{evaluation}"}</code></div>
                       </div>
                     </div>

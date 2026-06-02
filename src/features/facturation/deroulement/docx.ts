@@ -10,12 +10,21 @@ import {
   TextRun,
   WidthType,
   BorderStyle,
+  PageOrientation,
+  TableLayoutType,
 } from "docx";
+
+// Largeurs de colonnes FIXES en twips (A4 paysage 16838 − marges 2×720 = 15398).
+// Les largeurs en pourcentage ne sont pas respectées par Word → colonnes
+// effondrées (texte empilé verticalement). On impose donc des DXA fixes.
+const META_COL_WIDTHS = [5389, 10009]; // 35% / 65%
+//                        Phases Obj.  Contenu Méth. Outils Éval.
+const PHASE_COL_WIDTHS = [2464, 2772, 3388, 1848, 2156, 2770];
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { invoke } from "@tauri-apps/api/core";
 import { downloadDocx } from "@/lib/docx-export";
-import { fillTemplateWithAI, templateHasPlaceholders } from "./ai-fill-template";
+import { fillTemplateWithAI, fillTemplateByStructure, templateHasPlaceholders } from "./ai-fill-template";
 import type { DeroulementDraft } from "./types";
 
 function bulletLines(raw: string): string[] {
@@ -32,16 +41,31 @@ function para(text: string, bold = false, size = 20): Paragraph {
   });
 }
 
-function bulletParas(raw: string): Paragraph[] {
+/** Une ligne = un paragraphe en texte simple (sans puce ni tiret). */
+function lineParas(raw: string): Paragraph[] {
   const lines = bulletLines(raw);
   if (lines.length === 0) return [para("", false, 20)];
-  return lines.map(
-    (t) =>
-      new Paragraph({
-        bullet: { level: 0 },
-        children: [new TextRun({ text: t, size: 20 })],
-      }),
-  );
+  return lines.map((t) => para(t, false, 20));
+}
+
+/**
+ * Rendu du champ « Contenu » structuré en Savoirs / Savoir-faire / Savoir-être :
+ * - les lignes qui se terminent par ":" (sous-titres) restent en texte gras,
+ * - les autres lignes sont du texte simple (sans puce ni tiret).
+ */
+function contenuParas(raw: string): Paragraph[] {
+  if (!raw?.trim()) return [para("", false, 20)];
+  const out: Paragraph[] = [];
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/:$/.test(line)) {
+      out.push(para(line, true, 20));
+    } else {
+      out.push(para(line.replace(/^[\s\-•·●◦]+/, "").trim(), false, 20));
+    }
+  }
+  return out.length > 0 ? out : [para("", false, 20)];
 }
 
 /** Construction d'un docx "FormAssist" par défaut (pas de template utilisateur) */
@@ -77,29 +101,30 @@ async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
   const headerMetaRow = new TableRow({
     children: [
       new TableCell({
-        width: { size: 35, type: WidthType.PERCENTAGE },
+        width: { size: META_COL_WIDTHS[0]!, type: WidthType.DXA },
         children: [
           para("Date et durée d'intervention :", true),
           para(`${data.dates_label} — Durée totale : ${data.total_duration_hours} h`),
         ],
       }),
       new TableCell({
-        width: { size: 65, type: WidthType.PERCENTAGE },
+        width: { size: META_COL_WIDTHS[1]!, type: WidthType.DXA },
         children: [para("Objectif GENERAL :", true), para(data.objectif_general || "")],
       }),
     ],
   });
 
   function colHeader(): TableRow {
+    const labels = [
+      "Phases", "Objectifs opérationnels\n(compétences attendues)",
+      "Contenu", "Méthodes pédagogiques (1)",
+      "Outils et techniques (2)", "Evaluation prévue",
+    ];
     return new TableRow({
       tableHeader: true,
-      children: (
-        [["Phases", 12], ["Objectifs opérationnels\n(compétences attendues)", 18],
-         ["Contenu", 22], ["Méthodes pédagogiques (1)", 14],
-         ["Outils et techniques (2)", 14], ["Evaluation prévue", 20]] as [string, number][]
-      ).map(([label, pct]) =>
+      children: labels.map((label, i) =>
         new TableCell({
-          width: { size: pct, type: WidthType.PERCENTAGE },
+          width: { size: PHASE_COL_WIDTHS[i]!, type: WidthType.DXA },
           shading: { fill: "E8EAF6" },
           children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: label, bold: true, size: 18 })] })],
         }),
@@ -108,14 +133,32 @@ async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
   }
 
   function phaseRow(phase: (typeof data.phases)[number], idx: number): TableRow {
+    // Colonne « Phases » : intitulé + Activité formateur + Activité apprenants
+    const phaseCellChildren: Paragraph[] = [
+      para(`Phase ${idx + 1}${phase.is_ecf ? " (ECF)" : ""} : ${phase.duree_heures} h`, true),
+      para(phase.intitule, true),
+    ];
+    if (phase.activite_formateur?.trim()) {
+      phaseCellChildren.push(para("Activité FORMATEUR :", true, 18));
+      phaseCellChildren.push(...lineParas(phase.activite_formateur));
+    }
+    if (phase.activite_apprenants?.trim()) {
+      phaseCellChildren.push(para("Activité APPRENANTS :", true, 18));
+      phaseCellChildren.push(...lineParas(phase.activite_apprenants));
+    }
+
+    // Contenu : conserve les sous-titres Savoirs/Savoir-faire/Savoir-être en
+    // texte (les lignes se terminant par ":" ne sont pas mises en puce).
+    const contenuChildren = contenuParas(phase.contenu);
+
     return new TableRow({
       children: [
-        new TableCell({ width: { size: 12, type: WidthType.PERCENTAGE }, children: [para(`Phase ${idx + 1}${phase.is_ecf ? " (ECF)" : ""} : ${phase.duree_heures} h`, true), para(phase.intitule)] }),
-        new TableCell({ width: { size: 18, type: WidthType.PERCENTAGE }, children: bulletParas(phase.objectifs_operationnels) }),
-        new TableCell({ width: { size: 22, type: WidthType.PERCENTAGE }, children: bulletParas(phase.contenu) }),
-        new TableCell({ width: { size: 14, type: WidthType.PERCENTAGE }, children: bulletParas(phase.methodes) }),
-        new TableCell({ width: { size: 14, type: WidthType.PERCENTAGE }, children: bulletParas(phase.outils) }),
-        new TableCell({ width: { size: 20, type: WidthType.PERCENTAGE }, children: bulletParas(phase.evaluation) }),
+        new TableCell({ width: { size: PHASE_COL_WIDTHS[0]!, type: WidthType.DXA }, children: phaseCellChildren }),
+        new TableCell({ width: { size: PHASE_COL_WIDTHS[1]!, type: WidthType.DXA }, children: lineParas(phase.objectifs_operationnels) }),
+        new TableCell({ width: { size: PHASE_COL_WIDTHS[2]!, type: WidthType.DXA }, children: contenuChildren }),
+        new TableCell({ width: { size: PHASE_COL_WIDTHS[3]!, type: WidthType.DXA }, children: lineParas(phase.methodes) }),
+        new TableCell({ width: { size: PHASE_COL_WIDTHS[4]!, type: WidthType.DXA }, children: lineParas(phase.outils) }),
+        new TableCell({ width: { size: PHASE_COL_WIDTHS[5]!, type: WidthType.DXA }, children: lineParas(phase.evaluation) }),
       ],
     });
   }
@@ -135,7 +178,13 @@ async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
   const docChildren: Array<Paragraph | Table> = [headerTitle, metaLine, titleLine];
 
   // En-tête méta une seule fois en haut (dates + objectif général)
-  docChildren.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerMetaRow], borders }));
+  docChildren.push(new Table({
+    width: { size: 15398, type: WidthType.DXA },
+    columnWidths: META_COL_WIDTHS,
+    layout: TableLayoutType.FIXED,
+    rows: [headerMetaRow],
+    borders,
+  }));
 
   for (let i = 0; i < groupOrder.length; i++) {
     const cid = groupOrder[i]!;
@@ -151,7 +200,9 @@ async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
 
     // Table de déroulement pour cette compétence
     docChildren.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
+      width: { size: 15398, type: WidthType.DXA },
+      columnWidths: PHASE_COL_WIDTHS,
+      layout: TableLayoutType.FIXED,
       rows: [colHeader(), ...group.phases.map((p, idx) => phaseRow(p, idx))],
       borders,
     }));
@@ -172,7 +223,18 @@ async function buildDefaultDocx(data: DeroulementDraft): Promise<Blob> {
   );
 
   const doc = new Document({
-    sections: [{ properties: { page: { margin: { top: 500, bottom: 500, left: 500, right: 500 } } }, children: docChildren }],
+    sections: [{
+      properties: {
+        page: {
+          // A4 paysage (29,7 × 21 cm) — indispensable pour un tableau à 6 colonnes lisible.
+          // La lib docx swappe width/height quand orientation = LANDSCAPE : on passe
+          // donc les dimensions portrait pour obtenir w=16838 h=11906 en sortie.
+          size: { width: 11906, height: 16838, orientation: PageOrientation.LANDSCAPE },
+          margin: { top: 720, bottom: 720, left: 720, right: 720 },
+        },
+      },
+      children: docChildren,
+    }],
   });
 
   return Packer.toBlob(doc);
@@ -215,6 +277,8 @@ async function fillUserTemplate(
       intitule: p.intitule,
       objectifs_operationnels: p.objectifs_operationnels,
       contenu: p.contenu,
+      activite_formateur: p.activite_formateur,
+      activite_apprenants: p.activite_apprenants,
       methodes: p.methodes,
       outils: p.outils,
       evaluation: p.evaluation,
@@ -230,6 +294,8 @@ async function fillUserTemplate(
           intitule: p.intitule,
           objectifs_operationnels: p.objectifs_operationnels,
           contenu: p.contenu,
+          activite_formateur: p.activite_formateur,
+          activite_apprenants: p.activite_apprenants,
           methodes: p.methodes,
           outils: p.outils,
           evaluation: p.evaluation,
@@ -251,23 +317,39 @@ async function fillUserTemplate(
  * 3. Template sans balises → Claude analyse les cellules et remplit
  *    intelligemment en préservant la mise en forme (police, couleurs, tableaux).
  */
+/**
+ * Résout le blob DOCX selon la stratégie :
+ *  1. Pas de template → modèle FormAssist par défaut.
+ *  2. Template avec balises {…} → docxtemplater (déterministe).
+ *  3. Template tabulaire (lignes de phase détectées) → remplissage DÉTERMINISTE
+ *     par structure (placement par colonne + n° de phase, sans IA, gratuit).
+ *  4. Template irrégulier (aucune ligne de phase) → repli sur le remplissage IA.
+ */
+async function resolveTemplateBlob(
+  templatePath: string | null,
+  draft: DeroulementDraft,
+): Promise<Blob> {
+  if (!templatePath) return buildDefaultDocx(draft);
+
+  if (await templateHasPlaceholders(templatePath)) {
+    return fillUserTemplate(templatePath, draft);
+  }
+
+  // Placement déterministe par structure (cas courant : trame tabulaire).
+  const structured = await fillTemplateByStructure(templatePath, draft);
+  if (structured.filled) return structured.blob;
+
+  // Repli : template sans structure de phase reconnaissable → IA.
+  const result = await fillTemplateWithAI(templatePath, draft);
+  return result.blob;
+}
+
 export async function exportDeroulementDocx(params: {
   draft: DeroulementDraft;
   templatePath: string | null;
   fileName: string;
 }): Promise<string | null> {
-  let blob: Blob;
-  if (!params.templatePath) {
-    blob = await buildDefaultDocx(params.draft);
-  } else {
-    const hasTags = await templateHasPlaceholders(params.templatePath);
-    if (hasTags) {
-      blob = await fillUserTemplate(params.templatePath, params.draft);
-    } else {
-      const result = await fillTemplateWithAI(params.templatePath, params.draft);
-      blob = result.blob;
-    }
-  }
+  const blob = await resolveTemplateBlob(params.templatePath, params.draft);
   return downloadDocx(blob, params.fileName);
 }
 
@@ -276,9 +358,5 @@ export async function generateDeroulementBlob(params: {
   draft: DeroulementDraft;
   templatePath: string | null;
 }): Promise<Blob> {
-  if (!params.templatePath) return buildDefaultDocx(params.draft);
-  const hasTags = await templateHasPlaceholders(params.templatePath);
-  if (hasTags) return fillUserTemplate(params.templatePath, params.draft);
-  const result = await fillTemplateWithAI(params.templatePath, params.draft);
-  return result.blob;
+  return resolveTemplateBlob(params.templatePath, params.draft);
 }

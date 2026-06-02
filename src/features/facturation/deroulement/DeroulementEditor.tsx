@@ -251,6 +251,8 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
         selected_content_ids: contentIds,
         objectifs_operationnels: objectifs,
         contenu: "",
+        activite_formateur: "",
+        activite_apprenants: "",
         methodes: "",
         outils: "",
         evaluation: "",
@@ -279,7 +281,14 @@ export function DeroulementEditor({ invoice, onClose }: Props) {
     if (!formation) return null;
     let phases: PhaseDraft[] = [];
     try {
-      phases = JSON.parse(sheet.phases) as PhaseDraft[];
+      const parsed = JSON.parse(sheet.phases) as Partial<PhaseDraft>[];
+      // Rétrocompat : les fiches enregistrées avant l'ajout des champs
+      // activite_formateur / activite_apprenants n'ont pas ces clés.
+      phases = parsed.map((p) => ({
+        activite_formateur: "",
+        activite_apprenants: "",
+        ...p,
+      })) as PhaseDraft[];
     } catch {
       phases = [];
     }
@@ -891,24 +900,46 @@ function DraftEditor({
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 md:col-span-2">
                       <Label>Objectifs opérationnels</Label>
                       <Textarea
-                        rows={4}
+                        rows={5}
                         value={phase.objectifs_operationnels}
                         onChange={(e) =>
                           updatePhase(idx, { objectifs_operationnels: e.target.value })
                         }
-                        placeholder="- Critère 1\n- Critère 2"
+                        placeholder="Objectif opérationnel 1 : [verbe + condition + critère]\nObjectif opérationnel 2 : ..."
+                      />
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label>Contenu (Savoirs / Savoir-faire / Savoir-être)</Label>
+                      <Textarea
+                        rows={5}
+                        value={phase.contenu}
+                        onChange={(e) => updatePhase(idx, { contenu: e.target.value })}
+                        placeholder={"Savoirs :\n- ...\nSavoir-faire :\n- ...\nSavoir-être :\n- ..."}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label>Contenu</Label>
+                      <Label>Activité du formateur</Label>
                       <Textarea
-                        rows={4}
-                        value={phase.contenu}
-                        onChange={(e) => updatePhase(idx, { contenu: e.target.value })}
-                        placeholder="- Point 1\n- Point 2"
+                        rows={3}
+                        value={phase.activite_formateur}
+                        onChange={(e) =>
+                          updatePhase(idx, { activite_formateur: e.target.value })
+                        }
+                        placeholder="- Propose la situation-problème\n- Observe, relance, guide"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Activité des apprenants</Label>
+                      <Textarea
+                        rows={3}
+                        value={phase.activite_apprenants}
+                        onChange={(e) =>
+                          updatePhase(idx, { activite_apprenants: e.target.value })
+                        }
+                        placeholder="- Explorent, émettent des hypothèses\n- Confrontent en sous-groupes"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -917,7 +948,7 @@ function DraftEditor({
                         rows={3}
                         value={phase.methodes}
                         onChange={(e) => updatePhase(idx, { methodes: e.target.value })}
-                        placeholder="- Active (exemple)\n- Interrogative (exemple)"
+                        placeholder="- Démarche : INDUCTIVE — ...\n- Méthode : Active — ..."
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -926,7 +957,7 @@ function DraftEditor({
                         rows={3}
                         value={phase.outils}
                         onChange={(e) => updatePhase(idx, { outils: e.target.value })}
-                        placeholder="- Paperboard\n- Fiches consignes"
+                        placeholder="- Jeu de rôle\n- Paperboard\n- Fiches consignes"
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
@@ -935,7 +966,7 @@ function DraftEditor({
                         rows={3}
                         value={phase.evaluation}
                         onChange={(e) => updatePhase(idx, { evaluation: e.target.value })}
-                        placeholder="- Modalité\n- Critères observés"
+                        placeholder="- Diagnostique / Formative / Sommative — modalité"
                       />
                     </div>
                   </div>

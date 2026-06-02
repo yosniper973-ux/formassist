@@ -31,6 +31,8 @@ interface CellInfo {
   context_before: string;
   /** Numéro de bloc de phase auquel appartient cette cellule (1, 2, 3…) ou null */
   phase_block: number | null;
+  /** Indice de colonne (0 = Phases, 1 = Objectifs, 2 = Contenu, …) ou null hors tableau */
+  col_index: number | null;
 }
 
 interface ClaudeReplacement {
@@ -144,6 +146,7 @@ function extractCells(documentXml: Document): CellInfo[] {
     let path = "p[" + i + "]";
     let parent: Element | null = p.parentElement;
     const segments: string[] = [];
+    let colIndex: number | null = null;
     while (parent && parent.localName !== "body") {
       if (parent.localName === "tc") {
         const row = parent.parentElement;
@@ -153,6 +156,8 @@ function extractCells(documentXml: Document): CellInfo[] {
           );
           const idx = tcs.indexOf(parent);
           segments.unshift(`cell[${idx}]`);
+          // La 1re cellule rencontrée (la plus proche du paragraphe) = sa colonne.
+          if (colIndex === null) colIndex = idx;
         }
       } else if (parent.localName === "tr") {
         const tbl = parent.parentElement;
@@ -187,6 +192,7 @@ function extractCells(documentXml: Document): CellInfo[] {
       paragraph: p,
       context_before,
       phase_block: null,
+      col_index: colIndex,
     });
   }
 
@@ -212,7 +218,26 @@ function extractCells(documentXml: Document): CellInfo[] {
  * - Supprime tous les autres <w:r> du paragraphe
  * Cela préserve la police/taille/couleur/gras du premier run.
  */
-function replaceParagraphText(p: Element, newText: string, doc: Document): void {
+function replaceParagraphText(
+  p: Element,
+  newText: string,
+  doc: Document,
+  stripList = false,
+): void {
+  // Optionnel : retirer la puce/numérotation de liste du paragraphe (style
+  // « Paragraphe de liste » + <w:numPr>) pour un rendu en texte simple.
+  if (stripList) {
+    const pPr = p.getElementsByTagNameNS(W_NS, "pPr")[0];
+    if (pPr) {
+      const numPr = pPr.getElementsByTagNameNS(W_NS, "numPr")[0];
+      if (numPr && numPr.parentNode) numPr.parentNode.removeChild(numPr);
+      const pStyle = pPr.getElementsByTagNameNS(W_NS, "pStyle")[0];
+      if (pStyle && /liste|list/i.test(pStyle.getAttribute("w:val") ?? "")) {
+        pStyle.parentNode?.removeChild(pStyle);
+      }
+    }
+  }
+
   const runs = Array.from(p.getElementsByTagNameNS(W_NS, "r"));
 
   // Si le paragraphe est totalement vide (pas de <w:r>), on en crée un.
@@ -256,6 +281,132 @@ function replaceParagraphText(p: Element, newText: string, doc: Document): void 
 }
 
 /* ───────────────────────────────────────────────────────────────────────── */
+/* Remplissage DÉTERMINISTE (sans IA) — placement par colonne + n° de phase   */
+/* ───────────────────────────────────────────────────────────────────────── */
+
+const COLUMN_HEADER_LABELS = [
+  "Phases", "Durée totale", "Objectifs opérationnels", "Contenu",
+  "Méthodes pédagogiques", "Outils et techniques", "Evaluation prévue",
+];
+function isColumnHeader(t: string): boolean {
+  return COLUMN_HEADER_LABELS.some((h) => t.startsWith(h) || t.includes(h));
+}
+
+/**
+ * Décide le texte à mettre dans un paragraphe, de façon DÉTERMINISTE, à partir
+ * de la structure du tableau (col_index + phase_block) et des données du draft.
+ * Renvoie le nouveau texte, "" pour vider un paragraphe surnuméraire, ou null
+ * pour ne pas toucher au paragraphe.
+ */
+function decideStructured(
+  text: string,
+  col: number | null,
+  phaseBlock: number | null,
+  draft: DeroulementDraft,
+  filled: Set<string>,
+): string | null {
+  const t = text.trim();
+
+  // En-têtes hors tableau
+  if (/^FORMATION\s*:/i.test(t) && /DATE\s+DE\s+LA\s+FORMATION/i.test(t))
+    return `FORMATION : ${draft.formation_title}          DATE DE LA FORMATION : ${draft.dates_label}`;
+  if (/^REDACTEUR\s*:/i.test(t)) return `REDACTEUR : ${draft.redacteur}`;
+  if (/^TITRE\s+DE\s+LA\s+SEANCE/i.test(t)) return `TITRE DE LA SEANCE : ${draft.titre_seance}`;
+
+  // Ligne méta (cellule fusionnée en haut du tableau)
+  if (/Date\s+et\s+dur[ée]e\s+d.intervention/i.test(t))
+    return `Date et durée d'intervention : ${draft.dates_label} — Durée totale : ${draft.total_duration_hours} h`;
+  if (/^Objectif\s+G[EÉ]N[EÉ]RAL/i.test(t))
+    return `Objectif GENERAL : ${draft.objectif_general}`;
+
+  // Lignes d'en-tête de colonnes → ne pas toucher
+  if (isColumnHeader(t)) return null;
+
+  const ph = phaseBlock ? draft.phases[phaseBlock - 1] : null;
+  if (!ph || col === null) return null;
+
+  // Colonne 0 « Phases »
+  if (col === 0) {
+    if (PHASE_LABEL_RE_GLOBAL.test(t))
+      return `Phase ${phaseBlock}${ph.is_ecf ? " (ECF)" : ""} : ${ph.duree_heures} h`;
+    if (/^Intitul/i.test(t)) {
+      const k = `i${phaseBlock}`;
+      if (filled.has(k)) return null;
+      filled.add(k);
+      const blocks = [ph.intitule];
+      if (ph.activite_formateur?.trim())
+        blocks.push("", "Activité FORMATEUR :", ph.activite_formateur);
+      if (ph.activite_apprenants?.trim())
+        blocks.push("", "Activité APPRENANTS :", ph.activite_apprenants);
+      return blocks.join("\n");
+    }
+    return null;
+  }
+
+  // Colonnes de données : ne remplir que le PREMIER paragraphe (vide) de la cellule
+  const fields: Record<number, string> = {
+    1: ph.objectifs_operationnels,
+    2: ph.contenu,
+    3: ph.methodes,
+    4: ph.outils,
+    5: ph.evaluation,
+  };
+  if (!(col in fields)) return null;
+  if (t.length > 2) return null; // déjà du contenu → ne pas écraser
+  const k = `d${phaseBlock}-${col}`;
+  if (filled.has(k)) return ""; // paragraphes vides surnuméraires → vidés
+  filled.add(k);
+  return fields[col] ?? "";
+}
+
+/**
+ * Remplit un template tabulaire de fiche de déroulement SANS appel IA, en
+ * plaçant chaque champ du draft dans la bonne cellule (déterminé par la colonne
+ * et le numéro de phase). Duplique les lignes de phase manquantes et préserve
+ * la mise en forme (logo, polices, bordures). Renvoie filled=false si le
+ * template ne contient pas de lignes de phase détectables (→ fallback IA).
+ */
+export async function fillTemplateByStructure(
+  templatePath: string,
+  draft: DeroulementDraft,
+): Promise<{ blob: Blob; filled: boolean }> {
+  const bytes = await invoke<number[]>("read_file_bytes", { path: templatePath });
+  const zip = new PizZip(new Uint8Array(bytes));
+  const docFile = zip.file("word/document.xml");
+  if (!docFile) throw new Error("Template DOCX invalide : word/document.xml introuvable.");
+
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(docFile.asText(), "application/xml");
+  if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+    throw new Error("Le template DOCX est corrompu (XML invalide).");
+  }
+
+  // Pas de lignes de phase détectables → on laisse le fallback IA gérer.
+  const phaseRows = findPhaseRows(xmlDoc);
+  if (phaseRows.size === 0) {
+    return { blob: new Blob(), filled: false };
+  }
+
+  // Ajoute les lignes de phase manquantes (préserve la mise en forme).
+  ensureEnoughPhaseRows(xmlDoc, draft.phases.length);
+
+  const cells = extractCells(xmlDoc);
+  const filled = new Set<string>();
+  for (const cell of cells) {
+    const nt = decideStructured(cell.text, cell.col_index, cell.phase_block, draft, filled);
+    if (nt !== null) replaceParagraphText(cell.paragraph, nt, xmlDoc, true);
+  }
+
+  const newXml = new XMLSerializer().serializeToString(xmlDoc);
+  zip.file("word/document.xml", newXml);
+  const blob = zip.generate({
+    type: "blob",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  return { blob: blob as Blob, filled: true };
+}
+
+/* ───────────────────────────────────────────────────────────────────────── */
 /* Claude prompt                                                              */
 /* ───────────────────────────────────────────────────────────────────────── */
 
@@ -275,14 +426,23 @@ Règles strictes :
    - phase_block = 2 → utilise les données de la phase numéro 2
    - phase_block = N → utilise les données de la phase numéro N
    - Si phase_block > nombre de phases dans les données → laisse en "KEEP"
-4. Dans chaque bloc de phase, identifie et remplis :
-   - La cellule contenant "Phase N : durée" ou juste "durée" → "Phase N : X h" (durée de la phase correspondante)
-   - La cellule contenant "Intitulé" → intitulé de la phase
-   - La cellule vide à côté / en dessous de "Objectifs opérationnels" → objectifs_operationnels
-   - La cellule vide à côté / en dessous de "Contenu" → contenu
-   - La cellule vide à côté / en dessous de "Méthodes pédagogiques" → methodes
-   - La cellule vide à côté / en dessous de "Outils et techniques" → outils
-   - La cellule vide à côté / en dessous de "Evaluation prévue" → evaluation
+4. Correspondance des COLONNES — chaque cellule a un champ "col_index" indiquant sa
+   colonne dans le tableau. Utilise-le pour mapper le bon champ de la phase :
+   - col_index = 0 (colonne « Phases ») : cette colonne contient en général DEUX
+     paragraphes — "Phase N : durée" puis "Intitulé".
+       • Le paragraphe "Phase N : durée" (ou "durée") → "Phase N : X h"
+       • Le paragraphe "Intitulé" (2e ligne de la colonne Phases) → écris l'intitulé
+         de la phase PUIS les activités, exactement sous cette forme (avec les sauts
+         de ligne \\n) :
+            {intitule}\\n\\nActivité FORMATEUR :\\n{activite_formateur}\\n\\nActivité APPRENANTS :\\n{activite_apprenants}
+   - col_index = 1 (« Objectifs opérationnels ») → objectifs_operationnels
+   - col_index = 2 (« Contenu ») → contenu (Savoirs / Savoir-faire / Savoir-être)
+   - col_index = 3 (« Méthodes pédagogiques ») → methodes (Démarche + Méthode)
+   - col_index = 4 (« Outils et techniques ») → outils (techniques + outils matériels)
+   - col_index = 5 (« Evaluation prévue ») → evaluation
+   Les cellules de données sont souvent VIDES dans la trame : remplis-les avec le
+   champ correspondant à leur col_index pour la phase (phase_block) concernée.
+   NE REMPLIS PAS une cellule dont le texte est un libellé de colonne (ligne d'en-tête).
 5. Remplis aussi les cellules globales :
    - "Durée totale : x heures" → "Durée totale : X heures" (duree_totale)
    - Zone formation/titre/dates/rédacteur dans l'en-tête du document
@@ -345,6 +505,7 @@ export async function fillTemplateWithAI(
     text: c.text,
     context_before: c.context_before,
     phase_block: c.phase_block,
+    col_index: c.col_index,
   }));
 
   const seanceData = {
@@ -362,6 +523,8 @@ export async function fillTemplateWithAI(
       is_ecf: p.is_ecf,
       objectifs_operationnels: p.objectifs_operationnels,
       contenu: p.contenu,
+      activite_formateur: p.activite_formateur,
+      activite_apprenants: p.activite_apprenants,
       methodes: p.methodes,
       outils: p.outils,
       evaluation: p.evaluation,

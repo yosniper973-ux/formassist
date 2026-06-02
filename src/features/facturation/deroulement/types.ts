@@ -60,10 +60,12 @@ export interface PhaseDraft {
   duree_heures: number;
   is_ecf: boolean;
   selected_content_ids: string[];
-  objectifs_operationnels: string; // puces rédigées (1 ligne par critère)
-  contenu: string;
-  methodes: string;
-  outils: string;
+  objectifs_operationnels: string; // liste numérotée (verbe + condition + critère)
+  contenu: string; // Savoirs / Savoir-faire / Savoir-être
+  activite_formateur: string; // ce que fait le formateur (puces)
+  activite_apprenants: string; // ce que font les apprenants (puces)
+  methodes: string; // Démarche + Méthode pédagogique
+  outils: string; // Outils ET techniques
   evaluation: string;
 }
 

@@ -24,6 +24,8 @@ interface PrefillOutput {
     competence_id: string;
     objectifs_operationnels: string;
     contenu: string;
+    activite_formateur: string;
+    activite_apprenants: string;
     methodes: string;
     outils: string;
     evaluation: string;
@@ -105,6 +107,8 @@ export async function prefillDeroulement(input: PrefillInput): Promise<PrefillOu
         competence_id: p.competence_id,
         objectifs_operationnels: filled?.objectifs_operationnels ?? "",
         contenu: filled?.contenu ?? "",
+        activite_formateur: filled?.activite_formateur ?? "",
+        activite_apprenants: filled?.activite_apprenants ?? "",
         methodes: filled?.methodes ?? "",
         outils: filled?.outils ?? "",
         evaluation: filled?.evaluation ?? "",
@@ -129,6 +133,8 @@ export function mergePrefillResult(
         objectifs_operationnels:
           r.objectifs_operationnels || p.objectifs_operationnels,
         contenu: r.contenu || p.contenu,
+        activite_formateur: r.activite_formateur || p.activite_formateur,
+        activite_apprenants: r.activite_apprenants || p.activite_apprenants,
         methodes: r.methodes || p.methodes,
         outils: r.outils || p.outils,
         evaluation: r.evaluation || p.evaluation,
