@@ -19,6 +19,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { db } from "@/lib/db";
 import { openCompose } from "@/lib/email-compose";
 import { requestStream } from "@/lib/claude";
+import { getSeverityModifier, type CorrectionSeverity } from "@/prompts/correction_severity";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Group, Learner, Correction, CriteriaGrid, GeneratedContent } from "@/types";
 import type { ClaudeContentBlock } from "@/types/api";
@@ -99,6 +100,9 @@ export function CorrectionsPage() {
   // Reference mode
   const [referenceMode, setReferenceMode] = useState<"library" | "file">("library");
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
+
+  // Niveau de sévérité de la correction
+  const [severity, setSeverity] = useState<CorrectionSeverity>("standard");
 
   // Submission
   const [submissionText, setSubmissionText] = useState("");
@@ -371,8 +375,13 @@ ${instructions}`;
       // Streaming pour éviter les timeouts sur les gros documents (8+ pages)
       let fullContent = "";
       let correctionModel = "";
+      const severityModifier = getSeverityModifier(severity);
       for await (const chunk of requestStream(
-        { task: "correction", messages: [{ role: "user", content: messageContent }] },
+        {
+          task: "correction",
+          messages: [{ role: "user", content: messageContent }],
+          ...(severityModifier ? { systemPromptAppend: severityModifier } : {}),
+        },
         new AbortController().signal,
         (meta) => { addApiCost(meta.costEuros); correctionModel = meta.model; },
       )) {
@@ -634,6 +643,7 @@ ${instructions}`;
           selectedContentId={selectedContentId}
           referenceMode={referenceMode}
           referenceFile={referenceFile}
+          severity={severity}
           submissionText={submissionText}
           submissionFile={submissionFile}
           correcting={correcting}
@@ -648,6 +658,7 @@ ${instructions}`;
           onContentChange={(id) => { setSelectedContentId(id); setError(""); }}
           onReferenceModeChange={setReferenceMode}
           onReferenceFileChange={setReferenceFile}
+          onSeverityChange={setSeverity}
           onSubmissionChange={setSubmissionText}
           onFileSelect={handleFileSelect}
           onCorrect={handleCorrect}
@@ -684,6 +695,7 @@ function NewCorrectionTab({
   selectedContentId,
   referenceMode,
   referenceFile,
+  severity,
   submissionText,
   submissionFile,
   correcting,
@@ -698,6 +710,7 @@ function NewCorrectionTab({
   onContentChange,
   onReferenceModeChange,
   onReferenceFileChange,
+  onSeverityChange,
   onSubmissionChange,
   onFileSelect,
   onCorrect,
@@ -719,6 +732,7 @@ function NewCorrectionTab({
   selectedContentId: string;
   referenceMode: "library" | "file";
   referenceFile: File | null;
+  severity: CorrectionSeverity;
   submissionText: string;
   submissionFile: File | null;
   correcting: boolean;
@@ -739,6 +753,7 @@ function NewCorrectionTab({
   onContentChange: (id: string) => void;
   onReferenceModeChange: (mode: "library" | "file") => void;
   onReferenceFileChange: (file: File | null) => void;
+  onSeverityChange: (severity: CorrectionSeverity) => void;
   onSubmissionChange: (text: string) => void;
   onFileSelect: (file: File | null) => void;
   onCorrect: () => void;
@@ -1095,6 +1110,28 @@ function NewCorrectionTab({
               </p>
             </>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <Label>Sévérité de la correction</Label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {([
+              { value: "souple", label: "🟢 Souple", desc: "Valorise le fond, points partiels généreux" },
+              { value: "standard", label: "🟡 Standard", desc: "Notation équilibrée (par défaut)" },
+              { value: "strict", label: "🔴 Strict", desc: "Barème à la lettre, exigeant" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onSeverityChange(opt.value)}
+                disabled={correcting || !!correctionResult}
+                className={`flex-1 rounded-lg border-2 p-2.5 text-left transition-colors disabled:opacity-50 ${severity === opt.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+              >
+                <span className={`block text-sm font-medium ${severity === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                <span className="block text-xs text-muted-foreground">{opt.desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <Button
