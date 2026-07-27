@@ -5,7 +5,8 @@ export type ContentType =
   | "exercise_collective"
   | "pedagogical_game"
   | "role_play"
-  | "trainer_sheet";
+  | "trainer_sheet"
+  | "evaluation";
 
 export type BloomLevel =
   | "remember"

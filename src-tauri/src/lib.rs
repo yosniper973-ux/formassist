@@ -57,6 +57,18 @@ pub fn run() {
             sql: include_str!("../migrations/008_tva_intracom.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "livre_recettes",
+            sql: include_str!("../migrations/009_livre_recettes.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 10,
+            description: "evaluation_templates",
+            sql: include_str!("../migrations/010_evaluations.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

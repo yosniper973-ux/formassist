@@ -75,6 +75,7 @@ function labelForContentType(t: string): string {
     case "pedagogical_game": return "Jeu péda";
     case "role_play": return "Mise en situation";
     case "trainer_sheet": return "Fiche formateur";
+    case "evaluation": return "Évaluation ECF";
     default: return t;
   }
 }
@@ -215,12 +216,14 @@ export function CorrectionsPage() {
   async function loadContents() {
     const rows = (await db.getContents(selectedFormationId)) as unknown as GeneratedContent[];
     // On garde les contenus susceptibles d'être corrigés : exercices, mises en situation,
-    // jeux pédagogiques, fiches formateur, et cours (Claude inclut souvent des exercices dedans).
+    // jeux pédagogiques, fiches formateur, évaluations ECF (leur TRAME FORMATEUR sert de
+    // corrigé de référence), et cours (Claude inclut souvent des exercices dedans).
     const corrigeables = rows.filter((c) =>
       c.content_type.startsWith("exercise") ||
       c.content_type === "role_play" ||
       c.content_type === "pedagogical_game" ||
       c.content_type === "trainer_sheet" ||
+      c.content_type === "evaluation" ||
       c.content_type === "course",
     );
     setContents(corrigeables);

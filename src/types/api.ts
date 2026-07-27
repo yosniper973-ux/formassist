@@ -17,7 +17,9 @@ export type TaskType =
   | "qcm_simple"
   | "reformulation"
   | "correction_dossier"
-  | "prefill_deroulement";
+  | "prefill_deroulement"
+  | "generation_evaluation"
+  | "remplissage_trame";
 
 export interface ClaudeTextBlock {
   type: "text";

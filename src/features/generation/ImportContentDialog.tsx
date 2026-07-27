@@ -20,6 +20,7 @@ const CONTENT_TYPES: { value: ContentType; label: string }[] = [
   { value: "pedagogical_game", label: "Jeu pédagogique" },
   { value: "role_play", label: "Mise en situation" },
   { value: "trainer_sheet", label: "Fiche pédagogique" },
+  { value: "evaluation", label: "Évaluation ECF" },
 ];
 
 interface Props {

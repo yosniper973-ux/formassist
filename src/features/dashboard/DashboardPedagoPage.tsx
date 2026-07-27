@@ -88,6 +88,7 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   pedagogical_game: "Jeu pédagogique",
   role_play: "Mise en situation",
   trainer_sheet: "Fiche formateur",
+  evaluation: "Évaluation ECF",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

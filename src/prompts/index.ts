@@ -17,6 +17,8 @@ import { RECOMMANDATIONS_DASHBOARD_PROMPT } from "./recommandations_dashboard";
 import { MAIL_COORDINATEUR_PROMPT } from "./mail_coordinateur";
 import { CORRECTION_DOSSIER_PROMPT } from "./correction_dossier";
 import { PREFILL_DEROULEMENT_PROMPT } from "./prefill_deroulement";
+import { GENERATION_EVALUATION_PROMPT } from "./generation_evaluation";
+import { REMPLISSAGE_TRAME_PROMPT } from "./remplissage_trame";
 
 const PROMPTS: Record<TaskType, string> = {
   parsing_reac: PARSING_REAC_PROMPT,
@@ -36,6 +38,8 @@ const PROMPTS: Record<TaskType, string> = {
   reformulation: GENERATION_COURS_PROMPT,
   correction_dossier: CORRECTION_DOSSIER_PROMPT,
   prefill_deroulement: PREFILL_DEROULEMENT_PROMPT,
+  generation_evaluation: GENERATION_EVALUATION_PROMPT,
+  remplissage_trame: REMPLISSAGE_TRAME_PROMPT,
 };
 
 export function getPromptForTask(task: TaskType): string {

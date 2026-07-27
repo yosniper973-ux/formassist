@@ -88,6 +88,7 @@ const CONTENT_TYPE_SHORT: Record<string, string> = {
   pedagogical_game: "Jeu",
   role_play: "Mise en situation",
   trainer_sheet: "QCM",
+  evaluation: "Évaluation ECF",
 };
 
 function parsePhaseMinutesLocal(duration: string | null | undefined): number {

@@ -72,6 +72,11 @@ export const NAV_ITEMS: NavItem[] = [
     accentGlow: "rgba(20,184,166,0.25)", grad1: "#CCFBF1", grad2: "#D1FAE5",
   },
   {
+    to: "/evaluations", emoji: "🎯", label: "Évaluations", section: "Création",
+    accent: "#E11D48", accentSoft: "#FFE4E6", accentBorder: "#FDA4AF",
+    accentGlow: "rgba(225,29,72,0.25)", grad1: "#FFE4E6", grad2: "#FCE7F3",
+  },
+  {
     to: "/dossiers", emoji: "📂", label: "Dossiers DP / Projet", section: "Création",
     accent: "#F59E0B", accentSoft: "#FEF3C7", accentBorder: "#FCD34D",
     accentGlow: "rgba(245,158,11,0.25)", grad1: "#FEF3C7", grad2: "#FFEDD5",

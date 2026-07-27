@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "formassist"
-version = "0.3.34"
+version = "0.3.47"
 dependencies = [
  "aes-gcm",
  "argon2",

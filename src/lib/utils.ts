@@ -48,22 +48,6 @@ export function formatDateShort(isoDate: string): string {
   });
 }
 
-/** Formate une durée en heures */
-export function formatHours(hours: number): string {
-  if (hours === Math.floor(hours)) {
-    return `${hours}h`;
-  }
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  return `${h}h${String(m).padStart(2, "0")}`;
-}
-
-/** Tronque un texte avec ellipsis */
-export function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength - 1) + "…";
-}
-
 /**
  * Détecte la section réservée au formateur via un titre markdown (##, ###…).
  * Variantes couvertes :
@@ -116,6 +100,26 @@ export function stripFormateur(markdown: string): string {
   }
 
   return stripCorrectAnswerHints(content);
+}
+
+/**
+ * Extrait la section formateur du markdown (miroir de stripFormateur) :
+ * retourne tout ce qui suit le premier titre/marqueur formateur, titre inclus.
+ * Retourne "" si aucune section formateur n'est présente.
+ */
+export function extractFormateurSection(markdown: string): string {
+  const headingMatch = markdown.match(FORMATEUR_HEADING_REGEX);
+  const boldMatch = markdown.match(FORMATEUR_BOLD_REGEX);
+
+  let cutIndex: number | undefined;
+  if (headingMatch?.index !== undefined) cutIndex = headingMatch.index;
+  if (boldMatch?.index !== undefined) {
+    cutIndex =
+      cutIndex === undefined ? boldMatch.index : Math.min(cutIndex, boldMatch.index);
+  }
+
+  if (cutIndex === undefined) return "";
+  return markdown.slice(cutIndex).trim();
 }
 
 /**

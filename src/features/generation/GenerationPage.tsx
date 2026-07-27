@@ -130,6 +130,7 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   pedagogical_game: "Jeu pédagogique",
   role_play: "Mise en situation",
   trainer_sheet: "QCM",
+  evaluation: "Évaluation ECF",
 };
 
 // ─── Draft persistence ───────────────────────────────────────
@@ -724,6 +725,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
         bloom_level: bloomLevels.join(","),
         estimated_duration: parseInt(duration, 10),
       });
+      await db.linkContentToCompetences(newId, Array.from(selectedCompetenceIds));
       setSaved(true);
       setSavedContentId(newId);
       if (editing) {

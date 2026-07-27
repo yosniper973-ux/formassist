@@ -57,6 +57,8 @@ const TASK_LABELS: Record<TaskType, string> = {
   reformulation: "Reformulations",
   correction_dossier: "Dossiers DP / Projet",
   prefill_deroulement: "Fiches de déroulement",
+  generation_evaluation: "Évaluations ECF",
+  remplissage_trame: "Remplissage de trames ECF",
 };
 
 export function SettingsPage() {

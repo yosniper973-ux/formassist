@@ -29,6 +29,14 @@ src-tauri/gen/
 # WebView2 bootstrapper (téléchargé automatiquement par GitHub Actions)
 WebView2Installer.exe
 
+# Base de données locale (contient les données des apprenants — ne jamais commiter)
+formassist.db
+formassist.db-shm
+formassist.db-wal
+
+# Outils d'analyse locaux
+.graphify/
+
 # Logs
 *.log
 npm-debug.log*

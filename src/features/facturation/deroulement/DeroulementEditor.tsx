@@ -1081,6 +1081,8 @@ function labelForContentType(t: string): string {
       return "Mise en situation";
     case "trainer_sheet":
       return "Fiche formateur";
+    case "evaluation":
+      return "Évaluation ECF";
     default:
       return t;
   }
