@@ -280,11 +280,16 @@ export function FormationDetail({ formation, onBack }: Props) {
 
       // Streaming : collecte tous les chunks puis parse le JSON
       // (plus fiable que tauriFetch pour les grandes réponses)
+      // 64 000 tokens : un REAC complet (critères + savoirs verbatim des fiches
+      // compétences) dépasse largement 16 000 tokens en sortie. En dessous, le JSON
+      // est coupé en plein milieu et devient impossible à parser.
       let reacFullText = "";
+      let reacTruncated = false;
       const reacAbort = new AbortController();
       for await (const chunk of requestStream(
-        { task: "parsing_reac", maxTokens: 16000, messages: [{ role: "user", content: messageContent }] },
+        { task: "parsing_reac", maxTokens: 64000, messages: [{ role: "user", content: messageContent }] },
         reacAbort.signal,
+        (meta) => { reacTruncated = meta.stopReason === "max_tokens"; },
       )) {
         reacFullText += chunk;
       }
@@ -292,7 +297,11 @@ export function FormationDetail({ formation, onBack }: Props) {
       // Extraire le JSON avec comptage d'accolades (robuste face au texte parasite)
       let rawJson = extractJsonObject(reacFullText);
       if (!rawJson) {
-        setParseError("La réponse de Claude ne contient pas de JSON valide. Réessaie.");
+        setParseError(
+          reacTruncated
+            ? "Ce REAC est trop volumineux : la réponse a été coupée avant la fin. Découpe le PDF (une activité-type à la fois) et importe-le en plusieurs fois."
+            : "La réponse de Claude ne contient pas de JSON valide. Réessaie.",
+        );
         return;
       }
       // Nettoyer les trailing commas (erreur fréquente de Claude)
@@ -403,7 +412,7 @@ export function FormationDetail({ formation, onBack }: Props) {
         {
           task: "parsing_reac",
           systemPromptOverride: SAVOIRS_EXTRACTION_PROMPT,
-          maxTokens: 16000,
+          maxTokens: 64000,
           messages: [{ role: "user", content: messageContent }],
         },
         abortCtrl.signal,

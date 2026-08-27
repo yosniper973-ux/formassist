@@ -167,6 +167,8 @@ type StreamMetadata = {
   costEuros: number;
   inputTokens: number;
   outputTokens: number;
+  /** "max_tokens" si la réponse a été coupée par le plafond de tokens. */
+  stopReason: string | null;
 };
 
 /**
@@ -249,6 +251,7 @@ export async function* requestStream(
   let buffer = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  let stopReason: string | null = null;
 
   try {
     while (true) {
@@ -276,6 +279,8 @@ export async function* requestStream(
           } else if (event.type === "message_delta") {
             const usage = event.usage as Record<string, number>;
             if (usage) outputTokens = usage.output_tokens ?? outputTokens;
+            const delta = event.delta as Record<string, unknown>;
+            if (typeof delta?.stop_reason === "string") stopReason = delta.stop_reason;
           }
         } catch {
           // ligne non-JSON, ignorée
@@ -294,7 +299,7 @@ export async function* requestStream(
         cost_euros: costEuros,
       }).catch(() => {});
     }
-    onMetadata?.({ model: modelId, costEuros, inputTokens, outputTokens });
+    onMetadata?.({ model: modelId, costEuros, inputTokens, outputTokens, stopReason });
   }
 }
 
