@@ -1,10 +1,22 @@
 import type { ModelTier, TaskType } from "@/types/api";
 
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface ModelConfig {
   id: string;
   displayName: string;
   inputCostPer1M: number;   // € par million de tokens en entrée
   outputCostPer1M: number;  // € par million de tokens en sortie
+  /**
+   * false pour les modèles qui rejettent `temperature` avec une erreur 400
+   * (toute la famille Opus 4.7+ et Sonnet 5). Le champ n'est alors pas envoyé.
+   */
+  supportsTemperature: boolean;
+  /**
+   * Profondeur de raisonnement pour les modèles à réflexion adaptative.
+   * Non défini = paramètre `output_config` non envoyé (Haiku ne le supporte pas).
+   */
+  effort?: EffortLevel;
 }
 
 /**
@@ -13,22 +25,27 @@ export interface ModelConfig {
  */
 export const MODELS: Record<ModelTier, ModelConfig> = {
   opus: {
-    id: "claude-opus-4-7",
-    displayName: "Claude Opus 4.7",
+    id: "claude-opus-5",
+    displayName: "Claude Opus 5",
     inputCostPer1M: 5.0,
     outputCostPer1M: 25.0,
+    supportsTemperature: false,
+    effort: "high",
   },
   sonnet: {
-    id: "claude-sonnet-4-6",
-    displayName: "Claude Sonnet 4.6",
-    inputCostPer1M: 3.0,
-    outputCostPer1M: 15.0,
+    id: "claude-sonnet-5",
+    displayName: "Claude Sonnet 5",
+    inputCostPer1M: 2.0,
+    outputCostPer1M: 10.0,
+    supportsTemperature: false,
+    effort: "medium",
   },
   haiku: {
-    id: "claude-haiku-4-5-20251001",
+    id: "claude-haiku-4-5",
     displayName: "Claude Haiku 4.5",
     inputCostPer1M: 1.0,
     outputCostPer1M: 5.0,
+    supportsTemperature: true,
   },
 };
 

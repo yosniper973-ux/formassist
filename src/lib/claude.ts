@@ -195,6 +195,7 @@ export async function* requestStream(
   // max_tokens : 16 000 par défaut (plafond pratique de Sonnet/Opus),
   // bien au-dessus de l'estimation utilisée pour l'affichage du coût.
   const maxTokens = req.maxTokens ?? 16000;
+  const modelCfg = MODELS[model];
   const temperature = req.temperature ?? DEFAULT_TEMPERATURE[req.task];
 
   function buildBody(omitTemperature: boolean) {
@@ -206,10 +207,12 @@ export async function* requestStream(
       messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
     };
     if (!omitTemperature && temperature !== undefined) b.temperature = temperature;
+    if (modelCfg.effort) b.output_config = { effort: modelCfg.effort };
     return b;
   }
 
-  let omitTemperature = false;
+  // Les modèles à réflexion adaptative (Opus 5, Sonnet 5…) refusent `temperature`.
+  let omitTemperature = !modelCfg.supportsTemperature;
   let response: Response;
 
   // Retry sans temperature si le modèle ne l'accepte plus
@@ -318,12 +321,14 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
     systemPrompt += `\n\nIMPORTANT : Génère le contenu en ${req.context.language === "en" ? "anglais" : req.context.language}.`;
   }
 
+  const modelCfg = MODELS[model];
   const temperature = req.temperature ?? DEFAULT_TEMPERATURE[req.task];
   const maxTokens = req.maxTokens ?? ESTIMATED_OUTPUT_TOKENS[req.task] * 2;
 
-  // Certains nouveaux modèles (Opus 4.7+) rejettent `temperature` avec un 400.
-  // On retire le champ si on a déjà reçu cette erreur.
-  let omitTemperature = false;
+  // Les modèles à réflexion adaptative (Opus 5, Sonnet 5…) rejettent `temperature`
+  // avec un 400 : on ne l'envoie pas du tout. Le retry reste un filet de sécurité
+  // si un modèle marqué compatible se met à le refuser.
+  let omitTemperature = !modelCfg.supportsTemperature;
 
   function buildBody() {
     const b: Record<string, unknown> = {
@@ -336,6 +341,7 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
       })),
     };
     if (!omitTemperature) b.temperature = temperature;
+    if (modelCfg.effort) b.output_config = { effort: modelCfg.effort };
     return b;
   }
 
@@ -389,7 +395,9 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
       } catch {
         throw new Error("Réponse API illisible (JSON invalide). Réessaie.");
       }
-      const content = data.content?.[0]?.text ?? "";
+      // Avec la réflexion adaptative, content[0] peut être un bloc `thinking` :
+      // on prend le premier bloc de type "text", pas le premier bloc tout court.
+      const content = data.content?.find((b) => b.type === "text")?.text ?? "";
       const inputTokens = Number(data.usage?.input_tokens ?? 0);
       const outputTokens = Number(data.usage?.output_tokens ?? 0);
       const costEuros = computeCost(model, inputTokens, outputTokens);
