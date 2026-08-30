@@ -2374,6 +2374,18 @@ function SlotInfoDialog({
   const [genPhaseId, setGenPhaseId] = useState<string | null>(null);
   const [genPreview, setGenPreview] = useState("");
   const [genError, setGenError] = useState("");
+  // Lecture d'un contenu déjà produit, sans quitter la journée.
+  const [lecture, setLecture] = useState<{ titre: string; texte: string } | null>(null);
+
+  async function ouvrirContenu(phaseId: string) {
+    const rows = await db.query<{ title: string; content_markdown: string }>(
+      "SELECT title, content_markdown FROM generated_contents \
+       WHERE slot_phase_id = ? AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1",
+      [phaseId],
+    );
+    const r = rows[0];
+    if (r) setLecture({ titre: r.title, texte: r.content_markdown });
+  }
   const [genDone, setGenDone] = useState<Set<string>>(new Set());
   const genAbort = useRef<AbortController | null>(null);
 
@@ -2523,9 +2535,12 @@ function SlotInfoDialog({
                         return (
                           <div className="mt-1.5 flex items-center gap-2">
                             {fait && (
-                              <span className="text-xs text-primary font-medium">
-                                Contenu généré
-                              </span>
+                              <button
+                                className="text-xs font-medium text-primary hover:underline"
+                                onClick={() => void ouvrirContenu(ph.id)}
+                              >
+                                Ouvrir le contenu
+                              </button>
                             )}
                             <button
                               className="text-xs text-muted-foreground hover:text-primary hover:underline disabled:opacity-50"
@@ -2566,6 +2581,30 @@ function SlotInfoDialog({
                 <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/50 p-2 text-xs text-muted-foreground">
                   {genPreview.slice(-1200)}
                 </pre>
+              )}
+              {lecture && (
+                <div className="mt-3 rounded-lg border border-border bg-background">
+                  <div className="flex items-start justify-between gap-3 border-b border-border p-3">
+                    <p className="text-sm font-medium text-foreground">{lecture.titre}</p>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        className="text-xs text-muted-foreground hover:text-primary hover:underline"
+                        onClick={() => void navigator.clipboard.writeText(lecture.texte)}
+                      >
+                        Copier
+                      </button>
+                      <button
+                        className="text-xs text-muted-foreground hover:text-primary hover:underline"
+                        onClick={() => setLecture(null)}
+                      >
+                        Fermer
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap p-3 text-sm leading-relaxed text-foreground">
+                    {lecture.texte}
+                  </pre>
+                </div>
               )}
             </div>
           )}
