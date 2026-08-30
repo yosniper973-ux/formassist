@@ -81,6 +81,12 @@ pub fn run() {
             sql: include_str!("../migrations/012_delivery_contexts.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 13,
+            description: "content_phase",
+            sql: include_str!("../migrations/013_content_phase.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

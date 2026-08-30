@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus,
@@ -22,6 +22,12 @@ import {
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  loadDayContext,
+  generatePhase,
+  type DayContext,
+  type DayPhase,
+} from "@/lib/day-generation";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Centre, Slot, Group } from "@/types";
@@ -2362,6 +2368,59 @@ function SlotInfoDialog({
     (code) => !competences.some((c) => normalizeCode(c.code) === code),
   );
 
+  // Génération de la journée : on ne régénère jamais une phase déjà produite
+  // sans demande explicite, pour ne pas écraser un contenu retouché à la main.
+  const [dayCtx, setDayCtx] = useState<DayContext | null>(null);
+  const [genPhaseId, setGenPhaseId] = useState<string | null>(null);
+  const [genPreview, setGenPreview] = useState("");
+  const [genError, setGenError] = useState("");
+  const [genDone, setGenDone] = useState<Set<string>>(new Set());
+  const genAbort = useRef<AbortController | null>(null);
+
+  const rechargerJournee = useCallback(async () => {
+    const ctx = await loadDayContext(slot.id);
+    setDayCtx(ctx);
+    setGenDone(new Set(ctx ? [...ctx.existing.keys()] : []));
+  }, [slot.id]);
+
+  useEffect(() => {
+    rechargerJournee().catch(() => {});
+  }, [rechargerJournee]);
+
+  // Fermer la fenêtre annule une génération en cours plutôt que de la laisser
+  // tourner et facturer dans le vide.
+  useEffect(() => {
+    return () => genAbort.current?.abort();
+  }, []);
+
+  async function genererPhase(ph: DayPhase) {
+    if (!dayCtx || genPhaseId) return;
+    const controller = new AbortController();
+    genAbort.current = controller;
+    setGenPhaseId(ph.id);
+    setGenPreview("");
+    setGenError("");
+    try {
+      await generatePhase(dayCtx, ph, controller.signal, setGenPreview);
+      await rechargerJournee();
+    } catch (err) {
+      if (!(err instanceof Error && err.name === "AbortError")) {
+        setGenError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setGenPhaseId(null);
+      setGenPreview("");
+    }
+  }
+
+  async function genererJournee() {
+    if (!dayCtx) return;
+    for (const ph of dayCtx.phases) {
+      if (genDone.has(ph.id)) continue;
+      await genererPhase(ph);
+    }
+  }
+
   // Journée issue d'un déroulé : phases et savoirs REAC visés
   const [phases, setPhases] = useState<PhaseRow[]>([]);
   const [savoirs, setSavoirs] = useState<SlotSavoirRow[]>([]);
@@ -2454,10 +2513,60 @@ function SlotInfoDialog({
                         {p.phase}
                       </p>
                     </div>
-                    <p className="text-sm text-foreground">{p.label}</p>
+                    <div className="flex-1">
+                      <p className="text-sm text-foreground">{p.label}</p>
+                      {(() => {
+                        const ph = dayCtx?.phases.find((x) => x.sort_order === i);
+                        if (!ph) return null;
+                        const fait = genDone.has(ph.id);
+                        const enCours = genPhaseId === ph.id;
+                        return (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            {fait && (
+                              <span className="text-xs text-primary font-medium">
+                                Contenu généré
+                              </span>
+                            )}
+                            <button
+                              className="text-xs text-muted-foreground hover:text-primary hover:underline disabled:opacity-50"
+                              disabled={!!genPhaseId}
+                              onClick={() => void genererPhase(ph)}
+                            >
+                              {enCours ? "Génération…" : fait ? "Régénérer" : "Générer"}
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 ))}
               </div>
+              {dayCtx && dayCtx.phases.length > 0 && (
+                <div className="mt-3 flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    disabled={!!genPhaseId || genDone.size >= dayCtx.phases.length}
+                    onClick={() => void genererJournee()}
+                  >
+                    {genDone.size >= dayCtx.phases.length
+                      ? "Journée complète"
+                      : genDone.size > 0
+                        ? `Compléter la journée (${dayCtx.phases.length - genDone.size} à générer)`
+                        : "Générer la journée"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {genDone.size} / {dayCtx.phases.length} phases générées
+                  </span>
+                </div>
+              )}
+              {genError && (
+                <p className="mt-2 text-xs text-destructive">{genError}</p>
+              )}
+              {genPhaseId && genPreview && (
+                <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/50 p-2 text-xs text-muted-foreground">
+                  {genPreview.slice(-1200)}
+                </pre>
+              )}
             </div>
           )}
 
