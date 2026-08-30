@@ -21,6 +21,7 @@ import {
   CalendarPlus,
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
+import { invoke } from "@tauri-apps/api/core";
 import { db } from "@/lib/db";
 import { useAppStore } from "@/stores/appStore";
 import type { Formation, Centre, Slot, Group } from "@/types";
@@ -144,6 +145,36 @@ function resolveCompetencesForSlot(
 }
 
 type ViewMode = "month" | "week";
+
+type PhaseRow = {
+  phase: string;
+  start_time: string | null;
+  end_time: string | null;
+  label: string;
+  task: string | null;
+};
+type SlotSavoirRow = { category: string; content: string; competence_code: string };
+
+/** Une journée du déroulé pédagogique, telle que produite par l'export. */
+type DerouleSlot = {
+  date: string;
+  start_time?: string;
+  end_time?: string;
+  duration_hours: number;
+  title: string;
+  module?: string;
+  jour_n?: number;
+  phases: Array<{
+    phase: string;
+    start_time?: string;
+    end_time?: string;
+    duration_hours?: number;
+    label: string;
+    task?: string;
+  }>;
+  competences: string[];
+  savoirs: Array<{ code: string; categorie?: string; libelle: string }>;
+};
 
 // ============================================================
 // Helpers
@@ -1713,7 +1744,12 @@ function ImportDialog({
 }) {
   const [formationId, setFormationId] = useState(formations[0]?.id ?? "");
   const [csvText, setCsvText] = useState("");
-  const [format, setFormat] = useState<"csv" | "pdf" | "ics">("pdf");
+  const [format, setFormat] = useState<"csv" | "pdf" | "ics" | "deroule">("pdf");
+  // Déroulé pédagogique : JSON structuré, lu directement, sans IA ni filtrage
+  // par formateur — le fichier ne contient que les journées de la formatrice.
+  const [derouleFile, setDerouleFile] = useState<File | null>(null);
+  const [derouleSlots, setDerouleSlots] = useState<DerouleSlot[]>([]);
+  const [derouleInfo, setDerouleInfo] = useState("");
   const [preview, setPreview] = useState<Array<{ date: string; start: string; end: string; title: string }>>([]);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
@@ -1880,6 +1916,85 @@ function ImportDialog({
     }
   }
 
+  async function handleDerouleFile(file: File) {
+    setError("");
+    setDerouleInfo("");
+    setPreview([]);
+    setDerouleSlots([]);
+    try {
+      const doc = JSON.parse(await file.text()) as {
+        format?: string;
+        formation?: { titre?: string; total_heures?: number; nb_journees?: number };
+        slots?: DerouleSlot[];
+      };
+      if (doc.format !== "formassist.deroule.v1") {
+        setError("Ce fichier n'est pas un déroulé FormAssist (champ « format » attendu : formassist.deroule.v1).");
+        return;
+      }
+      const slots = doc.slots ?? [];
+      if (slots.length === 0) {
+        setError("Le fichier ne contient aucune journée.");
+        return;
+      }
+      setDerouleSlots(slots);
+      setPreview(
+        slots.map((sl) => ({
+          date: sl.date,
+          start: sl.start_time ?? "",
+          end: sl.end_time ?? "",
+          title: sl.title,
+        })),
+      );
+      setSelectedRows(new Set(slots.map((_, i) => i)));
+      const nbSav = slots.reduce((n, sl) => n + (sl.savoirs?.length ?? 0), 0);
+      const heures = slots.reduce((n, sl) => n + (sl.duration_hours ?? 0), 0);
+      setDerouleInfo(
+        `${slots.length} journées · ${heures} h · ${nbSav} renvois vers les savoirs du REAC`,
+      );
+    } catch (err) {
+      setError(`Fichier illisible : ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async function handleImportDeroule() {
+    if (!formationId || derouleSlots.length === 0) return;
+    setImporting(true);
+    setError("");
+    try {
+      const retenus = derouleSlots.filter((_, i) => selectedRows.has(i));
+      const rep = await invoke<{
+        slots: number;
+        phases: number;
+        savoirs_lies: number;
+        savoirs_non_resolus: string[];
+        competences_inconnues: string[];
+      }>("import_deroule", { formationId, slots: retenus });
+
+      const alertes: string[] = [];
+      if (rep.competences_inconnues.length > 0) {
+        alertes.push(
+          `compétences absentes du REAC importé : ${rep.competences_inconnues.join(", ")}`,
+        );
+      }
+      if (rep.savoirs_non_resolus.length > 0) {
+        alertes.push(
+          `${rep.savoirs_non_resolus.length} savoirs sans correspondance (${rep.savoirs_non_resolus.slice(0, 4).join(", ")}${rep.savoirs_non_resolus.length > 4 ? "…" : ""})`,
+        );
+      }
+      if (alertes.length > 0) {
+        setError(
+          `Import terminé : ${rep.slots} journées, ${rep.phases} phases, ${rep.savoirs_lies} savoirs liés. ` +
+            `À vérifier — ${alertes.join(" ; ")}. Réimporte le REAC dans la formation si des savoirs manquent.`,
+        );
+      }
+      onImported();
+    } catch (err) {
+      setError(`Erreur import : ${err}`);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function handleImport() {
     if (!formationId || preview.length === 0) return;
     setImporting(true);
@@ -1963,6 +2078,18 @@ function ImportDialog({
                 />
                 CSV (date;début;fin;titre)
               </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  checked={format === "deroule"}
+                  onChange={() => {
+                    setFormat("deroule");
+                    setPreview([]);
+                    setError("");
+                  }}
+                />
+                Déroulé pédagogique (JSON)
+              </label>
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input type="radio" checked={format === "ics"} onChange={() => setFormat("ics")} disabled />
                 ICS (bientôt)
@@ -2039,6 +2166,30 @@ function ImportDialog({
                 Analyser
               </Button>
             </>
+          )}
+
+          {format === "deroule" && (
+            <div>
+              <Label>Fichier du déroulé (.json)</Label>
+              <Input
+                type="file"
+                accept="application/json,.json"
+                className="mt-1"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setDerouleFile(f);
+                  if (f) void handleDerouleFile(f);
+                }}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Lecture directe, sans IA et sans coût. Le déroulé remplace un précédent
+                import de déroulé ; les créneaux venus d'un planning de centre ne sont pas
+                touchés.
+              </p>
+              {derouleFile && derouleInfo && (
+                <p className="text-xs text-primary mt-1">{derouleInfo}</p>
+              )}
+            </div>
           )}
 
           {error && (
@@ -2120,7 +2271,7 @@ function ImportDialog({
           <Button variant="outline" onClick={onClose}>
             Annuler
           </Button>
-          <Button onClick={handleImport} disabled={selectedRows.size === 0 || importing || !formationId}>
+          <Button onClick={format === "deroule" ? handleImportDeroule : handleImport} disabled={selectedRows.size === 0 || importing || !formationId}>
             {importing ? "Import en cours..." : `Importer ${selectedRows.size} créneau${selectedRows.size !== 1 ? "x" : ""}`}
           </Button>
         </div>
@@ -2160,6 +2311,36 @@ function SlotInfoDialog({
   const missingCodes = codesInTitle.filter(
     (code) => !competences.some((c) => normalizeCode(c.code) === code),
   );
+
+  // Journée issue d'un déroulé : phases et savoirs REAC visés
+  const [phases, setPhases] = useState<PhaseRow[]>([]);
+  const [savoirs, setSavoirs] = useState<SlotSavoirRow[]>([]);
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      const [p, sv] = await Promise.all([
+        db.query<PhaseRow>(
+          "SELECT phase, start_time, end_time, label, task FROM slot_phases WHERE slot_id = ? ORDER BY sort_order",
+          [slot.id],
+        ),
+        db.query<SlotSavoirRow>(
+          "SELECT cs.category, cs.content, c.code AS competence_code \
+           FROM slot_savoirs ss \
+           JOIN competence_savoirs cs ON cs.id = ss.savoir_id \
+           JOIN competences c ON c.id = cs.competence_id \
+           WHERE ss.slot_id = ? ORDER BY c.code, cs.category, cs.sort_order",
+          [slot.id],
+        ),
+      ]);
+      if (!annule) {
+        setPhases(p);
+        setSavoirs(sv);
+      }
+    })().catch(() => {});
+    return () => {
+      annule = true;
+    };
+  }, [slot.id]);
 
   return createPortal(
     <div
@@ -2202,6 +2383,54 @@ function SlotInfoDialog({
 
         {/* Contenu */}
         <div className="p-5 space-y-4">
+          {/* Déroulé de la journée : trois temps issus du déroulé importé */}
+          {phases.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-2">
+                <Clock className="h-4 w-4 text-primary" />
+                Déroulé de la journée
+              </h3>
+              <div className="space-y-2">
+                {phases.map((p, i) => (
+                  <div
+                    key={i}
+                    className="flex gap-3 rounded-lg border border-border bg-background p-3"
+                  >
+                    <div className="w-24 shrink-0">
+                      <p className="text-xs font-mono text-muted-foreground tabular-nums">
+                        {p.start_time}–{p.end_time}
+                      </p>
+                      <p className="text-xs font-medium capitalize text-primary mt-0.5">
+                        {p.phase}
+                      </p>
+                    </div>
+                    <p className="text-sm text-foreground">{p.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Savoirs REAC visés, au libellé exact du référentiel */}
+          {savoirs.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-2">
+                <Target className="h-4 w-4 text-primary" />
+                Savoirs et savoir-faire visés ({savoirs.length})
+              </h3>
+              <div className="rounded-lg border border-border bg-background divide-y divide-border">
+                {savoirs.map((sv, i) => (
+                  <div key={i} className="p-2.5">
+                    <p className="text-[11px] text-muted-foreground mb-0.5">
+                      {sv.competence_code} · {sv.category}
+                    </p>
+                    <p className="text-sm text-foreground leading-snug">{sv.content}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Compétences résolues */}
           {competences.length > 0 ? (
             <div>

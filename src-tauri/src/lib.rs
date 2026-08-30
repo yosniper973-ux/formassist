@@ -69,6 +69,12 @@ pub fn run() {
             sql: include_str!("../migrations/010_evaluations.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "deroule",
+            sql: include_str!("../migrations/011_deroule.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -118,6 +124,7 @@ pub fn run() {
             commands::export_database,
             // REAC
             commands::save_reac,
+            commands::import_deroule,
             commands::save_savoirs_for_formation,
             // DOCX → PDF (LibreOffice)
             commands::docx_to_pdf,
