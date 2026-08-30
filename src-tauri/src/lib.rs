@@ -75,6 +75,12 @@ pub fn run() {
             sql: include_str!("../migrations/011_deroule.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 12,
+            description: "delivery_contexts",
+            sql: include_str!("../migrations/012_delivery_contexts.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

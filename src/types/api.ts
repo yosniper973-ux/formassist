@@ -63,6 +63,8 @@ export interface ClaudeRequest {
   context?: {
     formationId?: string;
     styleProfile?: string;
+    /** Contexte de réalisation de la formation (lieu, groupe, contraintes). */
+    deliveryContext?: string;
     learnerLevel?: string;
     groupSize?: number;
     language?: string;

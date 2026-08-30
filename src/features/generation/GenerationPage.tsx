@@ -195,6 +195,36 @@ export function GenerationPage() {
   // Step 1: Formation
   const [formations, setFormations] = useState<Formation[]>([]);
   const [selectedFormationId, setSelectedFormationId] = useState("");
+  // Profil de style de la formatrice et contexte de réalisation de la formation.
+  // Tous deux sont injectés dans le prompt système par claude.ts.
+  const [styleProfile, setStyleProfile] = useState<string>("");
+  const [deliveryContext, setDeliveryContext] = useState<string>("");
+
+  // Charge le profil de style (global) une fois, et le contexte de réalisation
+  // à chaque changement de formation.
+  useEffect(() => {
+    (async () => {
+      const prof = await db.getStyleProfile();
+      const txt = (prof?.analyzed_profile as string | null) ?? (prof?.self_description as string | null) ?? "";
+      setStyleProfile(prof?.confirmed ? txt : "");
+    })().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedFormationId) {
+      setDeliveryContext("");
+      return;
+    }
+    (async () => {
+      const rows = await db.query<{ body: string }>(
+        `SELECT dc.body FROM formations f
+           JOIN delivery_contexts dc ON dc.id = f.delivery_context_id
+          WHERE f.id = ?`,
+        [selectedFormationId],
+      );
+      setDeliveryContext(rows[0]?.body ?? "");
+    })().catch(() => setDeliveryContext(""));
+  }, [selectedFormationId]);
   const [loadingFormations, setLoadingFormations] = useState(false);
 
   // Step 2: Content type
@@ -648,6 +678,8 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
             context: {
               formationId: selectedFormationId,
               groupSize: parseInt(groupSize, 10),
+              styleProfile: styleProfile || undefined,
+              deliveryContext: deliveryContext || undefined,
             },
           },
           controller.signal,

@@ -190,6 +190,9 @@ export async function* requestStream(
   if (req.context?.styleProfile) {
     systemPrompt += `\n\n## Profil de style pédagogique de la formatrice\n${req.context.styleProfile}`;
   }
+  if (req.context?.deliveryContext) {
+    systemPrompt += `\n\n## Contexte de réalisation — contraintes à respecter impérativement\n${req.context.deliveryContext}`;
+  }
   if (req.context?.language && req.context.language !== "fr") {
     systemPrompt += `\n\nIMPORTANT : Génère le contenu en ${req.context.language === "en" ? "anglais" : req.context.language}.`;
   }
@@ -319,6 +322,9 @@ export async function request(req: ClaudeRequest): Promise<ClaudeResponse> {
   // Inject style profile if relevant
   if (req.context?.styleProfile) {
     systemPrompt += `\n\n## Profil de style pédagogique de la formatrice\n${req.context.styleProfile}`;
+  }
+  if (req.context?.deliveryContext) {
+    systemPrompt += `\n\n## Contexte de réalisation — contraintes à respecter impérativement\n${req.context.deliveryContext}`;
   }
 
   // Inject language

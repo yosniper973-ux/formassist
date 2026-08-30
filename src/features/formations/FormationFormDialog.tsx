@@ -31,6 +31,17 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [copyFromId, setCopyFromId] = useState("");
+  // Contexte de réalisation : lieu et contraintes, injectés dans les prompts.
+  const [deliveryContextId, setDeliveryContextId] = useState("");
+  const [contexts, setContexts] = useState<Array<{ id: string; name: string; kind: string }>>([]);
+
+  useEffect(() => {
+    db.query<{ id: string; name: string; kind: string }>(
+      "SELECT id, name, kind FROM delivery_contexts ORDER BY name",
+    )
+      .then(setContexts)
+      .catch(() => setContexts([]));
+  }, []);
   const [sources, setSources] = useState<SourceOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -42,6 +53,9 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
       setCentreId(formation.centre_id);
       setStartDate(formation.start_date ?? "");
       setEndDate(formation.end_date ?? "");
+      setDeliveryContextId(
+        (formation as { delivery_context_id?: string | null }).delivery_context_id ?? "",
+      );
     } else if (defaultCentreId) {
       setCentreId(defaultCentreId);
     }
@@ -86,6 +100,7 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
         end_date: endDate || null,
         language: "fr",
         scope_mode: "all",
+        delivery_context_id: deliveryContextId || null,
       };
 
       if (formation) {
@@ -191,6 +206,29 @@ export function FormationFormDialog({ formation, centres, defaultCentreId, onClo
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* Contexte de réalisation */}
+          <div className="space-y-1.5">
+            <Label htmlFor="deliveryContext">Contexte de réalisation</Label>
+            <select
+              id="deliveryContext"
+              className="w-full rounded-md border border-border px-3 py-2 text-sm bg-background text-foreground"
+              value={deliveryContextId}
+              onChange={(e) => setDeliveryContextId(e.target.value)}
+            >
+              <option value="">Aucun — pas de contrainte particulière</option>
+              {contexts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Lieu, groupe et contraintes matérielles. Ce texte est transmis à l'IA à chaque
+              génération : il évite par exemple qu'un exercice suppose un smartphone ou une
+              sortie en entreprise là où c'est impossible.
+            </p>
           </div>
 
           {/* Copier REAC depuis une formation existante (création uniquement) */}
