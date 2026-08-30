@@ -125,17 +125,28 @@ function normalizeCode(s: string): string {
 function extractCompetenceCodes(title: string | null | undefined): string[] {
   if (!title) return [];
   const up = title.toUpperCase();
-  const matches = up.match(/C{1,3}P*\s*\d+(?:\.\d+)?/g) ?? [];
+  // Le « P » est obligatoire et le code doit démarrer sur une frontière de mot,
+  // sinon « IDCC 3043 » (convention collective) produisait le faux code « CC3043 ».
+  const matches = up.match(/\bC{1,2}P\s*\.?\s*\d+(?:\.\d+)?\b/g) ?? [];
   return [...new Set(matches.map(normalizeCode))];
 }
 
 function resolveCompetencesForSlot(
   slot: SlotRow,
   map: Map<string, CompetenceRow[]>,
+  links?: Map<string, string[]>,
 ): CompetenceRow[] {
+  const comps = map.get(slot.formation_id) ?? [];
+  // slot_competences fait foi : c'est ce que remplit l'import d'un déroulé.
+  // Le titre n'est qu'un repli pour les créneaux saisis à la main.
+  const linked = links?.get(slot.id);
+  if (linked && linked.length > 0) {
+    const byId = new Map(comps.map((c) => [c.id, c]));
+    const out = linked.map((id) => byId.get(id)).filter((c): c is CompetenceRow => !!c);
+    if (out.length > 0) return out;
+  }
   const codes = extractCompetenceCodes(slot.title);
   if (codes.length === 0) return [];
-  const comps = map.get(slot.formation_id) ?? [];
   const found: CompetenceRow[] = [];
   for (const code of codes) {
     const match = comps.find((c) => normalizeCode(c.code) === code);
@@ -328,6 +339,11 @@ export function PlanningPage() {
   const [competencesByFormation, setCompetencesByFormation] = useState<
     Map<string, CompetenceRow[]>
   >(new Map());
+  // Liens slot_competences : source de vérité pour les créneaux importés d'un
+  // déroulé, dont le titre ne porte pas de code compétence.
+  const [slotCompetenceLinks, setSlotCompetenceLinks] = useState<Map<string, string[]>>(
+    new Map(),
+  );
 
   // Panel "contenus non assignés"
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -422,6 +438,34 @@ export function PlanningPage() {
   useEffect(() => {
     loadUnassigned();
   }, [loadUnassigned]);
+
+  // Précharge les liens slot_competences des créneaux affichés.
+  useEffect(() => {
+    if (slots.length === 0) {
+      setSlotCompetenceLinks(new Map());
+      return;
+    }
+    let annule = false;
+    (async () => {
+      const ids = slots.map((s) => s.id);
+      const rows = await db.query<{ slot_id: string; competence_id: string }>(
+        `SELECT slot_id, competence_id FROM slot_competences
+         WHERE slot_id IN (${ids.map(() => "?").join(",")})`,
+        ids,
+      );
+      if (annule) return;
+      const map = new Map<string, string[]>();
+      for (const r of rows) {
+        const cur = map.get(r.slot_id);
+        if (cur) cur.push(r.competence_id);
+        else map.set(r.slot_id, [r.competence_id]);
+      }
+      setSlotCompetenceLinks(map);
+    })().catch((err) => console.error("Erreur chargement slot_competences:", err));
+    return () => {
+      annule = true;
+    };
+  }, [slots]);
 
   // Précharge les compétences + critères de toutes les formations visibles
   // pour résoudre les codes (ex: « CP10 ») présents dans les titres de créneaux.
@@ -850,6 +894,7 @@ export function PlanningPage() {
           monday={getMonday(currentDate)}
           slotsByDate={slotsByDate}
           competencesByFormation={competencesByFormation}
+          slotCompetenceLinks={slotCompetenceLinks}
           onClickSlot={(s) => setInfoSlot(s)}
           onAddSlot={(date) => {
             setEditSlot(null);
@@ -865,6 +910,7 @@ export function PlanningPage() {
           month={currentDate.getMonth()}
           slotsByDate={slotsByDate}
           competencesByFormation={competencesByFormation}
+          slotCompetenceLinks={slotCompetenceLinks}
           onClickDate={(date) => {
             setEditSlot(null);
             setPrefillDate(date);
@@ -907,7 +953,7 @@ export function PlanningPage() {
       {infoSlot && (
         <SlotInfoDialog
           slot={infoSlot}
-          competences={resolveCompetencesForSlot(infoSlot, competencesByFormation)}
+          competences={resolveCompetencesForSlot(infoSlot, competencesByFormation, slotCompetenceLinks)}
           onClose={() => setInfoSlot(null)}
           onEdit={() => {
             setEditSlot(infoSlot);
@@ -951,6 +997,7 @@ function WeekView({
   monday,
   slotsByDate,
   competencesByFormation,
+  slotCompetenceLinks,
   onClickSlot,
   onAddSlot,
   onDelete,
@@ -959,6 +1006,7 @@ function WeekView({
   monday: Date;
   slotsByDate: Map<string, SlotRow[]>;
   competencesByFormation: Map<string, CompetenceRow[]>;
+  slotCompetenceLinks: Map<string, string[]>;
   onClickSlot: (s: SlotRow) => void;
   onAddSlot: (date: string) => void;
   onDelete: (id: string) => void;
@@ -1001,7 +1049,7 @@ function WeekView({
                 <SlotCard
                   key={slot.id}
                   slot={slot}
-                  competences={resolveCompetencesForSlot(slot, competencesByFormation)}
+                  competences={resolveCompetencesForSlot(slot, competencesByFormation, slotCompetenceLinks)}
                   onClick={() => onClickSlot(slot)}
                   onDelete={() => onDelete(slot.id)}
                   onDuplicate={() => onDuplicate(slot)}
@@ -1024,6 +1072,7 @@ function MonthView({
   month,
   slotsByDate,
   competencesByFormation,
+  slotCompetenceLinks,
   onClickDate,
   onClickSlot,
 }: {
@@ -1031,6 +1080,7 @@ function MonthView({
   month: number;
   slotsByDate: Map<string, SlotRow[]>;
   competencesByFormation: Map<string, CompetenceRow[]>;
+  slotCompetenceLinks: Map<string, string[]>;
   onClickDate: (date: string) => void;
   onClickSlot: (s: SlotRow) => void;
 }) {
@@ -1074,7 +1124,7 @@ function MonthView({
               </span>
               <div className="mt-1 space-y-0.5">
                 {daySlots.slice(0, 3).map((slot) => {
-                  const comps = resolveCompetencesForSlot(slot, competencesByFormation);
+                  const comps = resolveCompetencesForSlot(slot, competencesByFormation, slotCompetenceLinks);
                   const compLine = comps.length
                     ? "\n" + comps.map((c) => `${c.code} — ${c.title}`).join("\n")
                     : "";
