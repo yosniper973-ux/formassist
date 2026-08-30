@@ -27,6 +27,7 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { ImportContentDialog } from "./ImportContentDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -190,7 +191,27 @@ export function GenerationPage() {
   const { activeCentreId, addApiCost } = useAppStore();
 
   // Tab
-  const [activeTab, setActiveTab] = useState<"generate" | "history">("generate");
+  const [searchParams] = useSearchParams();
+  // ?content=<id> : arrivée depuis le planning, on ouvre directement ce contenu.
+  const focusContentId = searchParams.get("content");
+  const [activeTab, setActiveTab] = useState<"generate" | "history">(
+    searchParams.get("content") ? "history" : "generate",
+  );
+
+  useEffect(() => {
+    if (!focusContentId) return;
+    (async () => {
+      const rows = await db.query<{ formation_id: string }>(
+        "SELECT formation_id FROM generated_contents WHERE id = ?",
+        [focusContentId],
+      );
+      const fid = rows[0]?.formation_id;
+      if (fid) {
+        setSelectedFormationId(fid);
+        setActiveTab("history");
+      }
+    })().catch(() => {});
+  }, [focusContentId]);
 
   // Step 1: Formation
   const [formations, setFormations] = useState<Formation[]>([]);
@@ -1680,6 +1701,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                     .filter((c) => !historyFilter || c.content_type === historyFilter)
                     .map((item) => (
                       <HistoryCard
+                        autoOpen={item.id === focusContentId}
                         key={item.id}
                         item={item}
                         onDeleted={loadHistory}
@@ -1752,8 +1774,15 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
 
 // ─── HistoryCard ──────────────────────────────────────────────
 
-function HistoryCard({ item, onDeleted, onDownloaded, onLinked }: { item: GeneratedContent; onDeleted: () => void; onDownloaded?: (path: string) => void; onLinked?: () => void }) {
-  const [expanded, setExpanded] = useState(false);
+function HistoryCard({ item, onDeleted, onDownloaded, onLinked, autoOpen }: { item: GeneratedContent; onDeleted: () => void; onDownloaded?: (path: string) => void; onLinked?: () => void; autoOpen?: boolean }) {
+  const [expanded, setExpanded] = useState(!!autoOpen);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (autoOpen) {
+      setExpanded(true);
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [autoOpen]);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showAddToPlanning, setShowAddToPlanning] = useState(false);
