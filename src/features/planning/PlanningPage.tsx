@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { useNavigate } from "react-router-dom";
+import { extractCardSets, cardsToDocx, type CardSet } from "@/lib/cards-export";
+import { downloadDocx } from "@/lib/docx-export";
 import { invoke } from "@tauri-apps/api/core";
 import {
   loadDayContext,
@@ -2391,6 +2393,39 @@ function SlotInfoDialog({
   const [genDone, setGenDone] = useState<Set<string>>(new Set());
   const genAbort = useRef<AbortController | null>(null);
 
+  // Rassemble les cartes des trois phases de la journée en un seul document :
+  // le formateur imprime une fois pour la journée, pas trois.
+  const [planches, setPlanches] = useState<CardSet[]>([]);
+  const [exportPlanches, setExportPlanches] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const rows = await db.query<{ content_markdown: string }>(
+        "SELECT content_markdown FROM generated_contents \
+         WHERE slot_id = ? AND archived_at IS NULL ORDER BY created_at",
+        [slot.id],
+      );
+      const sets = rows.flatMap((r) => extractCardSets(r.content_markdown));
+      setPlanches(sets);
+    })().catch(() => setPlanches([]));
+  }, [slot.id, genDone]);
+
+  async function telechargerPlanches() {
+    if (planches.length === 0) return;
+    setExportPlanches(true);
+    setGenError("");
+    try {
+      const titre = slot.title || `Journée du ${slot.date}`;
+      const blob = await cardsToDocx(planches, `${titre} — planches à découper`, 3);
+      await downloadDocx(blob, `${titre} — planches`.replace(/[\\/:*?"<>|]/g, "_"));
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExportPlanches(false);
+    }
+  }
+
+
   const rechargerJournee = useCallback(async () => {
     const ctx = await loadDayContext(slot.id);
     setDayCtx(ctx);
@@ -2573,6 +2608,22 @@ function SlotInfoDialog({
                   </Button>
                   <span className="text-xs text-muted-foreground">
                     {genDone.size} / {dayCtx.phases.length} phases générées
+                  </span>
+                </div>
+              )}
+              {planches.length > 0 && (
+                <div className="mt-3 flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={exportPlanches}
+                    onClick={() => void telechargerPlanches()}
+                  >
+                    {exportPlanches ? "Génération…" : "Planches à découper"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {planches.length} jeu{planches.length > 1 ? "x" : ""} ·{" "}
+                    {planches.reduce((n, s) => n + s.cartes.length, 0)} cartes · 3 exemplaires
                   </span>
                 </div>
               )}

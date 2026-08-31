@@ -12,6 +12,8 @@ import {
   ShadingType,
   LevelFormat,
   ExternalHyperlink,
+  Header,
+  ImageRun,
 } from "docx";
 import { decodeHtmlEntities } from "./utils";
 
@@ -21,7 +23,18 @@ import { decodeHtmlEntities } from "./utils";
  *
  * Renvoie un Blob prêt à être téléchargé.
  */
-export async function markdownToDocx(markdown: string): Promise<Blob> {
+/** En-tête de document : logo du centre et raison sociale. */
+export type DocxBranding = {
+  /** Octets du fichier image (png ou jpg). */
+  logo?: Uint8Array;
+  logoType?: "png" | "jpg";
+  centreName?: string;
+};
+
+export async function markdownToDocx(
+  markdown: string,
+  branding?: DocxBranding,
+): Promise<Blob> {
   // Décode les entités HTML (&nbsp;, &amp;, etc.) que l'IA glisse parfois
   // dans son markdown — sans ça elles apparaissent en clair dans le docx.
   markdown = decodeHtmlEntities(markdown);
@@ -160,9 +173,16 @@ export async function markdownToDocx(markdown: string): Promise<Blob> {
       properties: {
         page: {
           size: { width: A4_PAGE_WIDTH, height: 16838 },
-          margin: { top: MARGIN_DXA, right: MARGIN_DXA, bottom: MARGIN_DXA, left: MARGIN_DXA },
+          margin: {
+            // Marge haute élargie quand un en-tête doit y tenir.
+            top: branding?.logo || branding?.centreName ? MARGIN_DXA + 620 : MARGIN_DXA,
+            right: MARGIN_DXA,
+            bottom: MARGIN_DXA,
+            left: MARGIN_DXA,
+          },
         },
       },
+      headers: buildHeader(branding),
       children,
     }],
   });
@@ -174,6 +194,46 @@ export async function markdownToDocx(markdown: string): Promise<Blob> {
 // ============================================================
 // Helpers
 // ============================================================
+
+/**
+ * En-tête : logo à gauche, raison sociale à droite, filet de séparation.
+ * Renvoie undefined si aucun élément de marque n'est fourni, pour que les
+ * appels historiques produisent exactement le même document qu'avant.
+ */
+function buildHeader(b?: DocxBranding) {
+  if (!b || (!b.logo && !b.centreName)) return undefined;
+
+  const runs: (ImageRun | TextRun)[] = [];
+  if (b.logo && b.logo.byteLength > 0) {
+    runs.push(
+      new ImageRun({
+        data: b.logo,
+        type: b.logoType ?? "png",
+        // Hauteur fixe à 42 px : un logo large reste lisible, un logo carré
+        // ne dévore pas la marge.
+        transformation: { width: 150, height: 42 },
+      }),
+    );
+  }
+  if (b.centreName) {
+    if (runs.length > 0) runs.push(new TextRun({ text: "   ", size: 20 }));
+    runs.push(
+      new TextRun({ text: b.centreName, size: 18, color: NAVY, font: "Arial", bold: true }),
+    );
+  }
+
+  return {
+    default: new Header({
+      children: [
+        new Paragraph({
+          spacing: { after: 60 },
+          border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: BLUE, space: 6 } },
+          children: runs,
+        }),
+      ],
+    }),
+  };
+}
 
 const NAVY = "1A3C5E";
 const BLUE = "2471A3";

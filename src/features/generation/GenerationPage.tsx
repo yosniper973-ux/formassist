@@ -33,6 +33,7 @@ import { ImportContentDialog } from "./ImportContentDialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
+import { brandingForFormation } from "@/lib/branding";
 import { markdownToPdf, downloadPdf } from "@/lib/pdf-export";
 import { hasFormateurSection, stripFormateur, stripCorrectAnswerHints } from "@/lib/utils";
 import { DownloadToast } from "@/components/ui/download-toast";
@@ -1471,7 +1472,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                             size="sm"
                             onClick={async () => {
                               try {
-                                const blob = await markdownToDocx(generatedContent);
+                                const blob = await markdownToDocx(generatedContent, await brandingForFormation(selectedFormationId));
                                 const savedPath = await downloadDocx(blob, baseName);
                                 if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
                               } catch (err) {
@@ -1508,7 +1509,10 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                                 onClick={async () => {
                                   try {
                                     const apprenant = hasFormateur ? stripFormateur(generatedContent) : stripCorrectAnswerHints(generatedContent);
-                                    const blob = await markdownToDocx(apprenant);
+                                    const blob = await markdownToDocx(
+                                      apprenant,
+                                      await brandingForFormation(selectedFormationId),
+                                    );
                                     const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
                                     if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
                                   } catch (err) {
@@ -1870,7 +1874,7 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked, autoOpen }: { it
                     size="sm"
                     onClick={async () => {
                       try {
-                        const blob = await markdownToDocx(item.content_markdown);
+                        const blob = await markdownToDocx(item.content_markdown, await brandingForFormation(item.formation_id));
                         const savedPath = await downloadDocx(blob, baseName);
                         if (savedPath) onDownloaded?.(savedPath);
                       } catch (err) {
@@ -1906,7 +1910,10 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked, autoOpen }: { it
                         onClick={async () => {
                           try {
                             const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : stripCorrectAnswerHints(item.content_markdown);
-                            const blob = await markdownToDocx(apprenant);
+                            const blob = await markdownToDocx(
+                              apprenant,
+                              await brandingForFormation(item.formation_id),
+                            );
                             const savedPath = await downloadDocx(blob, `${baseName}_apprenant`);
                             if (savedPath) onDownloaded?.(savedPath);
                           } catch (err) {
