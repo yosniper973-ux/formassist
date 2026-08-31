@@ -60,6 +60,12 @@ const ROUTE_HELP: Record<string, { id: string; title: string; description: strin
     description: "Génère en quelques secondes des cours, exercices, jeux pédagogiques ou mises en situation grâce à Claude. Sélectionne une formation et un type de contenu, puis laisse l'IA travailler.",
     tip: "Le bouton 'Estimer le coût' te montre le prix avant de lancer la génération. Pour les textes longs (cours complets), utilise Claude Opus pour la meilleure qualité.",
   },
+  "/ecf": {
+    id: "ecf",
+    title: "Évaluations en cours de formation",
+    description: "Prépare les ECF écrits d'une formation : sujets, corrigés et grilles de correction, à partir des compétences et des savoirs du REAC.",
+    tip: "L'ECF est l'évaluation écrite conduite par le centre pendant la formation. Elle est distincte de la session de validation devant jury, qui repose sur une mise en situation.",
+  },
   "/fiches": {
     id: "fiches",
     title: "Fiches pédagogiques",
