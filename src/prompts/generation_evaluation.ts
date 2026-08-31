@@ -53,6 +53,13 @@ autres protagonistes. Aucune question recyclée.
     (préciser la taille du groupe et le rôle attendu de chacun — l'évaluation reste individuelle).
   Si plusieurs types sont demandés, chaque partie précise sa modalité.
 - Difficulté progressive au sein de chaque partie (restitution → application → analyse).
+- **L'ECF est principalement écrit.** Le message utilisateur indique la durée totale, l'effectif
+  et, le cas échéant, la durée d'observation individuelle. Une part pratique n'est ajoutée que
+  si elle est demandée, et elle est alors observée **une stagiaire à la fois** pendant que les
+  autres travaillent sur table : le nombre de passages possibles est calculé et fourni.
+- Quand une part pratique est demandée, prévoir **un travail en autonomie** pour celles qui ont
+  fini l'écrit et attendent leur passage. Ce travail doit être utile et évaluable, jamais un
+  simple remplissage.
 - Questions numérotées en continu (Q1, Q2, …) sur tout le sujet, espaces de réponse implicites.
 - Langue claire et accessible ; le candidat est en cours de formation, pas encore diplômé.
 
@@ -80,6 +87,20 @@ Q2. <énoncé> (X pts – CPx)
 ## PARTIE B — CPy : <intitulé court> (XX pts)
 …
 
+## TRAVAIL EN AUTONOMIE
+*(uniquement si une part pratique est demandée)*
+Ce que fait la stagiaire lorsqu'elle a rendu l'écrit et attend son passage : une production
+individuelle courte, en lien avec les compétences évaluées, réalisable sans le formateur et
+sans matériel. Elle compte dans le barème.
+
+## ÉPREUVE PRATIQUE — observation individuelle
+*(uniquement si une part pratique est demandée)*
+Durée par stagiaire indiquée dans le message utilisateur. Fournir :
+- le **contexte** : lieu, état initial, contrainte de temps ;
+- les **consignes** données à la stagiaire, à lire telles quelles ;
+- le **matériel et les produits** nécessaires, en liste, avec les quantités ;
+- ce qui est **interdit ou sous surveillance** dans le contexte de formation indiqué.
+
 ## Barème récapitulatif
 
 | Question | Compétence | Points |
@@ -94,6 +115,12 @@ Q2. <énoncé> (X pts – CPx)
 
 ⚠️ Section réservée à l'évaluateur — ne jamais remettre au candidat.
 
+### Organisation de la séance
+*(uniquement si une part pratique est demandée)*
+Le déroulé minuté : qui compose, qui est observée, quand. Préciser le nombre de stagiaires
+observables dans la durée impartie, l'ordre de passage, et ce qui est fait des autres. Indiquer
+combien d'ECF sont nécessaires pour que tout l'effectif soit passé une fois.
+
 ### Corrigé détaillé
 Pour CHAQUE question :
 **Qn (X pts – CPy)** — réponse attendue complète, éléments valorisés (avec répartition
@@ -103,6 +130,18 @@ critère(s) d'évaluation REAC mobilisé(s).
 ### Grille de notation
 | Question | Éléments attendus | Points | Critère REAC associé |
 |----------|-------------------|--------|----------------------|
+
+### Grille d'observation de l'épreuve pratique
+*(uniquement si une part pratique est demandée)*
+Des **indicateurs observables**, jamais des intentions : ce que l'évaluateur voit ou ne voit pas.
+
+| Ce qui est observé | Indicateur observable | Points | Critère REAC associé |
+|--------------------|-----------------------|--------|----------------------|
+
+### Questions d'entretien technique
+Cinq à huit questions posées à l'issue de l'observation, portant sur les gestes qui viennent
+d'être faits — le pourquoi d'un choix, une variante, une erreur évitée. Pour chacune, la réponse
+attendue en une ou deux lignes.
 
 ### Seuils indicatifs
 - Notation souple / standard / stricte : indications d'harmonisation (ex. exigence

@@ -171,23 +171,32 @@ export function buildPhaseMessages(ctx: DayContext, phase: DayPhase): ClaudeMess
 
   const relationnels = ctx.savoirs.some((s) => s.category === "sf_relationnel");
 
-  // Un ECF a ses propres exigences : forme écrite, périmètre limité aux cours
-  // dispensés, grille de correction. La trame Boudreault ne s'y applique pas.
+  // Un ECF suit le prompt partagé generation_evaluation : on lui fournit les
+  // paramètres, il impose la structure. Même sortie depuis l'onglet ECF et
+  // depuis le planning.
   if (taskForPhase(phase) === "generation_evaluation") {
+    const OBS = 25, TRANSITION = 5;   // minutes par stagiaire observée
+    const passages = Math.floor(minutes / (OBS + TRANSITION));
+    const seances = Math.ceil(ctx.groupSize / Math.max(1, passages));
     const cours = ctx.coursAnterieurs
       .map((c) => `### ${c.title}\n${c.content_markdown.slice(0, 2500)}`)
       .join("\n\n");
+
     return [
       {
         role: "user",
-        content: `Génère un sujet d'Évaluation en Cours de Formation (ECF) **écrit** pour la formation « ${ctx.formationTitle} ».
+        content: `Génère un sujet d'Évaluation en Cours de Formation (ECF) pour la formation « ${ctx.formationTitle} ».
 
 Journée du ${ctx.date} — ${ctx.slotTitle}
-Durée de l'épreuve : **${minutes} minutes**. Groupe : ${ctx.groupSize} stagiaires composant en même temps.
 
-L'ECF est l'évaluation écrite conduite par le centre pendant la formation. Ce n'est
-pas une mise en situation : la session de validation devant jury s'en charge.
-Aucune manipulation, aucun matériel : le sujet se traite sur table.
+Durée totale de l'épreuve : **${minutes} minutes**. Effectif : **${ctx.groupSize} stagiaires**.
+
+L'ECF est **principalement écrit** : toutes les stagiaires composent sur table en même temps.
+S'y ajoute une **part pratique observée individuellement, ${OBS} minutes par stagiaire**, pendant
+que les autres poursuivent l'écrit puis le travail en autonomie. Avec ${TRANSITION} minutes de
+transition entre deux passages, **${passages} stagiaires peuvent être observées** au cours de
+cette épreuve : il faut donc ${seances} ECF pour que l'effectif complet soit passé une fois.
+Indique-le dans l'organisation de la séance, et précise quel sous-groupe est observé cette fois.
 
 Compétences évaluées :
 ${comps || "(aucune)"}
@@ -197,23 +206,9 @@ ${savoirs || "(aucun)"}
 
 ${
           cours
-            ? `Périmètre autorisé — cours réellement dispensés avant cette date. Le sujet ne peut porter que sur des notions présentes ci-dessous ; une question sur une notion jamais enseignée invaliderait l'épreuve :\n\n${cours}`
-            : "Aucun cours n'a encore été généré pour cette formation : reste sur les savoirs du REAC listés ci-dessus, sans supposer d'apport particulier."
-        }
-
-Produis, dans cet ordre et avec ces titres exacts :
-
-## SUJET
-Ce que reçoit la stagiaire. En-tête avec le nom du titre, la durée et le barème
-total. Des questions numérotées, chacune portant son nombre de points. Énoncés
-courts, vocabulaire du métier expliqué la première fois. Prévoir l'espace de
-réponse. Aucune référence au corrigé.
-
-## 🔒 GRILLE DE CORRECTION — FORMATEUR
-Réservé au formateur, retiré de la version remise aux stagiaires.
-Pour chaque question : la réponse attendue, le barème détaillé, et le critère
-d'évaluation du REAC auquel elle se rattache. Puis le seuil de réussite et la
-conduite à tenir en cas d'échec.`,
+            ? `Cours réellement dispensés avant cette date — périmètre autorisé :\n\n${cours}`
+            : "Aucun cours n'a encore été généré pour cette formation : reste sur les savoirs du REAC listés ci-dessus."
+        }`,
       },
     ];
   }
