@@ -34,6 +34,8 @@ export type DayContext = {
   groupSize: number;
   /** Phases déjà générées, par id de phase. */
   existing: Map<string, { id: string; title: string }>;
+  /** Cours dispensés avant cette journée — périmètre autorisé d'un ECF. */
+  coursAnterieurs: Array<{ title: string; content_markdown: string }>;
 };
 
 const CAT_LABEL: Record<string, string> = {
@@ -50,8 +52,18 @@ export function contentTypeForPhase(phase: DayPhase): string {
   return phase.task === "generation_mise_en_situation" ? "role_play" : "exercise";
 }
 
+const TACHES: readonly TaskType[] = [
+  "generation_cours", "generation_jeu", "generation_exercice",
+  "generation_mise_en_situation", "generation_evaluation",
+];
+
 function taskForPhase(phase: DayPhase): TaskType {
-  if (phase.task) return phase.task as TaskType;
+  // Une valeur inconnue laisserait getPromptForTask renvoyer undefined, et le
+  // prompt système partirait avec « undefined » en tête.
+  if (phase.task && (TACHES as readonly string[]).includes(phase.task)) {
+    return phase.task as TaskType;
+  }
+  if (phase.task === "evaluation") return "generation_evaluation";
   if (phase.phase === "apport") return "generation_cours";
   if (phase.phase === "jeu") return "generation_jeu";
   return "generation_exercice";
@@ -107,6 +119,18 @@ export async function loadDayContext(slotId: string): Promise<DayContext | null>
     db.getStyleProfile(),
   ]);
 
+  // Un ECF ne peut porter que sur des notions réellement enseignées : on fournit
+  // les cours déjà produits pour cette formation, antérieurs à la journée.
+  const coursAnterieurs = await db.query<{ title: string; content_markdown: string }>(
+    `SELECT g.title, g.content_markdown
+       FROM generated_contents g
+       JOIN slots s ON s.id = g.slot_id
+      WHERE g.formation_id = ? AND g.archived_at IS NULL
+        AND g.content_type = 'course' AND s.date <= ?
+      ORDER BY s.date`,
+    [slot.formation_id, slot.date],
+  );
+
   const existing = new Map<string, { id: string; title: string }>();
   for (const c of contents) if (c.phase_id) existing.set(c.phase_id, { id: c.id, title: c.title });
 
@@ -126,6 +150,7 @@ export async function loadDayContext(slotId: string): Promise<DayContext | null>
     deliveryContext: slot.delivery_body ?? "",
     groupSize: 12,
     existing,
+    coursAnterieurs,
   };
 }
 
@@ -145,6 +170,53 @@ export function buildPhaseMessages(ctx: DayContext, phase: DayPhase): ClaudeMess
     .join("\n");
 
   const relationnels = ctx.savoirs.some((s) => s.category === "sf_relationnel");
+
+  // Un ECF a ses propres exigences : forme écrite, périmètre limité aux cours
+  // dispensés, grille de correction. La trame Boudreault ne s'y applique pas.
+  if (taskForPhase(phase) === "generation_evaluation") {
+    const cours = ctx.coursAnterieurs
+      .map((c) => `### ${c.title}\n${c.content_markdown.slice(0, 2500)}`)
+      .join("\n\n");
+    return [
+      {
+        role: "user",
+        content: `Génère un sujet d'Évaluation en Cours de Formation (ECF) **écrit** pour la formation « ${ctx.formationTitle} ».
+
+Journée du ${ctx.date} — ${ctx.slotTitle}
+Durée de l'épreuve : **${minutes} minutes**. Groupe : ${ctx.groupSize} stagiaires composant en même temps.
+
+L'ECF est l'évaluation écrite conduite par le centre pendant la formation. Ce n'est
+pas une mise en situation : la session de validation devant jury s'en charge.
+Aucune manipulation, aucun matériel : le sujet se traite sur table.
+
+Compétences évaluées :
+${comps || "(aucune)"}
+
+Savoirs et savoir-faire du REAC sur lesquels porte l'évaluation :
+${savoirs || "(aucun)"}
+
+${
+          cours
+            ? `Périmètre autorisé — cours réellement dispensés avant cette date. Le sujet ne peut porter que sur des notions présentes ci-dessous ; une question sur une notion jamais enseignée invaliderait l'épreuve :\n\n${cours}`
+            : "Aucun cours n'a encore été généré pour cette formation : reste sur les savoirs du REAC listés ci-dessus, sans supposer d'apport particulier."
+        }
+
+Produis, dans cet ordre et avec ces titres exacts :
+
+## SUJET
+Ce que reçoit la stagiaire. En-tête avec le nom du titre, la durée et le barème
+total. Des questions numérotées, chacune portant son nombre de points. Énoncés
+courts, vocabulaire du métier expliqué la première fois. Prévoir l'espace de
+réponse. Aucune référence au corrigé.
+
+## 🔒 GRILLE DE CORRECTION — FORMATEUR
+Réservé au formateur, retiré de la version remise aux stagiaires.
+Pour chaque question : la réponse attendue, le barème détaillé, et le critère
+d'évaluation du REAC auquel elle se rattache. Puis le seuil de réussite et la
+conduite à tenir en cas d'échec.`,
+      },
+    ];
+  }
 
   const quoi =
     phase.phase === "apport"

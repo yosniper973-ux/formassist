@@ -24,9 +24,6 @@ const StylePage = lazy(() =>
 const GenerationPage = lazy(() =>
   import("@/features/generation/GenerationPage").then((m) => ({ default: m.GenerationPage })),
 );
-const EcfPage = lazy(() =>
-  import("@/features/ecf/EcfPage").then((m) => ({ default: m.EcfPage })),
-);
 const FichesPedagoPage = lazy(() =>
   import("@/features/fiches-pedago/FichesPedagoPage").then((m) => ({ default: m.FichesPedagoPage })),
 );
@@ -105,10 +102,6 @@ export function Router() {
         <Route
           path="/generation"
           element={<LazyRoute><GenerationPage /></LazyRoute>}
-        />
-        <Route
-          path="/ecf"
-          element={<LazyRoute><EcfPage /></LazyRoute>}
         />
         <Route
           path="/fiches"
