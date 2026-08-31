@@ -1488,7 +1488,7 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                             size="sm"
                             onClick={async () => {
                               try {
-                                const blob = await markdownToPdf(generatedContent);
+                                const blob = await markdownToPdf(generatedContent, await brandingForFormation(selectedFormationId));
                                 const savedPath = await downloadPdf(blob, baseName);
                                 if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
                               } catch (err) {
@@ -1530,7 +1530,10 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                                 onClick={async () => {
                                   try {
                                     const apprenant = hasFormateur ? stripFormateur(generatedContent) : stripCorrectAnswerHints(generatedContent);
-                                    const blob = await markdownToPdf(apprenant);
+                                    const blob = await markdownToPdf(
+                                      apprenant,
+                                      await brandingForFormation(selectedFormationId),
+                                    );
                                     const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
                                     if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
                                   } catch (err) {
@@ -1890,7 +1893,7 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked, autoOpen }: { it
                     size="sm"
                     onClick={async () => {
                       try {
-                        const blob = await markdownToPdf(item.content_markdown);
+                        const blob = await markdownToPdf(item.content_markdown, await brandingForFormation(item.formation_id));
                         const savedPath = await downloadPdf(blob, baseName);
                         if (savedPath) onDownloaded?.(savedPath);
                       } catch (err) {
@@ -1931,7 +1934,10 @@ function HistoryCard({ item, onDeleted, onDownloaded, onLinked, autoOpen }: { it
                         onClick={async () => {
                           try {
                             const apprenant = hasFormateur ? stripFormateur(item.content_markdown) : stripCorrectAnswerHints(item.content_markdown);
-                            const blob = await markdownToPdf(apprenant);
+                            const blob = await markdownToPdf(
+                              apprenant,
+                              await brandingForFormation(item.formation_id),
+                            );
                             const savedPath = await downloadPdf(blob, `${baseName}_apprenant`);
                             if (savedPath) onDownloaded?.(savedPath);
                           } catch (err) {

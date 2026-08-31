@@ -231,6 +231,11 @@ Environ 400 mots.
 - Pas de commentaire sur ta démarche pédagogique.
 - Pas de travail à faire entre deux séances.
 - N'annonce pas de matériel que tu ne fournis pas.
+- **Jamais de schéma en art ASCII ni de bloc de code.** Les documents sont
+  imprimés dans une police proportionnelle : un plateau dessiné avec des barres
+  et des tirets s'effondre et devient illisible. Un plateau de jeu, un plan ou un
+  schéma se décrivent en tableau (une ligne par zone : nom, contenu, emplacement)
+  ou en liste numérotée de zones.
 `,
     },
   ];

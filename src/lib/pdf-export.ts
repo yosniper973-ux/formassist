@@ -7,6 +7,7 @@ import {
   pdf,
   Font,
   Link,
+  Image,
 } from "@react-pdf/renderer";
 import React from "react";
 import { decodeHtmlEntities } from "./utils";
@@ -517,7 +518,28 @@ function buildCallout(
 // ============================================================
 // API publique
 // ============================================================
-export async function markdownToPdf(markdown: string): Promise<Blob> {
+/** En-tête de document : logo du centre et raison sociale. */
+export type PdfBranding = {
+  logo?: Uint8Array;
+  logoType?: "png" | "jpg";
+  centreName?: string;
+};
+
+/** Convertit les octets du logo en data URI, seul format lu par react-pdf. */
+function logoDataUri(b: PdfBranding): string | null {
+  if (!b.logo || b.logo.byteLength === 0) return null;
+  let bin = "";
+  for (let i = 0; i < b.logo.length; i += 8192) {
+    bin += String.fromCharCode(...b.logo.subarray(i, i + 8192));
+  }
+  const mime = b.logoType === "jpg" ? "image/jpeg" : "image/png";
+  return `data:${mime};base64,${btoa(bin)}`;
+}
+
+export async function markdownToPdf(
+  markdown: string,
+  branding?: PdfBranding,
+): Promise<Blob> {
   // Décode les entités HTML (&nbsp;, &amp;, etc.) que l'IA glisse parfois
   // dans son markdown — sans ça elles apparaissent en clair dans le PDF.
   markdown = decodeHtmlEntities(markdown);
@@ -525,9 +547,56 @@ export async function markdownToPdf(markdown: string): Promise<Blob> {
   const doc = React.createElement(
     Document,
     null,
-    React.createElement(Page, { size: "A4", style: styles.page }, ...blocks),
+    React.createElement(
+      Page,
+      { size: "A4", style: styles.page },
+      ...enteteBranding(branding),
+      ...blocks,
+    ),
   );
   return await pdf(doc).toBlob();
+}
+
+/** Bandeau d'en-tête : logo à gauche, raison sociale à droite, filet dessous. */
+function enteteBranding(b?: PdfBranding): React.ReactElement[] {
+  if (!b || (!b.logo && !b.centreName)) return [];
+  const uri = logoDataUri(b);
+  const enfants: React.ReactElement[] = [];
+  if (uri) {
+    enfants.push(
+      React.createElement(Image, {
+        key: "logo",
+        src: uri,
+        style: { height: 30, objectFit: "contain" },
+      }),
+    );
+  }
+  if (b.centreName) {
+    enfants.push(
+      React.createElement(
+        Text,
+        { key: "nom", style: { fontSize: 9, color: BLUE, marginLeft: "auto" } },
+        b.centreName,
+      ),
+    );
+  }
+  return [
+    React.createElement(
+      View,
+      {
+        key: "entete",
+        style: {
+          flexDirection: "row",
+          alignItems: "center",
+          marginBottom: 14,
+          paddingBottom: 8,
+          borderBottomWidth: 1,
+          borderBottomColor: BLUE,
+        },
+      },
+      enfants,
+    ),
+  ];
 }
 
 /**

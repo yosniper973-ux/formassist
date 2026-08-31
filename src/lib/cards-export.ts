@@ -59,13 +59,39 @@ export function extractCardSets(markdown: string): CardSet[] {
         j++;
       }
       if (cartes.length > 0) {
-        sets.push({ nom: nomCourant || "Cartes", colonnes, cartes });
+        sets.push(normalise({ nom: nomCourant || "Cartes", colonnes, cartes }));
       }
       nomCourant = "";
       i = j - 1;
     }
   }
   return sets;
+}
+
+const REF_RE = /^(r[ée]f\.?|n°|no\.?|num[ée]ro?|id|code)$/i;
+const RECTO_RE = /recto|terme|carte|intitul[ée]|mot|question|face/i;
+
+/**
+ * Remet les colonnes dans l'ordre attendu : recto d'abord, verso ensuite.
+ * Les tableaux générés commencent souvent par une colonne de référence
+ * (« Réf. », « A1 ») qui ne doit pas devenir le recto de la carte, et la
+ * colonne du recto n'est pas toujours la première.
+ */
+function normalise(set: CardSet): CardSet {
+  const idx = set.colonnes.map((_, i) => i);
+  const utiles = idx.filter((i) => !REF_RE.test(set.colonnes[i]?.trim() ?? ""));
+  if (utiles.length === 0) return set;
+
+  let rectoIdx = utiles.find((i) => RECTO_RE.test(set.colonnes[i] ?? ""));
+  if (rectoIdx === undefined) rectoIdx = utiles[0]!;
+  const versoIdx = utiles.filter((i) => i !== rectoIdx);
+  const ordre = [rectoIdx, ...versoIdx];
+
+  return {
+    nom: set.nom,
+    colonnes: ordre.map((i) => set.colonnes[i] ?? ""),
+    cartes: set.cartes.map((c) => ordre.map((i) => c[i] ?? "")),
+  };
 }
 
 // A4 : 595 × 842 pt. Neuf cartes par page, au format d'une carte à jouer.
