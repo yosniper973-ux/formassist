@@ -1,5 +1,6 @@
 import { requestStream } from "@/lib/claude";
 import { db } from "@/lib/db";
+import { modalitesPourPrompt } from "@/features/evaluations/rc-import";
 import type { TaskType, ClaudeMessage } from "@/types/api";
 
 /** Une phase de la journée, telle qu'importée depuis le déroulé. */
@@ -36,6 +37,8 @@ export type DayContext = {
   existing: Map<string, { id: string; title: string }>;
   /** Cours dispensés avant cette journée — périmètre autorisé d'un ECF. */
   coursAnterieurs: Array<{ title: string; content_markdown: string }>;
+  /** Modalités de l'épreuve de certification, si le RC a été importé. */
+  modalites: string;
 };
 
 const CAT_LABEL: Record<string, string> = {
@@ -151,6 +154,7 @@ export async function loadDayContext(slotId: string): Promise<DayContext | null>
     groupSize: 12,
     existing,
     coursAnterieurs,
+    modalites: await modalitesPourPrompt(slot.formation_id),
   };
 }
 
@@ -205,6 +209,10 @@ Savoirs et savoir-faire du REAC sur lesquels porte l'évaluation :
 ${savoirs || "(aucun)"}
 
 ${
+          ctx.modalites
+            ? `Modalités officielles de l'épreuve de certification de ce titre. L'ECF prépare à cette épreuve sans la reproduire à l'identique :\n${ctx.modalites}\n\n`
+            : ""
+        }${
           cours
             ? `Cours réellement dispensés avant cette date — périmètre autorisé :\n\n${cours}`
             : "Aucun cours n'a encore été généré pour cette formation : reste sur les savoirs du REAC listés ci-dessus."

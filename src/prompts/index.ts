@@ -1,6 +1,7 @@
 import type { TaskType } from "@/types/api";
 
 import { PARSING_REAC_PROMPT } from "./parsing_reac";
+import { PARSING_RC_PROMPT } from "./parsing_rc";
 import { PARSING_PLANNING_PROMPT } from "./parsing_planning";
 import { PARSING_REPARTITION_PROMPT } from "./parsing_repartition";
 import { GENERATION_COURS_PROMPT } from "./generation_cours";
@@ -22,6 +23,7 @@ import { REMPLISSAGE_TRAME_PROMPT } from "./remplissage_trame";
 
 const PROMPTS: Record<TaskType, string> = {
   parsing_reac: PARSING_REAC_PROMPT,
+  parsing_rc: PARSING_RC_PROMPT,
   parsing_planning: PARSING_PLANNING_PROMPT,
   parsing_repartition: PARSING_REPARTITION_PROMPT,
   generation_cours: GENERATION_COURS_PROMPT,

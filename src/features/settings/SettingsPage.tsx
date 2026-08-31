@@ -48,6 +48,7 @@ const TASK_LABELS: Record<TaskType, string> = {
   analyse_style: "Analyse du style",
   affinage_style: "Affinage du style",
   parsing_reac: "Analyse du REAC",
+  parsing_rc: "Import du référentiel d'évaluation",
   parsing_planning: "Analyse du planning",
   parsing_repartition: "Analyse répartition",
   correction: "Corrections",

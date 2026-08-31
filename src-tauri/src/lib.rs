@@ -87,6 +87,12 @@ pub fn run() {
             sql: include_str!("../migrations/013_content_phase.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 14,
+            description: "certification",
+            sql: include_str!("../migrations/014_certification.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -29,6 +29,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichMarkdown } from "@/components/ui/rich-markdown";
 import { DownloadToast } from "@/components/ui/download-toast";
 import { markdownToDocx, downloadDocx } from "@/lib/docx-export";
+import { analyserRc, enregistrerRc, modalitesPourPrompt } from "./rc-import";
 import { stripFormateur, extractFormateurSection, formatDateShort } from "@/lib/utils";
 import { markdownToPlainText } from "@/lib/docx-template";
 import { fillEvaluationTrame, type TramePayload } from "./fill-trame";
@@ -168,6 +169,10 @@ export function EvaluationsPage() {
   const [contentLinks, setContentLinks] = useState<Map<string, Set<string>>>(new Map());
 
   // Étape 4 : trame
+  // Référentiel d'évaluation : les modalités de l'épreuve, propres à chaque titre.
+  const [modalites, setModalites] = useState("");
+  const [rcEnCours, setRcEnCours] = useState(false);
+  const [rcMessage, setRcMessage] = useState("");
   const [templates, setTemplates] = useState<EvalTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
@@ -422,6 +427,11 @@ Durée de l'épreuve : ${durationLabel(durationMin)} (${durationMin} minutes)`;
         prompt += `\n- **${comp.code} : ${comp.title}**`;
         if (comp.description) prompt += `\n  ${comp.description}`;
       }
+    }
+
+    // Modalités de l'épreuve, si le référentiel d'évaluation a été importé
+    if (modalites) {
+      prompt += `\n\nModalités officielles de l'épreuve de certification, issues du référentiel d'évaluation de ce titre. L'ECF doit préparer à cette épreuve, sans la reproduire à l'identique :\n${modalites}`;
     }
 
     // Critères d'évaluation officiels
@@ -695,6 +705,36 @@ Durée de l'épreuve : ${durationLabel(durationMin)} (${durationMin} minutes)`;
       setError(err instanceof Error ? err.message : "Erreur export corrigé");
     } finally {
       setExporting(null);
+    }
+  }
+
+  // ─── Référentiel d'évaluation ───
+
+  useEffect(() => {
+    if (!selectedFormationId) {
+      setModalites("");
+      return;
+    }
+    modalitesPourPrompt(selectedFormationId).then(setModalites).catch(() => setModalites(""));
+  }, [selectedFormationId]);
+
+  async function handleImportRc(file: File) {
+    if (!selectedFormationId) return;
+    setRcEnCours(true);
+    setRcMessage("");
+    setError("");
+    try {
+      const parse = await analyserRc(file, new AbortController().signal);
+      const n = await enregistrerRc(selectedFormationId, parse);
+      setModalites(await modalitesPourPrompt(selectedFormationId));
+      const alertes = parse.warnings?.length
+        ? ` À vérifier : ${parse.warnings.join(" ; ")}`
+        : "";
+      setRcMessage(`${n} modalité${n > 1 ? "s" : ""} importée${n > 1 ? "s" : ""}.${alertes}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRcEnCours(false);
     }
   }
 
@@ -1124,6 +1164,48 @@ Durée de l'épreuve : ${durationLabel(durationMin)} (${durationMin} minutes)`;
                     )}
                   </>
                 )}
+              </div>
+            )}
+
+            {/* Modalités de l'épreuve, issues du référentiel d'évaluation */}
+            {selectedFormationId && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>Modalités de l'épreuve</Label>
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      className="hidden"
+                      disabled={rcEnCours}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handleImportRc(f);
+                        e.target.value = "";
+                      }}
+                    />
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent">
+                      {rcEnCours ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileUp className="h-3.5 w-3.5" />
+                      )}
+                      {rcEnCours ? "Analyse…" : "Importer le référentiel d'évaluation"}
+                    </span>
+                  </label>
+                </div>
+                {modalites ? (
+                  <pre className="max-h-44 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                    {modalites}
+                  </pre>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Le REAC décrit le métier, le référentiel d'évaluation décrit l'épreuve :
+                    durées, parties de la mise en situation, entretiens. Sans lui, les sujets
+                    sont calés au jugé.
+                  </p>
+                )}
+                {rcMessage && <p className="text-xs text-primary">{rcMessage}</p>}
               </div>
             )}
 

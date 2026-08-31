@@ -9,6 +9,7 @@ export type TaskType =
   | "analyse_style"
   | "affinage_style"
   | "parsing_reac"
+  | "parsing_rc"
   | "parsing_planning"
   | "parsing_repartition"
   | "correction"
