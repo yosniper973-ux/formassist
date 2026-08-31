@@ -108,9 +108,11 @@ const st = StyleSheet.create({
   carte: {
     width: `${100 / COLS}%`,
     height: 802 / ROWS,
-    borderWidth: 0.5,
+    // Ligne de coupe : les tirets de react-pdf grandissent avec l'épaisseur du
+    // trait. À 0,5 pt en gris clair ils étaient invisibles à l'impression.
+    borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#C4C4C4",
+    borderColor: "#8C8C8C",
     justifyContent: "flex-start",
   },
   bandeau: {
@@ -145,7 +147,7 @@ function abrege(t: string, max: number): string {
 function Carte({ set, teinte, item, idx, face }: {
   set: CardSet; teinte: string; item?: string[]; idx: number; face: boolean;
 }) {
-  if (!item) return e(View, { style: { ...st.carte, borderColor: "#E8E8E8" } });
+  if (!item) return e(View, { style: { ...st.carte, borderColor: "#D0D0D0" } });
 
   const contenu = face
     ? item.slice(1).flatMap((v, k) =>
