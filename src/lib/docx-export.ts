@@ -28,6 +28,8 @@ export type DocxBranding = {
   /** Octets du fichier image (png ou jpg). */
   logo?: Uint8Array;
   logoType?: "png" | "jpg";
+  /** Taille d'affichage, calculée pour respecter les proportions de l'image. */
+  logoSize?: { width: number; height: number };
   centreName?: string;
 };
 
@@ -209,9 +211,7 @@ function buildHeader(b?: DocxBranding) {
       new ImageRun({
         data: b.logo,
         type: b.logoType ?? "png",
-        // Hauteur fixe à 42 px : un logo large reste lisible, un logo carré
-        // ne dévore pas la marge.
-        transformation: { width: 150, height: 42 },
+        transformation: b.logoSize ?? { width: 150, height: 42 },
       }),
     );
   }

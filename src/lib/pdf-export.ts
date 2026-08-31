@@ -522,6 +522,7 @@ function buildCallout(
 export type PdfBranding = {
   logo?: Uint8Array;
   logoType?: "png" | "jpg";
+  logoSize?: { width: number; height: number };
   centreName?: string;
 };
 
@@ -567,7 +568,9 @@ function enteteBranding(b?: PdfBranding): React.ReactElement[] {
       React.createElement(Image, {
         key: "logo",
         src: uri,
-        style: { height: 30, objectFit: "contain" },
+        style: b.logoSize
+          ? { width: b.logoSize.width, height: b.logoSize.height }
+          : { height: 30, objectFit: "contain" },
       }),
     );
   }
