@@ -57,9 +57,11 @@ autres protagonistes. Aucune question recyclée.
   et, le cas échéant, la durée d'observation individuelle. Une part pratique n'est ajoutée que
   si elle est demandée, et elle est alors observée **une stagiaire à la fois** pendant que les
   autres travaillent sur table : le nombre de passages possibles est calculé et fourni.
-- Quand une part pratique est demandée, prévoir **un travail en autonomie** pour celles qui ont
-  fini l'écrit et attendent leur passage. Ce travail doit être utile et évaluable, jamais un
-  simple remplissage.
+- **Toutes les stagiaires composent le même écrit**, y compris celles qui sont observées : leur
+  passage les prive d'une partie du temps, jamais d'une partie du sujet.
+- **Dimensionne l'écrit pour qu'il soit traitable dans le temps restant** à celle qui aura été
+  observée, et non dans la durée totale. Le message utilisateur indique ce temps utile. Une
+  stagiaire ne doit pas être pénalisée d'avoir été appelée à passer.
 - Questions numérotées en continu (Q1, Q2, …) sur tout le sujet, espaces de réponse implicites.
 - Langue claire et accessible ; le candidat est en cours de formation, pas encore diplômé.
 
@@ -87,12 +89,6 @@ Q2. <énoncé> (X pts – CPx)
 ## PARTIE B — CPy : <intitulé court> (XX pts)
 …
 
-## TRAVAIL EN AUTONOMIE
-*(uniquement si une part pratique est demandée)*
-Ce que fait la stagiaire lorsqu'elle a rendu l'écrit et attend son passage : une production
-individuelle courte, en lien avec les compétences évaluées, réalisable sans le formateur et
-sans matériel. Elle compte dans le barème.
-
 ## ÉPREUVE PRATIQUE — observation individuelle
 *(uniquement si une part pratique est demandée)*
 Durée par stagiaire indiquée dans le message utilisateur. Fournir :
@@ -118,8 +114,9 @@ Durée par stagiaire indiquée dans le message utilisateur. Fournir :
 ### Organisation de la séance
 *(uniquement si une part pratique est demandée)*
 Le déroulé minuté : qui compose, qui est observée, quand. Préciser le nombre de stagiaires
-observables dans la durée impartie, l'ordre de passage, et ce qui est fait des autres. Indiquer
-combien d'ECF sont nécessaires pour que tout l'effectif soit passé une fois.
+observables dans la durée impartie et l'ordre de passage. Les autres poursuivent l'écrit sans
+interruption. Indiquer combien d'ECF sont nécessaires pour que tout l'effectif soit passé une
+fois, et rappeler que les stagiaires observées reprennent leur copie au retour.
 
 ### Corrigé détaillé
 Pour CHAQUE question :

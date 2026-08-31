@@ -181,6 +181,7 @@ export function buildPhaseMessages(ctx: DayContext, phase: DayPhase): ClaudeMess
   if (taskForPhase(phase) === "generation_evaluation") {
     const OBS = 25, TRANSITION = 5;   // minutes par stagiaire observée
     const passages = Math.floor(minutes / (OBS + TRANSITION));
+    const tempsUtile = minutes - OBS;   // ce dont dispose une stagiaire observée
     const seances = Math.ceil(ctx.groupSize / Math.max(1, passages));
     const cours = ctx.coursAnterieurs
       .map((c) => `### ${c.title}\n${c.content_markdown.slice(0, 2500)}`)
@@ -195,12 +196,18 @@ Journée du ${ctx.date} — ${ctx.slotTitle}
 
 Durée totale de l'épreuve : **${minutes} minutes**. Effectif : **${ctx.groupSize} stagiaires**.
 
-L'ECF est **principalement écrit** : toutes les stagiaires composent sur table en même temps.
-S'y ajoute une **part pratique observée individuellement, ${OBS} minutes par stagiaire**, pendant
-que les autres poursuivent l'écrit puis le travail en autonomie. Avec ${TRANSITION} minutes de
-transition entre deux passages, **${passages} stagiaires peuvent être observées** au cours de
-cette épreuve : il faut donc ${seances} ECF pour que l'effectif complet soit passé une fois.
-Indique-le dans l'organisation de la séance, et précise quel sous-groupe est observé cette fois.
+L'ECF est **principalement écrit** : toutes les stagiaires composent le même sujet, sur table,
+en même temps. S'y ajoute une **part pratique observée individuellement, ${OBS} minutes par
+stagiaire**, pendant que les autres poursuivent l'écrit sans interruption.
+
+Avec ${TRANSITION} minutes de transition entre deux passages, **${passages} stagiaires peuvent
+être observées** au cours de cette épreuve : il faut donc ${seances} ECF pour que l'effectif
+complet soit passé une fois. Indique-le dans l'organisation de la séance et précise quel
+sous-groupe est observé cette fois.
+
+**Dimensionne l'écrit pour ${tempsUtile} minutes**, et non pour ${minutes} : c'est le temps dont
+dispose une stagiaire appelée à passer. Elle traite le même sujet que les autres et ne doit pas
+être pénalisée d'avoir été observée.
 
 Compétences évaluées :
 ${comps || "(aucune)"}
