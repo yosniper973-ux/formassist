@@ -1,20 +1,6 @@
-import {
-  Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
-  WidthType, BorderStyle, AlignmentType, VerticalAlign, PageBreak,
-} from "docx";
+import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
+import React from "react";
 import { decodeHtmlEntities } from "./utils";
-
-/**
- * Saut de page minimal : un paragraphe de taille 1 qui tient dans la réserve
- * laissée sous le tableau. Un paragraphe de taille normale n'y entrait plus et
- * basculait page suivante, y insérant une page blanche.
- */
-function saut() {
-  return new Paragraph({
-    spacing: { before: 0, after: 0, line: 1 },
-    children: [new PageBreak()],
-  });
-}
 
 /** Un jeu de cartes extrait de la section « matériel à imprimer ». */
 export type CardSet = {
@@ -82,166 +68,140 @@ export function extractCardSets(markdown: string): CardSet[] {
   return sets;
 }
 
-// A4 portrait, marges 0,5 pouce : 6 cartes par page en 2 × 3.
-const PAGE_W = 11906, PAGE_H = 16838, MARGE = 720;
-const COLS = 2, ROWS = 3;
-const CARTE_W = Math.floor((PAGE_W - MARGE * 2) / COLS);
-// Les marges internes de cellule (320 dxa) s'ajoutent à la hauteur de rangée :
-// sans cette réserve, la troisième rangée dépassait de 14 pt et basculait page
-// suivante. Mesuré sur rendu : rangée = CARTE_H + 320 dxa.
-const CARTE_H = Math.floor((PAGE_H - MARGE * 2) / ROWS) - 560;
-const NAVY = "1A3C5E";
+// A4 : 595 × 842 pt. Neuf cartes par page, au format d'une carte à jouer.
+// Le PDF plutôt que le Word : Pages ignore l'alignement des paragraphes issus
+// de docx, mesuré sur rendu — le texte des cartes revenait à gauche. En PDF la
+// mise en page est maîtrisée au point près, et une carte à découper ne s'édite
+// pas, elle s'imprime.
+const COLS = 3, ROWS = 3, PAR_PAGE = COLS * ROWS;
+const TEINTES = ["1A3C5E", "0E6B63", "9A5F16", "7E4468", "3F6B2B", "A8402F"];
 
-const coupe = { style: BorderStyle.DASHED, size: 4, color: "999999" };
-const bords = { top: coupe, bottom: coupe, left: coupe, right: coupe };
+const st = StyleSheet.create({
+  page: { padding: 18, fontFamily: "Helvetica", backgroundColor: "#FFFFFF" },
+  grille: { flexDirection: "row", flexWrap: "wrap" },
+  carte: {
+    width: `${100 / COLS}%`,
+    height: 802 / ROWS,
+    borderWidth: 0.5,
+    borderStyle: "dashed",
+    borderColor: "#C4C4C4",
+    justifyContent: "flex-start",
+  },
+  bandeau: {
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  bandeauTexte: { fontSize: 5.5, color: "#FFFFFF", letterSpacing: 0.6 },
+  corps: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 10, paddingVertical: 8 },
+  recto: { fontSize: 12, textAlign: "center", fontFamily: "Helvetica-Bold" },
+  etiquette: {
+    fontSize: 5.5, color: "#9A9A9A", textAlign: "center",
+    letterSpacing: 0.5, marginBottom: 2, marginTop: 5,
+  },
+  verso: { fontSize: 8, textAlign: "center", lineHeight: 1.45, color: "#22282B" },
+  gardeTitre: { fontSize: 17, fontFamily: "Helvetica-Bold", marginBottom: 5 },
+  gardeInfo: { fontSize: 9, color: "#666666", marginBottom: 2 },
+  entete: { fontSize: 8, color: "#888888", marginBottom: 14 },
+});
 
-function carte(recto: string, verso: string[], colonnes: string[], versoFace: boolean) {
-  const kids: Paragraph[] = [];
-  if (!versoFace) {
-    kids.push(new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 200, after: 0 },
-      children: [new TextRun({ text: recto, bold: true, size: 30, color: NAVY, font: "Arial" })],
-    }));
-  } else {
-    verso.forEach((v, k) => {
-      if (!v) return;
-      if (colonnes.length > 2) {
-        kids.push(new Paragraph({
-          spacing: { before: k === 0 ? 120 : 90, after: 20 },
-          children: [new TextRun({
-            text: (colonnes[k + 1] ?? "").toUpperCase(),
-            bold: true, size: 13, color: "888888", font: "Arial",
-          })],
-        }));
-      }
-      kids.push(new Paragraph({
-        alignment: AlignmentType.LEFT,
-        spacing: { before: colonnes.length > 2 ? 0 : 120, after: 40, line: 250 },
-        children: [new TextRun({ text: v, size: 19, font: "Arial" })],
-      }));
-    });
-  }
-  if (kids.length === 0) kids.push(new Paragraph({ children: [] }));
-  return new TableCell({
-    width: { size: CARTE_W, type: WidthType.DXA },
-    margins: { top: 160, bottom: 160, left: 200, right: 200 },
-    verticalAlign: VerticalAlign.CENTER,
-    borders: bords,
-    children: kids,
-  });
+const e = React.createElement;
+
+/** Coupe un nom trop long sur un mot entier, plutôt qu'en plein milieu. */
+function abrege(t: string, max: number): string {
+  if (t.length <= max) return t;
+  const court = t.slice(0, max);
+  const esp = court.lastIndexOf(" ");
+  return (esp > max * 0.6 ? court.slice(0, esp) : court) + "…";
 }
 
-function vide() {
-  return new TableCell({
-    width: { size: CARTE_W, type: WidthType.DXA },
-    borders: bords,
-    children: [new Paragraph({ children: [] })],
-  });
+function Carte({ set, teinte, item, idx, face }: {
+  set: CardSet; teinte: string; item?: string[]; idx: number; face: boolean;
+}) {
+  if (!item) return e(View, { style: { ...st.carte, borderColor: "#E8E8E8" } });
+
+  const contenu = face
+    ? item.slice(1).flatMap((v, k) =>
+        v
+          ? [
+              ...(set.colonnes.length > 2
+                ? [e(Text, { key: `l${k}`, style: st.etiquette }, (set.colonnes[k + 1] ?? "").toUpperCase())]
+                : []),
+              e(Text, { key: `v${k}`, style: st.verso }, v),
+            ]
+          : [],
+      )
+    : [e(Text, { key: "r", style: { ...st.recto, color: `#${teinte}` } }, item[0] ?? "")];
+
+  return e(View, { style: st.carte }, [
+    e(View, { key: "b", style: { ...st.bandeau, backgroundColor: `#${teinte}` } }, [
+      e(Text, { key: "n", style: st.bandeauTexte }, abrege(set.nom.toUpperCase(), 30)),
+      e(Text, { key: "c", style: st.bandeauTexte }, `${idx}/${set.cartes.length}`),
+    ]),
+    e(View, { key: "c", style: st.corps }, contenu),
+  ]);
 }
 
-/**
- * Construit les planches d'un jeu : une page de rectos, puis une page de versos
- * dont les colonnes sont inversées pour que l'impression recto-verso (retournement
- * sur le bord long) fasse coïncider les deux faces.
- */
-function planches(set: CardSet): (Table | Paragraph)[] {
-  const out: (Table | Paragraph)[] = [];
-  const aVerso = set.colonnes.length > 1 && set.cartes.some((c) => c.slice(1).some(Boolean));
-  const parPage = COLS * ROWS;
-
-  for (let p = 0; p < set.cartes.length; p += parPage) {
-    const lot = set.cartes.slice(p, p + parPage);
-    for (const face of aVerso ? [false, true] : [false]) {
-      if (out.length > 0) out.push(saut());
-      const rows: TableRow[] = [];
-      for (let r = 0; r < ROWS; r++) {
-        const cells: TableCell[] = [];
-        for (let c = 0; c < COLS; c++) {
-          // Verso : on inverse l'ordre des colonnes pour le recto-verso.
-          const col = face ? COLS - 1 - c : c;
-          const item = lot[r * COLS + col];
-          cells.push(item ? carte(item[0] ?? "", item.slice(1), set.colonnes, face) : vide());
-        }
-        rows.push(new TableRow({ height: { value: CARTE_H, rule: "atLeast" }, children: cells }));
-      }
-      out.push(new Table({
-        columnWidths: Array(COLS).fill(CARTE_W),
-        width: { size: CARTE_W * COLS, type: WidthType.DXA },
-        rows,
-      }));
+function Planche({ set, teinte, debut, face }: {
+  set: CardSet; teinte: string; debut: number; face: boolean;
+}) {
+  const lot = set.cartes.slice(debut, debut + PAR_PAGE);
+  const cases = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      // Verso : colonnes inversées, pour que le recto-verso avec retournement
+      // sur le bord long fasse coïncider les deux faces.
+      const col = face ? COLS - 1 - c : c;
+      const i = r * COLS + col;
+      cases.push(
+        e(Carte, { key: `${r}-${c}`, set, teinte, item: lot[i], idx: debut + i + 1, face }),
+      );
     }
   }
-  return out;
-}
-
-/** Page de garde d'un jeu : quoi imprimer, en combien d'exemplaires. */
-function garde(set: CardSet, exemplaires: number): Paragraph[] {
-  const pages = Math.ceil(set.cartes.length / (COLS * ROWS));
-  const aVerso = set.colonnes.length > 1 && set.cartes.some((c) => c.slice(1).some(Boolean));
-  return [
-    new Paragraph({
-      spacing: { before: 200, after: 60 },
-      children: [new TextRun({ text: set.nom, bold: true, size: 32, color: NAVY, font: "Arial" })],
-    }),
-    new Paragraph({
-      spacing: { after: 200 },
-      children: [new TextRun({
-        text: `${set.cartes.length} cartes · ${pages} planche${pages > 1 ? "s" : ""}` +
-          (aVerso ? " recto-verso — imprimer en retournement sur le bord long" : " (recto seul)") +
-          ` · ${exemplaires} exemplaire${exemplaires > 1 ? "s" : ""} à imprimer`,
-        size: 19, color: "555555", font: "Arial",
-      })],
-    }),
-  ];
+  return e(Page, { size: "A4", style: st.page }, e(View, { style: st.grille }, cases));
 }
 
 /**
  * Assemble les planches à découper d'une journée.
  * `exemplaires` : nombre de jeux à imprimer, un par sous-groupe en principe.
  */
-export async function cardsToDocx(
+export async function cardsToPdf(
   sets: CardSet[],
   titre: string,
   exemplaires = 3,
 ): Promise<Blob> {
-  const children: (Paragraph | Table)[] = [
-    new Paragraph({
-      spacing: { after: 40 },
-      children: [new TextRun({ text: titre, bold: true, size: 26, color: NAVY, font: "Arial" })],
-    }),
-    new Paragraph({
-      spacing: { after: 240 },
-      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: NAVY, space: 6 } },
-      children: [new TextRun({
-        text: "Planches à découper — les traits pointillés sont les lignes de coupe.",
-        size: 18, color: "555555", font: "Arial",
-      })],
-    }),
-  ];
+  const pages: React.ReactElement[] = [];
 
   sets.forEach((set, i) => {
-    if (i > 0) children.push(saut());
-    children.push(...garde(set, exemplaires));
-    // La garde tient sa page : chaque planche démarre ainsi en haut de feuille,
-    // seule façon d'y loger les trois rangées.
-    children.push(saut());
-    children.push(...planches(set));
+    const teinte = TEINTES[i % TEINTES.length]!;
+    const aVerso = set.colonnes.length > 1 && set.cartes.some((c) => c.slice(1).some(Boolean));
+    const nbPlanches = Math.ceil(set.cartes.length / PAR_PAGE);
+
+    pages.push(
+      e(Page, { key: `g${i}`, size: "A4", style: st.page }, [
+        e(Text, { key: "t", style: st.entete }, titre),
+        e(Text, { key: "n", style: { ...st.gardeTitre, color: `#${teinte}` } }, set.nom),
+        e(Text, { key: "i1", style: st.gardeInfo },
+          `${set.cartes.length} cartes · ${nbPlanches} planche${nbPlanches > 1 ? "s" : ""} · ` +
+          `${exemplaires} exemplaire${exemplaires > 1 ? "s" : ""} à imprimer`),
+        e(Text, { key: "i2", style: st.gardeInfo },
+          aVerso
+            ? "Recto-verso — impression avec retournement sur le bord long."
+            : "Recto seul."),
+        e(Text, { key: "i3", style: st.gardeInfo },
+          "Les traits pointillés sont les lignes de coupe."),
+      ]),
+    );
+
+    for (let d = 0; d < set.cartes.length; d += PAR_PAGE) {
+      pages.push(e(Planche, { key: `r${i}-${d}`, set, teinte, debut: d, face: false }));
+      if (aVerso) pages.push(e(Planche, { key: `v${i}-${d}`, set, teinte, debut: d, face: true }));
+    }
   });
 
-  const doc = new Document({
-    creator: "FormAssist",
-    title: titre,
-    styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
-    sections: [{
-      properties: {
-        page: {
-          size: { width: PAGE_W, height: PAGE_H },
-          margin: { top: MARGE, right: MARGE, bottom: MARGE, left: MARGE },
-        },
-      },
-      children,
-    }],
-  });
-  return Packer.toBlob(doc);
+  const doc = e(Document, { title: titre }, pages) as React.ReactElement<
+    React.ComponentProps<typeof Document>
+  >;
+  return pdf(doc).toBlob();
 }

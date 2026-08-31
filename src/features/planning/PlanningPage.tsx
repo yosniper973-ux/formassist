@@ -22,8 +22,8 @@ import {
 } from "lucide-react";
 import { AddToPlanningDialog } from "@/features/planning/AddToPlanningDialog";
 import { useNavigate } from "react-router-dom";
-import { extractCardSets, cardsToDocx, type CardSet } from "@/lib/cards-export";
-import { downloadDocx } from "@/lib/docx-export";
+import { extractCardSets, cardsToPdf, type CardSet } from "@/lib/cards-export";
+import { downloadPdf } from "@/lib/pdf-export";
 import { invoke } from "@tauri-apps/api/core";
 import {
   loadDayContext,
@@ -2416,8 +2416,8 @@ function SlotInfoDialog({
     setGenError("");
     try {
       const titre = slot.title || `Journée du ${slot.date}`;
-      const blob = await cardsToDocx(planches, `${titre} — planches à découper`, 3);
-      await downloadDocx(blob, `${titre} — planches`.replace(/[\\/:*?"<>|]/g, "_"));
+      const blob = await cardsToPdf(planches, `${titre} — planches à découper`, 3);
+      await downloadPdf(blob, `${titre} — planches`);
     } catch (err) {
       setGenError(err instanceof Error ? err.message : String(err));
     } finally {
