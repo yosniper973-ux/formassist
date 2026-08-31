@@ -2400,12 +2400,20 @@ function SlotInfoDialog({
 
   useEffect(() => {
     (async () => {
-      const rows = await db.query<{ content_markdown: string }>(
-        "SELECT content_markdown FROM generated_contents \
+      const rows = await db.query<{
+        id: string;
+        phase_id: string | null;
+        content_markdown: string;
+      }>(
+        "SELECT id, slot_phase_id AS phase_id, content_markdown FROM generated_contents \
          WHERE slot_id = ? AND archived_at IS NULL ORDER BY created_at",
         [slot.id],
       );
-      const sets = rows.flatMap((r) => extractCardSets(r.content_markdown));
+      // Une phase régénérée laisse ses versions précédentes en base : sans ce
+      // filtre, leurs cartes étaient comptées et imprimées plusieurs fois.
+      const derniere = new Map<string, string>();
+      for (const r of rows) derniere.set(r.phase_id ?? r.id, r.content_markdown);
+      const sets = [...derniere.values()].flatMap((md) => extractCardSets(md));
       setPlanches(sets);
     })().catch(() => setPlanches([]));
   }, [slot.id, genDone]);
