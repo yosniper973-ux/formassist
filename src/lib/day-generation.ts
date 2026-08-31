@@ -137,6 +137,15 @@ export function buildPhaseMessages(ctx: DayContext, phase: DayPhase): ClaudeMess
     .map((s) => `- [${s.competence_code} · ${CAT_LABEL[s.category] ?? s.category}] ${s.content}`)
     .join("\n");
 
+  // Les deux autres phases de la journée : sans elles, chaque génération
+  // couvrait l'intégralité des savoirs et les trois documents se recouvraient.
+  const autres = ctx.phases
+    .filter((p) => p.id !== phase.id)
+    .map((p) => `- ${p.phase} (${p.start_time}–${p.end_time}) : ${p.label}`)
+    .join("\n");
+
+  const relationnels = ctx.savoirs.some((s) => s.category === "sf_relationnel");
+
   const quoi =
     phase.phase === "apport"
       ? "un apport théorique"
@@ -147,25 +156,82 @@ export function buildPhaseMessages(ctx: DayContext, phase: DayPhase): ClaudeMess
   return [
     {
       role: "user",
-      content: `Génère ${quoi} pour la formation « ${ctx.formationTitle} ».
+      content: `Conçois ${quoi} pour la formation « ${ctx.formationTitle} ».
 
 Journée du ${ctx.date} — ${ctx.slotTitle}
-Phase : ${phase.phase} de ${phase.start_time ?? ""} à ${phase.end_time ?? ""}
+Phase : ${phase.phase}, de ${phase.start_time ?? ""} à ${phase.end_time ?? ""}
 
-Sujet imposé par le déroulé pédagogique, à traiter tel quel :
+Sujet imposé par le déroulé, à traiter tel quel :
 **${phase.label}**
 
-Durée : **${minutes} minutes — contrainte ferme, non négociable.**
-Groupe : ${ctx.groupSize} apprenants.
+Durée : **${minutes} minutes — contrainte ferme.**
+Groupe : ${ctx.groupSize} stagiaires, répartis en trois sous-groupes de quatre.
+
+Les deux autres phases de la même journée, traitées ailleurs :
+${autres || "(aucune)"}
+Reste strictement dans ta phase. Ne réexplique pas ce que les autres traitent.
 
 Compétences visées :
 ${comps || "(aucune)"}
 
-Savoirs et savoir-faire du REAC à couvrir, au libellé exact du référentiel :
+Savoirs et savoir-faire du REAC. Ta phase y **contribue sous son angle propre** ;
+elle n'a pas à tous les couvrir intégralement, les autres phases y contribuent aussi :
 ${savoirs || "(aucun)"}
 
-Le contenu produit doit couvrir ces savoirs et rester dans la durée impartie. \
-N'aborde pas les autres phases de la journée : une autre génération s'en charge.`,
+---
+
+## Le produit attendu
+
+Ce document sera **vendu à un centre de formation** et animé par un formateur qui
+n'a pas participé à sa conception. Il doit donc être immédiatement exploitable,
+et court. Un formateur veut savoir ce qu'il fait à telle heure, avec quoi, et ce
+qu'il dit — pas lire un mémoire de pédagogie.
+
+Structure les instruments didactiques d'Henri Boudreault, dans cet ordre exact et
+avec ces titres exacts :
+
+## FICHE DE TRAVAIL
+Le document remis à la stagiaire. Il lui permet de comprendre seule le travail
+demandé. Quatre rubriques, pas une de plus : ce que tu dois faire · les contraintes
+· les ressources à ta disposition · à quoi on verra que c'est réussi.
+Tutoiement, phrases courtes, aucun jargon non expliqué. Environ 250 mots.
+
+## AIDE À LA TÂCHE
+La séquence des opérations à réaliser, dans l'ordre, une ligne par opération, sous
+forme de tableau ou de liste numérotée. C'est le modèle que la stagiaire garde sous
+les yeux pendant qu'elle travaille. Pas de justification théorique. Environ 200 mots.
+
+## MATÉRIEL À IMPRIMER
+Le contenu intégral et prêt à découper de tout support matériel : cartes, étiquettes,
+grilles, plateaux. Une carte = une ligne de tableau, avec son recto et son verso s'il
+y a lieu. Si la phase n'exige aucun matériel imprimable, écris « Aucun » et passe à
+la suite. N'annonce jamais un matériel dont tu ne fournis pas le contenu ici.${
+      relationnels
+        ? `
+
+Cette phase vise des savoir-faire relationnels : ajoute une courte rubrique
+« Aide à se comporter » décrivant les attitudes professionnelles attendues, en
+comportements observables.`
+        : ""
+    }
+
+## 🔒 GUIDE FORMATEUR
+Réservé au formateur, retiré de la version remise aux stagiaires.
+- Un tableau minuté : horaire · ce que fait le formateur · ce que font les stagiaires · matériel. Le total doit faire exactement ${minutes} minutes.
+- Trois à cinq points de vigilance, tirés de ce qui rate réellement dans cette activité.
+- Les corrigés et réponses attendues.
+Environ 400 mots.
+
+## Ce que tu ne fais pas
+
+- Pas d'emoji, sauf le 🔒 du titre ci-dessus.
+- Pas d'objectifs pédagogiques répétés en plusieurs endroits : ils figurent une seule
+  fois, en tête de la fiche de travail, sous la forme « à la fin, tu sauras… ».
+- Pas de rappel notionnel expliquant le métier au formateur : il est du métier.
+- Pas de commentaire sur ta démarche pédagogique.
+- Pas de travail à faire entre deux séances.
+- N'annonce pas de matériel que tu ne fournis pas.
+`,
     },
   ];
 }
