@@ -2397,6 +2397,7 @@ function SlotInfoDialog({
   // le formateur imprime une fois pour la journée, pas trois.
   const [planches, setPlanches] = useState<CardSet[]>([]);
   const [exportPlanches, setExportPlanches] = useState(false);
+  const [planchesPath, setPlanchesPath] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -2425,7 +2426,10 @@ function SlotInfoDialog({
     try {
       const titre = slot.title || `Journée du ${slot.date}`;
       const blob = await cardsToPdf(planches, `${titre} — planches à découper`, 3);
-      await downloadPdf(blob, `${titre} — planches`);
+      // Le chemin renvoyé était ignoré : le fichier partait dans Téléchargements
+      // sans que rien ne le signale, ce qui donnait l'impression d'un bouton mort.
+      const chemin = await downloadPdf(blob, `${titre} — planches`);
+      setPlanchesPath(chemin ?? "Téléchargé");
     } catch (err) {
       setGenError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -2633,6 +2637,11 @@ function SlotInfoDialog({
                     {planches.length} jeu{planches.length > 1 ? "x" : ""} ·{" "}
                     {planches.reduce((n, s) => n + s.cartes.length, 0)} cartes · 3 exemplaires
                   </span>
+                  {planchesPath && (
+                    <span className="text-xs text-primary">
+                      Enregistré : {planchesPath.split(/[\\/]/).pop()}
+                    </span>
+                  )}
                 </div>
               )}
               {genError && (

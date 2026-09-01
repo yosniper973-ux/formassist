@@ -251,6 +251,7 @@ export function GenerationPage() {
 
   // Step 2: Content type
   const [selectedTypes, setSelectedTypes] = useState<ContentTypeOption[]>([]);
+  const [exportEnCours, setExportEnCours] = useState<string>("");
   const [generationProgress, setGenerationProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Step 3: Config
@@ -1487,17 +1488,20 @@ Ne saute aucune compétence sélectionnée. Si plusieurs niveaux de Bloom sont d
                             variant="outline"
                             size="sm"
                             onClick={async () => {
-                              try {
-                                const blob = await markdownToPdf(generatedContent, await brandingForFormation(selectedFormationId));
-                                const savedPath = await downloadPdf(blob, baseName);
-                                if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
-                              } catch (err) {
-                                setError(err instanceof Error ? err.message : "Erreur export PDF");
-                              }
-                            }}
+  setExportEnCours("pdf");
+  try {
+    const blob = await markdownToPdf(generatedContent, await brandingForFormation(selectedFormationId));
+    const savedPath = await downloadPdf(blob, baseName);
+    if (savedPath) setDownloadToast({ path: savedPath, name: savedPath.split(/[\\/]/).pop() ?? savedPath });
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Erreur export PDF");
+  } finally {
+    setExportEnCours("");
+  }
+}}
                           >
                             <Download className="h-3.5 w-3.5" />
-                            {dualVersion ? "PDF · Formateur" : "PDF"}
+                            {exportEnCours === "pdf" ? "Génération…" : dualVersion ? "PDF · Formateur" : "PDF"}
                           </Button>
                           {/* Version apprenant (sans corrigé) — QCM ou tout document avec section formateur */}
                           {dualVersion && (
