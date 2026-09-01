@@ -228,6 +228,73 @@ ${
     ];
   }
 
+  // Chaque phase a sa nature propre. Les instruments de Boudreault — fiche de
+  // travail, aide à la tâche — accompagnent l'exécution d'une tâche : ils n'ont
+  // rien à faire dans un apport théorique, qui doit produire un vrai cours.
+  const STRUCTURES: Record<string, string> = {
+    apport: `## LE COURS
+Le contenu théorique, structuré en deux ou trois notions, pas davantage pour une heure.
+Chaque notion : une définition exacte, ce qu'elle change concrètement sur le terrain, un
+exemple pris dans le métier, et l'erreur que font les débutantes. Des tableaux comparatifs
+quand deux choses se confondent facilement. Le vocabulaire technique est employé et
+expliqué à sa première occurrence. Environ 700 mots.
+
+## À RETENIR
+La trace écrite que la stagiaire garde et relira avant l'examen : l'essentiel de l'heure
+en une page, sous forme de listes courtes, de tableaux ou de schémas décrits. Pas de
+paragraphes. Environ 200 mots.
+
+## 🔒 GUIDE FORMATEUR
+Réservé au formateur, retiré de la version remise aux stagiaires.
+- Un déroulé minuté de l'heure : ce qu'il expose, ce qu'il écrit au tableau, les questions
+  qu'il pose au groupe et quand.
+- Trois à cinq points de vigilance : les confusions récurrentes et comment les lever.
+- Les réponses aux questions posées au groupe.
+Environ 350 mots.`,
+    jeu: `## RÈGLES DU JEU
+Ce qui est lu au groupe, tel quel : le but, le déroulé des manches, la façon de marquer.
+Formulation directe, phrases courtes. Environ 250 mots.
+
+## MATÉRIEL À IMPRIMER
+Le contenu intégral et prêt à découper de tout support : cartes, étiquettes, grilles,
+plateaux. Une carte = une ligne de tableau, avec son recto et son verso s'il y a lieu.
+Si le jeu n'exige aucun matériel imprimable, écris « Aucun ». N'annonce jamais un
+matériel dont tu ne fournis pas le contenu ici.
+
+## 🔒 GUIDE FORMATEUR
+Réservé au formateur, retiré de la version remise aux stagiaires.
+- Un tableau minuté : horaire · ce que fait le formateur · ce que font les stagiaires.
+  Le total doit faire exactement ${minutes} minutes, installation et débriefing compris.
+- Les bonnes réponses, quand le jeu en comporte.
+- Trois à cinq points de vigilance, tirés de ce qui rate réellement dans ce type de jeu.
+- Ce qu'il faut faire dire au groupe pendant le débriefing.
+Environ 350 mots.`,
+    pratique: `## FICHE DE TRAVAIL
+Le document remis à la stagiaire. Il lui permet de comprendre seule le travail demandé.
+Quatre rubriques, pas une de plus : ce que tu dois faire · les contraintes · les ressources
+à ta disposition · à quoi on verra que c'est réussi. Tutoiement, phrases courtes, aucun
+jargon non expliqué. Environ 250 mots.
+
+## AIDE À LA TÂCHE
+La séquence des opérations à réaliser, dans l'ordre, une ligne par opération, en tableau ou
+en liste numérotée. C'est le modèle que la stagiaire garde sous les yeux pendant qu'elle
+travaille. Pas de justification théorique. Environ 200 mots.
+
+## MATÉRIEL À IMPRIMER
+Le contenu intégral et prêt à découper de tout support matériel : grilles de contrôle,
+étiquettes, fiches de traçabilité. Si la phase n'en exige aucun, écris « Aucun ».
+N'annonce jamais un matériel dont tu ne fournis pas le contenu ici.
+
+## 🔒 GUIDE FORMATEUR
+Réservé au formateur, retiré de la version remise aux stagiaires.
+- Un tableau minuté : horaire · ce que fait le formateur · ce que font les stagiaires ·
+  matériel. Le total doit faire exactement ${minutes} minutes.
+- L'organisation des trois sous-groupes sur les postes.
+- Trois à cinq points de vigilance, tirés de ce qui rate réellement dans cette activité.
+- Les critères d'observation et les corrigés.
+Environ 400 mots.`,
+  };
+
   const quoi =
     phase.phase === "apport"
       ? "un apport théorique"
@@ -269,50 +336,36 @@ n'a pas participé à sa conception. Il doit donc être immédiatement exploitab
 et court. Un formateur veut savoir ce qu'il fait à telle heure, avec quoi, et ce
 qu'il dit — pas lire un mémoire de pédagogie.
 
-Structure les instruments didactiques d'Henri Boudreault, dans cet ordre exact et
-avec ces titres exacts :
+${
+        phase.phase === "apport"
+          ? "**Cette phase est un cours.** Le groupe est assis et écoute, questionne, prend " +
+            "des notes. Ce n'est pas une activité : ni tri de cartes, ni travail en " +
+            "sous-groupes, ni manipulation. Le jeu et l'atelier de la journée s'en chargent. " +
+            "Ne produis ni fiche de travail ni aide à la tâche : ces instruments accompagnent " +
+            "l'exécution d'une tâche, pas un apport théorique."
+          : ""
+      }
 
-## FICHE DE TRAVAIL
-Le document remis à la stagiaire. Il lui permet de comprendre seule le travail
-demandé. Quatre rubriques, pas une de plus : ce que tu dois faire · les contraintes
-· les ressources à ta disposition · à quoi on verra que c'est réussi.
-Tutoiement, phrases courtes, aucun jargon non expliqué. Environ 250 mots.
+Structure ta réponse dans cet ordre exact et avec ces titres exacts :
 
-## AIDE À LA TÂCHE
-La séquence des opérations à réaliser, dans l'ordre, une ligne par opération, sous
-forme de tableau ou de liste numérotée. C'est le modèle que la stagiaire garde sous
-les yeux pendant qu'elle travaille. Pas de justification théorique. Environ 200 mots.
-
-## MATÉRIEL À IMPRIMER
-Le contenu intégral et prêt à découper de tout support matériel : cartes, étiquettes,
-grilles, plateaux. Une carte = une ligne de tableau, avec son recto et son verso s'il
-y a lieu. Si la phase n'exige aucun matériel imprimable, écris « Aucun » et passe à
-la suite. N'annonce jamais un matériel dont tu ne fournis pas le contenu ici.${
-      relationnels
-        ? `
+${STRUCTURES[phase.phase] ?? STRUCTURES.pratique}${
+        relationnels && phase.phase !== "apport"
+          ? `
 
 Cette phase vise des savoir-faire relationnels : ajoute une courte rubrique
 « Aide à se comporter » décrivant les attitudes professionnelles attendues, en
 comportements observables.`
-        : ""
-    }
-
-## 🔒 GUIDE FORMATEUR
-Réservé au formateur, retiré de la version remise aux stagiaires.
-- Un tableau minuté : horaire · ce que fait le formateur · ce que font les stagiaires · matériel. Le total doit faire exactement ${minutes} minutes.
-- Trois à cinq points de vigilance, tirés de ce qui rate réellement dans cette activité.
-- Les corrigés et réponses attendues.
-Environ 400 mots.
+          : ""
+      }
 
 ## Ce que tu ne fais pas
 
-- Pas d'emoji, sauf le 🔒 du titre ci-dessus.
+- Pas d'emoji, sauf le 🔒 du titre du guide formateur.
 - Pas d'objectifs pédagogiques répétés en plusieurs endroits : ils figurent une seule
-  fois, en tête de la fiche de travail, sous la forme « à la fin, tu sauras… ».
+  fois, en tête, sous la forme « à la fin, tu sauras… ».
 - Pas de rappel notionnel expliquant le métier au formateur : il est du métier.
 - Pas de commentaire sur ta démarche pédagogique.
 - Pas de travail à faire entre deux séances.
-- N'annonce pas de matériel que tu ne fournis pas.
 - **Jamais de schéma en art ASCII ni de bloc de code.** Les documents sont
   imprimés dans une police proportionnelle : un plateau dessiné avec des barres
   et des tirets s'effondre et devient illisible. Un plateau de jeu, un plan ou un
