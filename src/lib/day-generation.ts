@@ -175,6 +175,11 @@ export function buildPhaseMessages(ctx: DayContext, phase: DayPhase): ClaudeMess
 
   const relationnels = ctx.savoirs.some((s) => s.category === "sf_relationnel");
 
+  // Une journée qui porte une évaluation : l'apport n'y est pas un cours mais
+  // l'heure de cadrage qui précède l'épreuve. Le signal vient du déroulé
+  // importé, pas du libellé — il vaut donc pour n'importe quelle formation.
+  const jourEval = ctx.phases.some((p) => taskForPhase(p) === "generation_evaluation");
+
   // Un ECF suit le prompt partagé generation_evaluation : on lui fournit les
   // paramètres, il impose la structure. Même sortie depuis l'onglet ECF et
   // depuis le planning.
@@ -251,6 +256,28 @@ Réservé au formateur, retiré de la version remise aux stagiaires.
 - Trois à cinq points de vigilance : les confusions récurrentes et comment les lever.
 - Les réponses aux questions posées au groupe.
 Environ 350 mots.`,
+    cadrage: `## CE QUI EST ÉVALUÉ
+La synthèse de ce sur quoi porte l'épreuve : les compétences visées, les savoirs et
+savoir-faire attendus, et les critères sur lesquels la stagiaire sera jugée. Sous forme
+de listes et de tableaux. C'est une révision, pas un nouveau cours : n'introduis aucune
+notion qui n'a pas déjà été traitée en formation. Environ 400 mots.
+
+## LE DÉROULÉ DE L'ÉPREUVE
+Ce qui est lu au groupe avant de commencer : la durée, ce qui est autorisé et ce qui ne
+l'est pas, la façon dont le sujet est tiré s'il y a tirage, l'ordre et l'horaire des
+passages quand des stagiaires sont observées individuellement, ce que font les autres
+pendant ce temps, et comment on rend sa copie. Phrases courtes, ton direct.
+Environ 250 mots.
+
+## 🔒 GUIDE FORMATEUR
+Réservé au formateur, retiré de la version remise aux stagiaires.
+- Un déroulé minuté de l'heure : le total doit faire exactement ${minutes} minutes.
+- Le matériel à préparer avant l'arrivée du groupe : sujets, grilles d'observation,
+  copies, matériel du plateau technique.
+- Les questions que le groupe pose systématiquement avant une épreuve, et la réponse
+  à donner à chacune.
+- Comment gérer le stress et les stagiaires qui bloquent, sans avantager personne.
+Environ 350 mots.`,
     jeu: `## RÈGLES DU JEU
 Ce qui est lu au groupe, tel quel : le but, le déroulé des manches, la façon de marquer.
 Formulation directe, phrases courtes. Environ 250 mots.
@@ -295,12 +322,16 @@ Réservé au formateur, retiré de la version remise aux stagiaires.
 Environ 400 mots.`,
   };
 
+  const forme = phase.phase === "apport" && jourEval ? "cadrage" : phase.phase;
+
   const quoi =
-    phase.phase === "apport"
-      ? "un apport théorique"
-      : phase.phase === "jeu"
-        ? "un jeu pédagogique"
-        : "un atelier pratique";
+    forme === "cadrage"
+      ? "l'heure de cadrage d'avant-épreuve"
+      : forme === "apport"
+        ? "un apport théorique"
+        : forme === "jeu"
+          ? "un jeu pédagogique"
+          : "un atelier pratique";
 
   return [
     {
@@ -318,13 +349,24 @@ Groupe : ${ctx.groupSize} stagiaires, répartis en trois sous-groupes de quatre.
 
 Les deux autres phases de la même journée, traitées ailleurs :
 ${autres || "(aucune)"}
-Reste strictement dans ta phase. Ne réexplique pas ce que les autres traitent.
+${
+        forme === "cadrage"
+          ? "Tu prépares le groupe à l'épreuve de cette journée : tu peux et tu dois en parler. " +
+            "Mais tu ne produis pas l'épreuve elle-même."
+          : "Reste strictement dans ta phase. Ne réexplique pas ce que les autres traitent."
+      }
 
 Compétences visées :
 ${comps || "(aucune)"}
 
-Savoirs et savoir-faire du REAC. Ta phase y **contribue sous son angle propre** ;
-elle n'a pas à tous les couvrir intégralement, les autres phases y contribuent aussi :
+${
+        forme === "cadrage"
+          ? "Savoirs et savoir-faire sur lesquels porte l'épreuve. La révision doit **tous les " +
+            "balayer**, sans en approfondir aucun : la stagiaire doit repartir en sachant ce " +
+            "qu'on attend d'elle sur chacun."
+          : "Savoirs et savoir-faire du REAC. Ta phase y **contribue sous son angle propre** ;\n" +
+            "elle n'a pas à tous les couvrir intégralement, les autres phases y contribuent aussi :"
+      }
 ${savoirs || "(aucun)"}
 
 ---
@@ -337,7 +379,13 @@ et court. Un formateur veut savoir ce qu'il fait à telle heure, avec quoi, et c
 qu'il dit — pas lire un mémoire de pédagogie.
 
 ${
-        phase.phase === "apport"
+        forme === "cadrage"
+          ? "**Cette phase n'est pas un cours.** Une évaluation a lieu plus tard dans la " +
+            "journée : cette heure sert à réviser ce qui va être évalué et à poser le cadre " +
+            "de l'épreuve. N'introduis aucune notion nouvelle. Ne rédige pas le sujet : il " +
+            "est produit séparément par la phase d'évaluation, et le formateur ne doit pas " +
+            "le découvrir ici."
+          : forme === "apport"
           ? "**Cette phase est un cours.** Le groupe est assis et écoute, questionne, prend " +
             "des notes. Ce n'est pas une activité : ni tri de cartes, ni travail en " +
             "sous-groupes, ni manipulation. Le jeu et l'atelier de la journée s'en chargent. " +
@@ -348,7 +396,7 @@ ${
 
 Structure ta réponse dans cet ordre exact et avec ces titres exacts :
 
-${STRUCTURES[phase.phase] ?? STRUCTURES.pratique}${
+${STRUCTURES[forme] ?? STRUCTURES.pratique}${
         relationnels && phase.phase !== "apport"
           ? `
 
