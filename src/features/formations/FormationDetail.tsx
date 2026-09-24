@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import type { Savoir } from "@/lib/db";
 import { requestStream } from "@/lib/claude";
 import type { Formation, CCP, Competence, EvaluationCriterion, ExtraActivity } from "@/types";
 import type { ClaudeContentBlock } from "@/types/api";
@@ -143,8 +144,15 @@ function parseSavoirsText(text: string): Array<{
 type Tab = "reac" | "perimetre" | "activites";
 
 interface ReacTreeCCP extends CCP {
-  competences: (Competence & { criteria: EvaluationCriterion[] })[];
+  competences: (Competence & { criteria: EvaluationCriterion[]; savoirs: Savoir[] })[];
 }
+
+const SAVOIR_CATEGORIES = [
+  { key: "sf_technique", label: "Savoir-faire techniques" },
+  { key: "sf_organisationnel", label: "Savoir-faire organisationnels" },
+  { key: "sf_relationnel", label: "Savoir-faire relationnels" },
+  { key: "savoir", label: "Savoirs" },
+] as const;
 
 interface Props {
   formation: Formation;
@@ -157,6 +165,7 @@ export function FormationDetail({ formation, onBack }: Props) {
   const [extraActivities, setExtraActivities] = useState<ExtraActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedCcps, setExpandedCcps] = useState<Set<string>>(new Set());
+  const [expandedSavoirs, setExpandedSavoirs] = useState<Set<string>>(new Set());
 
   // Parsing
   const [parsing, setParsing] = useState(false);
@@ -186,6 +195,13 @@ export function FormationDetail({ formation, onBack }: Props) {
       const tree: ReacTreeCCP[] = [];
       const expanded = new Set<string>();
 
+      const savoirsByComp = new Map<string, Savoir[]>();
+      for (const s of await db.getSavoirsForFormation(formation.id)) {
+        const list = savoirsByComp.get(s.competence_id) ?? [];
+        list.push(s);
+        savoirsByComp.set(s.competence_id, list);
+      }
+
       for (const ccp of ccpRows) {
         const compRows = await db.query<Competence>(
           "SELECT * FROM competences WHERE ccp_id = ? ORDER BY sort_order",
@@ -198,7 +214,7 @@ export function FormationDetail({ formation, onBack }: Props) {
             "SELECT * FROM evaluation_criteria WHERE competence_id = ? ORDER BY sort_order",
             [comp.id],
           );
-          compsWithCriteria.push({ ...comp, criteria });
+          compsWithCriteria.push({ ...comp, criteria, savoirs: savoirsByComp.get(comp.id) ?? [] });
         }
 
         tree.push({ ...ccp, competences: compsWithCriteria });
@@ -434,6 +450,7 @@ export function FormationDetail({ formation, onBack }: Props) {
       });
 
       setSavoirsSuccess(true);
+      await loadReac();
     } catch (err) {
       const msg =
         err instanceof Error
@@ -701,17 +718,69 @@ export function FormationDetail({ formation, onBack }: Props) {
                                       </p>
                                     )}
                                     {comp.criteria.length > 0 && (
-                                      <ul className="mt-1.5 space-y-0.5">
-                                        {comp.criteria.map((cr) => (
-                                          <li
-                                            key={cr.id}
-                                            className="flex items-start gap-1.5 text-xs text-muted-foreground"
-                                          >
-                                            <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                                            {cr.description}
-                                          </li>
-                                        ))}
-                                      </ul>
+                                      <>
+                                        <p className="mt-1.5 text-xs font-medium text-foreground">
+                                          Critères de performance
+                                        </p>
+                                        <ul className="mt-0.5 space-y-0.5">
+                                          {comp.criteria.map((cr) => (
+                                            <li
+                                              key={cr.id}
+                                              className="flex items-start gap-1.5 text-xs text-muted-foreground"
+                                            >
+                                              <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                                              {cr.description}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </>
+                                    )}
+                                    {comp.savoirs.length > 0 && (
+                                      <div className="mt-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setExpandedSavoirs((prev) => {
+                                            const next = new Set(prev);
+                                            if (next.has(comp.id)) next.delete(comp.id);
+                                            else next.add(comp.id);
+                                            return next;
+                                          })}
+                                          className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                                        >
+                                          {expandedSavoirs.has(comp.id) ? (
+                                            <ChevronDown className="h-3 w-3" />
+                                          ) : (
+                                            <ChevronRight className="h-3 w-3" />
+                                          )}
+                                          {expandedSavoirs.has(comp.id) ? "Masquer" : "Voir"} les {comp.savoirs.length} savoirs et savoir-faire
+                                        </button>
+                                        {expandedSavoirs.has(comp.id) && (
+                                          <div className="mt-2 space-y-3 rounded-lg border bg-muted/30 p-3">
+                                            {SAVOIR_CATEGORIES.map(({ key, label }) => {
+                                              const items = comp.savoirs.filter((s) => s.category === key);
+                                              if (items.length === 0) return null;
+                                              return (
+                                                <div key={key}>
+                                                  <p className="text-xs font-medium text-foreground">
+                                                    {label} ({items.length})
+                                                  </p>
+                                                  <ul className="mt-0.5 space-y-0.5">
+                                                    {items.map((s) => (
+                                                      <li
+                                                        key={s.id}
+                                                        className="flex items-start gap-1.5 text-xs text-muted-foreground"
+                                                      >
+                                                        <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                                                        {s.content}
+                                                      </li>
+                                                    ))}
+                                                  </ul>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                 </div>
